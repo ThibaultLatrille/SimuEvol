@@ -1,8 +1,8 @@
 // Program to print BFS traversal from a given source vertex. BFS(int s) 
 // traverses vertices reachable from s.
 #include <iostream>
-#include <list>
 #include <vector>
+#include <deque>
 
 using namespace std;
 
@@ -24,7 +24,7 @@ void Graph::BFS(int s) {
     vector<bool> visited(V, false);
 
     // Create a queue for BFS
-    list<int> queue;
+    deque<int> queue;
 
     // Mark the current node as visited and enqueue it
     visited[s] = true;
