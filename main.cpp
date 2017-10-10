@@ -154,15 +154,15 @@ public:
         }
 
         // Uniform random generator between 0. and 1. for assigning mutation rates
-        uniform_real_distribution<double> unif_real(0, 1);
+        uniform_real_distribution<double> unif_real(0., 1.);
 
-        for (unsigned i{0}; i < 4; i++) { // For each nucleotide (from)
-            for (unsigned j{0}; j < 4; j++) { // For each nucleotide (to)
-                // Assign random mutation rates from i to j if i and j are different
-                if (i != j) {
-                    mutation_rate[i][j] = unif_real(re);
+        for (unsigned from{0}; from < 4; from++) { // For each nucleotide (from)
+            for (unsigned to{0}; to < 4; to++) { // For each nucleotide (to)
+                // Assign random mutation rates if their is really a mutation (not from G to G for example)
+                if (from != to) {
+                    mutation_rate[from][to] = unif_real(re);
                 } else {
-                    mutation_rate[i][j] = 0.;
+                    mutation_rate[from][to] = 0.;
                 }
 
             }
@@ -203,16 +203,16 @@ public:
         // Initialize the total sum of transition rates at 0
         double total_transition_rates{0.};
 
-        for (unsigned i{0}; i < length; i++) { // For all indices of the sequence length
-            unsigned current_n = nucleotide_table[dna_str[i]]; // The nucleotide at position i
+        for (unsigned n{0}; n < length; n++) { // For all indices of the sequence length
+            unsigned current_n = nucleotide_table[dna_str[n]]; // The nucleotide at position n
 
-            for (unsigned j{0}; j < 4; j++) { // For all possible transitions
+            for (unsigned t{0}; t < 4; t++) { // For all possible transitions
                 // Don't count if transition to the same nucleotide as already present
-                if (j != current_n) {
+                if (t != current_n) {
                     // Increment the total sum of transition rates using the mutation rate 2D array
-                    total_transition_rates += mutation_rate[current_n][j];
+                    total_transition_rates += mutation_rate[current_n][t];
                     // Assign to the cumulative transition rates the current total sum
-                    cumulative_transition_rates[4 * i + j] = total_transition_rates;
+                    cumulative_transition_rates[4 * n + t] = total_transition_rates;
                 }
             }
         }
@@ -221,17 +221,17 @@ public:
         time_left -= total_transition_rates;
 
         // Mutate the sequence if the time is positive, else there is no mutation but the time left is set to 0.
-        if (time_left > 0) {
+        if (time_left > 0. and total_transition_rates != 0.) {
             // Uniform random generator between 0 and the total sum of transition rates
             uniform_real_distribution<double> unif(0, total_transition_rates);
             double random_cumulative_transition_rates = unif(re);
 
             unsigned index = 0;
-            for (unsigned i{0}; i < nbr_transitions; i++) {
+            for (unsigned t{0}; t < nbr_transitions; t++) {
                 // Iterate through the cumulative transition rates and break the loop when it is greater than...
                 // ...the random cumulative transition rates
-                if (random_cumulative_transition_rates < cumulative_transition_rates[i]) {
-                    index = i;
+                if (random_cumulative_transition_rates < cumulative_transition_rates[t]) {
+                    index = t;
                     break;
                 }
             }
@@ -239,21 +239,64 @@ public:
             // Mutate the chosen nucleotide with the transition given by the loop break
             dna_str[index / 4] = nucleotides[index % 4];
 
-        } else{
+        } else if (time_left < 0.){
             time_left = 0.;
         }
         return time_left;
     }
 
-    // Get attribute for the DNA string
+    // Generate substitutions until equilibrium using the method 'next_substitution' (slow)
     void burn_in(){
         double d = INFINITY;
-        for (unsigned i{0}; i < 4 * length; i++){
+        for (unsigned m{0}; m < 4 * length; m++){
             next_substitution(d);
         }
     }
 
-    // Get attribute for the DNA string
+    // Generate substitutions until equilibrium by calculating explicitly the equilibrium (fast)
+    void burn_in_fast(){
+        for (unsigned n{0}; n < length; n++) { // For all indices of the sequence length
+
+            // Initialize the total sum of transition rates at 0
+            double total_transition_rates{0.};
+            // Initialize the vector of cumulative transition rates at 0
+            vector<double> cumulative_transition_rates(4, 0.);
+
+            for (unsigned to{0}; to < 4; to++) { // For each nucleotide (to)
+                // Initialize the marginal sum of transition rates at 0
+                double marginal_transition_rates{0.};
+                for (unsigned from{0}; from < 4; from++) { // For each nucleotide (from)
+                    // Increment the marginal transition rates using the mutation rate 2D array
+                    if (from != to) {
+                        marginal_transition_rates += mutation_rate[from][to];
+                    }
+                }
+                // Increment the total sum of transition rates using the marginal transition rates
+                total_transition_rates += marginal_transition_rates;
+                // Assign to the cumulative transition rates the current total sum
+                cumulative_transition_rates[to] = total_transition_rates;
+            }
+
+            // Uniform random generator between 0 and the total sum of transition rates
+            uniform_real_distribution<double> unif(0, total_transition_rates);
+            double random_cumulative_transition_rates = unif(re);
+
+            unsigned index = 0;
+            for (unsigned m{0}; m < 4; m++) {
+                // Iterate through the cumulative transition rates and break the loop when it is greater than...
+                // ...the random cumulative transition rates
+                if (random_cumulative_transition_rates < cumulative_transition_rates[m]) {
+                    index = m;
+                    break;
+                }
+            }
+
+            // Mutate the nucleotide with the transition given by the loop break
+            dna_str[n] = nucleotides[index];
+        }
+    }
+
+    // Get attribute method for the DNA string
     string get_dna() { return dna_str; }
 };
 
@@ -261,9 +304,9 @@ public:
 // Driver program to test methods of graph class
 int main() {
 
-    Sequence_dna seq(399);
+    Sequence_dna seq(999);
     cout << seq.get_dna() << endl;
-    seq.burn_in();
+    seq.burn_in_fast();
     string dna = seq.get_dna();
     string protein = seq.translate();
     cout << protein << endl;
@@ -287,7 +330,6 @@ int main() {
     cout << "Following is Breadth First Traversal "
          << "(starting from vertex 2)\n";
     g.BFS(2);
-    vector<Graph> v{};
 
     return 0;
 }
