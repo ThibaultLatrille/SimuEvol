@@ -105,7 +105,7 @@ public:
         }
 
         // Uniform random generator between 0. and 1. for assigning mutation rates
-        uniform_real_distribution<double> unif_real(0., 1.);
+        uniform_real_distribution<double> unif_real(0., 1);
 
         for (unsigned from{0}; from < 4; from++) { // For each nucleotide (from)
             for (unsigned to{0}; to < 4; to++) { // For each nucleotide (to)
@@ -119,9 +119,6 @@ public:
             }
         }
     }
-
-    // Copy constructor of Sequence_dna
-    Sequence_dna(const Sequence_dna &) = delete;
 
     // Is Sequence_dna a coding sequence ?
     bool is_coding() { return length % 3 == 0; }
@@ -169,7 +166,7 @@ public:
         }
 
         // Decrement the time by the total sum of transition rates
-        time_left -= total_transition_rates;
+        time_left -= 1./total_transition_rates;
 
         // Mutate the sequence if the time is positive, else there is no mutation but the time left is set to 0.
         if (time_left > 0. and total_transition_rates != 0.) {
@@ -196,6 +193,11 @@ public:
         return time_left;
     }
 
+    void substitute_for(double t){
+        while (t>0){
+            t = next_substitution(t);
+        }
+    }
     // Generate substitutions until equilibrium using the method 'next_substitution' (slow)
     void burn_in() {
         double d = INFINITY;
@@ -253,27 +255,24 @@ public:
 
 class Node {
 private:
-    string name;
-    string length;
-    string subtree;
-public:
 
+public:
+    string name;
+    double length;
+    string subtree;
+    Sequence_dna sequence_dna;
     unsigned long index;
 
-    Node(const string name, const string length, const string subtree) :
-            name(name), length(length), subtree(subtree) {
+    Node(const string & name, const string & length, const string & subtree, const Sequence_dna & seq) :
+            name(name), length(stod(length)), subtree(subtree), sequence_dna(seq) {
         static unsigned long static_index{0};
-        cout  << "static_index" << static_index << endl;
         index = static_index;
         static_index++;
     }  // Constructor
-    string get_subtree() {
-        return subtree;
-    }
-    string get_name() {
-        return name;
-    }
 
+    bool is_leaf(){
+        return subtree.length() == 0;
+    }
 };
 
 
@@ -285,8 +284,9 @@ private:
     vector<Node> nodes;
 public:
 
-    Graph(const string newick){
-        Node root("ROOT", "0", newick);
+    Graph(const string newick, unsigned int length){
+        Node root("ROOT", "0", newick, Sequence_dna(length));
+        root.sequence_dna.burn_in_fast();
         nodes.push_back(root);
         adj.push_back(vector<unsigned long>());
 
@@ -295,13 +295,14 @@ public:
 
     Graph(const Graph &) = delete; // copy constructor
 
-    void addNode(Node node, const Node & parent) {
+    void addNode(Node node, Node & parent) {
+        node.sequence_dna.substitute_for(node.length);
         nodes.push_back(node);
         adj.push_back(vector<unsigned long>());
 
         addEdge(parent, node);
-        if (node.get_subtree().size() > 0){
-            parse_newick(node.get_subtree(), node);
+        if (!node.is_leaf()){
+            parse_newick(node.subtree, node);
         }
     }
 
@@ -309,7 +310,7 @@ public:
         adj[from.index].push_back(to.index); // Add w to v’s list.
     } // function to add an edge to graph
 
-    void parse_newick(string newick, const Node & parent) {
+    void parse_newick(string newick, Node & parent) {
         unsigned long max_point{newick.size()};
         unsigned long point{0};
 
@@ -354,8 +355,10 @@ public:
                 name = name_suffix.substr(0, (unsigned long)ddot);
             } else {
                 name = name_suffix;
+                length = "0";
             }
-            addNode(Node(name, length, subtree), parent);
+
+            addNode(Node(name, length, subtree, parent.sequence_dna), parent);
         }
     }
 
@@ -376,9 +379,14 @@ void Graph::BFS(unsigned long s) {
     while (!queue.empty()) {
         // Dequeue a vertex from queue and print it
         unsigned long f = queue.front();
-        cout << nodes[f].get_name() << endl;
-        queue.pop_front();
 
+        if (nodes[f].is_leaf()) {
+            cout << ">" << nodes[f].name << endl;
+            cout << nodes[f].sequence_dna.get_dna() << endl;
+            //cout << "AA: " << nodes[f].sequence_dna.translate() << endl;
+        }
+
+        queue.pop_front();
         // Get all adjacent vertices of the dequeued vertex s
         // If a adjacent has not been visited, then mark it visited
         // and enqueue it
@@ -393,30 +401,14 @@ void Graph::BFS(unsigned long s) {
 
 // Driver program to test methods of graph class
 int main() {
-    string s{
+    string mammals{
             "(Homo_sapiens:1.014243,(Canis_lupus_familiaris:0.844021,(Equus_caballus:0.805325,((Bos_taurus:0.182884,((Capra_hircus:0.011884,Capra_aegagrus:0.011884)'0.7-1.9':0.044887,Ovis_aries:0.056771)'4.6-7.0':0.126113)'13.6-25.4':0.455399,Sus_scrofa:0.638283)'63.1-64.8':0.167041)'75.6-88.1':0.038697)'79.1-92.4':0.170222)'92.5-115.2'"};
     string newick{"(A:0.1,B:0.2,(C:0.3,D:0.4)E:0.5)F"};
     string wnewick{"((F:0.3,G:0.4)A:0.5,B:0.2,(C:0.3,D:0.4)E:0.5)F"};
 
-    cout << newick << endl;
 
-    Graph g(s);
+    Graph g(mammals, 999);
     g.BFS(0);
-
-    Sequence_dna seq(999);
-    cout << seq.get_dna() << endl;
-    seq.burn_in_fast();
-    string dna = seq.get_dna();
-    string protein = seq.translate();
-    cout << protein << endl;
-
-    double t = 400;
-    t = seq.next_substitution(t);
-
-    cout << dna << endl;
-    cout << seq.get_dna() << endl;
-    cout << t << endl;
-
 
     return 0;
 }
