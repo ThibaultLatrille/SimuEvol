@@ -243,6 +243,9 @@ public:
 
     // Get attribute method for the DNA string
     string get_dna() { return dna_str; }
+
+    // Set attribute method for the DNA string
+    void set_dna(string dna) {dna_str=dna;}
 };
 
 
@@ -259,9 +262,6 @@ public:
     // Constructor
     Node(const string &name, const string &len, const string &newick, const Sequence_dna &seq) :
             name(name), length(stod(len)), newick(newick), sequence_dna(seq) {
-
-        // Substitutions of the DNA sequence is generated at initialisation of the node
-        sequence_dna.run_substitutions(length);
 
         // If the node is internal, parse the newick tree descending of the node
         if (!is_leaf()) {
@@ -281,6 +281,9 @@ public:
 
     // Recursively iterate through the subtree
     void traverse() {
+        // Substitutions of the DNA sequence is generated
+        sequence_dna.run_substitutions(length);
+
         if (is_leaf()) {
             // If the node is a leaf, output the DNA sequence and name
             cout << ">" << name << endl;
@@ -288,6 +291,7 @@ public:
         } else {
             // If the node is internal, iterate through the direct children
             for (auto child : children) {
+                child.sequence_dna.set_dna(sequence_dna.get_dna());
                 child.traverse();
             }
         }
