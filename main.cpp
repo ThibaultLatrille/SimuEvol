@@ -2,7 +2,6 @@
 // traverses vertices reachable from s.
 #include <iostream>
 #include <vector>
-#include <deque>
 #include <map>
 #include <random>
 
@@ -166,7 +165,7 @@ public:
         }
 
         // Decrement the time by the total sum of transition rates
-        time_left -= 1./total_transition_rates;
+        time_left -= 1. / total_transition_rates;
 
         // Mutate the sequence if the time is positive, else there is no mutation but the time left is set to 0.
         if (time_left > 0. and total_transition_rates != 0.) {
@@ -193,16 +192,9 @@ public:
         return time_left;
     }
 
-    void substitute_for(double t){
-        while (t>0){
+    void run_substitutions(double t) {
+        while (t > 0) {
             t = next_substitution(t);
-        }
-    }
-    // Generate substitutions until equilibrium using the method 'next_substitution' (slow)
-    void burn_in() {
-        double d = INFINITY;
-        for (unsigned m{0}; m < 4 * length; m++) {
-            next_substitution(d);
         }
     }
 
@@ -253,75 +245,75 @@ public:
     string get_dna() { return dna_str; }
 };
 
+
+// This class represents nodes of a tree (or a graph)
 class Node {
 private:
+    string name;  // The species name of the node
+    double length;  // The length of the branch attached to the node (ascending)
+    string newick;  // The newick tree descending from the node
+    Sequence_dna sequence_dna;  // The DNA sequence attached to the node
+    vector<Node> children;  // Vector of direct children (first order, no grand-children)
 
 public:
-    string name;
-    double length;
-    string subtree;
-    Sequence_dna sequence_dna;
-    unsigned long index;
+    // Constructor
+    Node(const string &name, const string &len, const string &newick, const Sequence_dna &seq) :
+            name(name), length(stod(len)), newick(newick), sequence_dna(seq) {
 
-    Node(const string & name, const string & length, const string & subtree, const Sequence_dna & seq) :
-            name(name), length(stod(length)), subtree(subtree), sequence_dna(seq) {
-        static unsigned long static_index{0};
-        index = static_index;
-        static_index++;
-    }  // Constructor
+        // Substitutions of the DNA sequence is generated at initialisation of the node
+        sequence_dna.run_substitutions(length);
 
-    bool is_leaf(){
-        return subtree.length() == 0;
-    }
-};
-
-
-// This class represents a directed graph using adjacency list representation
-class Graph {
-
-private:
-    vector<vector<unsigned long>> adj;    // Pointer to an array containing adjacency lists
-    vector<Node> nodes;
-public:
-
-    Graph(const string newick, unsigned int length){
-        Node root("ROOT", "0", newick, Sequence_dna(length));
-        root.sequence_dna.burn_in_fast();
-        nodes.push_back(root);
-        adj.push_back(vector<unsigned long>());
-
-        parse_newick(newick, root);
-    }  // Constructor
-
-    Graph(const Graph &) = delete; // copy constructor
-
-    void addNode(Node node, Node & parent) {
-        node.sequence_dna.substitute_for(node.length);
-        nodes.push_back(node);
-        adj.push_back(vector<unsigned long>());
-
-        addEdge(parent, node);
-        if (!node.is_leaf()){
-            parse_newick(node.subtree, node);
+        // If the node is internal, parse the newick tree descending of the node
+        if (!is_leaf()) {
+            parse_newick();
         }
     }
 
-    void addEdge(const Node & from, Node & to) {
-        adj[from.index].push_back(to.index); // Add w to v’s list.
-    } // function to add an edge to graph
+    // Is true if the node don't have children
+    bool is_leaf() {
+        return newick.length() == 0;
+    }
 
-    void parse_newick(string newick, Node & parent) {
-        unsigned long max_point{newick.size()};
-        unsigned long point{0};
+    // Add a node as the vector of children
+    void add_child(Node node) {
+        children.push_back(node);
+    }
 
-        while (point < max_point) {
+    // Recursively iterate through the subtree
+    void traverse() {
+        if (is_leaf()) {
+            // If the node is a leaf, output the DNA sequence and name
+            cout << ">" << name << endl;
+            cout << sequence_dna.get_dna() << endl;
+        } else {
+            // If the node is internal, iterate through the direct children
+            for (auto child : children) {
+                child.traverse();
+            }
+        }
+    }
+
+    // Set the the DNA sequence to the mutation-selection equilibrium
+    void at_equilibrium() {
+        sequence_dna.burn_in_fast();
+    }
+
+    void parse_newick() {
+        // The size of the string of newick tree
+        unsigned long max_position{newick.size()};
+        // The current position in the string of the newick tree
+        unsigned long position{0};
+
+        // While the current position is lower than the size of the string, their is at least one node to parse
+        while (position < max_position) {
+            // 'subtree' is the left hand side of the node name, it can be a subtree or nothing if the node is a leaf
             string subtree{""};
-            if (newick[point] == '(') {
+            if (newick[position] == '(') {
 
-                unsigned long postpoint{point};
+                unsigned long postpoint{position};
                 unsigned long nbr_open{1};
 
-                for (unsigned long i{point+1}; i < max_point; i++) {
+                for (unsigned long i{position + 1}; i < max_position; i++) {
                     if (nbr_open == 0) {
                         postpoint = i;
                         break;
@@ -331,73 +323,41 @@ public:
                         nbr_open--;
                     };
                 }
-                subtree = newick.substr(point+1, postpoint - point - 2);
-                point = postpoint;
+                subtree = newick.substr(position + 1, postpoint - position - 2);
+                position = postpoint;
             }
 
-            long next_sep = newick.substr(point).find(",");
+            // 'name_suffix' contains the name of the node and the branch length
             string name_suffix{""};
 
-            if (next_sep == -1){
-                name_suffix = newick.substr(point);
-                point = max_point;
+            long next_sep = newick.substr(position).find(",");
+            if (next_sep == -1) {
+                name_suffix = newick.substr(position);
+                position = max_position;
             } else {
-                name_suffix = newick.substr(point, (unsigned long)next_sep);
-                point = point + (unsigned long)next_sep + 1;
+                name_suffix = newick.substr(position, (unsigned long) next_sep);
+                position = position + (unsigned long) next_sep + 1;
             }
 
-            long ddot = name_suffix.rfind(':');
+            // 'length' contains the name of the node
             string length{""};
+            // 'name' contains the branch length of the node
             string name{""};
-
+            long ddot = name_suffix.rfind(':');
             if (ddot != -1) {
-                length = name_suffix.substr((unsigned long)ddot + 1);
-                name = name_suffix.substr(0, (unsigned long)ddot);
+                length = name_suffix.substr((unsigned long) ddot + 1);
+                name = name_suffix.substr(0, (unsigned long) ddot);
             } else {
                 name = name_suffix;
                 length = "0";
             }
 
-            addNode(Node(name, length, subtree, parent.sequence_dna), parent);
+            // New node from 'subtree', 'name' and 'length' using the DNA sequence of this node
+            add_child(Node(name, length, subtree, sequence_dna));
         }
     }
-
-    void BFS(unsigned long s);  // prints BFS traversal from a given source s
 };
 
-void Graph::BFS(unsigned long s) {
-    // Mark all the vertices as not visited
-    vector<bool> visited(nodes.size(), false);
-
-    // Create a queue for BFS
-    deque<unsigned long> queue;
-
-    // Mark the current node as visited and enqueue it
-    visited[s] = true;
-    queue.push_back(s);
-
-    while (!queue.empty()) {
-        // Dequeue a vertex from queue and print it
-        unsigned long f = queue.front();
-
-        if (nodes[f].is_leaf()) {
-            cout << ">" << nodes[f].name << endl;
-            cout << nodes[f].sequence_dna.get_dna() << endl;
-            //cout << "AA: " << nodes[f].sequence_dna.translate() << endl;
-        }
-
-        queue.pop_front();
-        // Get all adjacent vertices of the dequeued vertex s
-        // If a adjacent has not been visited, then mark it visited
-        // and enqueue it
-        for (auto i : adj[f]) {
-            if (!visited[i]) {
-                visited[i] = true;
-                queue.push_back(i);
-            }
-        }
-    }
-}
 
 // Driver program to test methods of graph class
 int main() {
@@ -407,8 +367,9 @@ int main() {
     string wnewick{"((F:0.3,G:0.4)A:0.5,B:0.2,(C:0.3,D:0.4)E:0.5)F"};
 
 
-    Graph g(mammals, 999);
-    g.BFS(0);
+    Node root("ROOT", "0", mammals, Sequence_dna(999));
+    root.at_equilibrium();
+    root.traverse();
 
     return 0;
 }
