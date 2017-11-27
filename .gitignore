@@ -9,3 +9,6 @@
 a.out
 CMakeLists.txt
 .idea/
+/*.srctrlbm
+/*.srctrldb
+/*.srctrlprj
