@@ -2,19 +2,73 @@
 // traverses vertices reachable from s.
 #include <iostream>
 #include <vector>
+#include <array>
 #include <map>
 #include <random>
+#include <tuple>
 #include "Eigen/Dense"
 
 using namespace Eigen;
+typedef Matrix<double, 64, 64> Matrix64x64;
+typedef Matrix<double, 64, 1> Vector64;
+
 using namespace std;
 
 // The nucleotides
 string const nucleotides{"ATGC"};
 // Mapping nucleotides to their positions in the string 'nucleotides'
 
+
+int triplet_to_codon(int n_1, int n_2, int n_3){
+    return n_1*16+n_2*4+n_3;
+}
+
+array<tuple<int, int, int>, 64> build_codon_to_triplet_vector() {
+    array<tuple<int, int, int>, 64> codon_to_triplet_vec;
+    for (unsigned n_1{0}; n_1 < 4; n_1++) {
+        for (unsigned n_2{0}; n_2 < 4; n_2++) {
+            for (unsigned n_3{0}; n_3 < 4; n_3++) {
+                codon_to_triplet_vec[triplet_to_codon(n_1,n_2,n_3)] = make_tuple(n_1,n_2,n_3);
+            }
+        }
+    }
+    return codon_to_triplet_vec;
+}
+
+array<array<tuple<int, int, int>, 9>, 64> build_codon_to_neighbors_vector(array<tuple<int, int, int>, 64>& codon_to_triplet) {
+    array<array<tuple<int, int, int>, 9>, 64> codon_to_neighbors;
+    int n_1_from{0}, n_2_from{0}, n_3_from{0};
+    for (unsigned codon{0}; codon < 64; codon++) {
+        tie(n_1_from, n_2_from, n_3_from) = codon_to_triplet[codon];
+        int flag{0};
+        for (unsigned n_1_to{0}; n_1_to < 4; n_1_to++) {
+            if (n_1_from != n_1_to) {
+                codon_to_neighbors[codon][flag] = make_tuple(triplet_to_codon(n_1_to,n_2_from,n_3_from), n_1_from, n_1_to);
+                flag++;
+            }
+        }
+        for (unsigned n_2_to{0}; n_2_to < 4; n_2_to++) {
+            if (n_2_from != n_2_to) {
+                codon_to_neighbors[codon][flag] = make_tuple(triplet_to_codon(n_1_from,n_2_to,n_3_from), n_2_from, n_2_to);
+                flag++;
+            }
+        }
+        for (unsigned n_3_to{0}; n_3_to < 4; n_3_to++) {
+            if (n_3_from != n_3_to) {
+                codon_to_neighbors[codon][flag] = make_tuple(triplet_to_codon(n_1_from,n_2_from,n_3_to), n_3_from, n_3_to);
+                flag++;
+            }
+        }
+    }
+    return codon_to_neighbors;
+}
+
+auto codon_to_triplet_vector(build_codon_to_triplet_vector());
+auto const codon_to_neighbors_vector(build_codon_to_neighbors_vector(codon_to_triplet_vector));
+
+string const amino_acids{"ARNDCQEGHILKMFPSTWYVX"};
 // Mapping codons to amino-acids
-map<string, char> codon_table{{"GCA", 'A'},
+map<string, char> triplet_str_to_aa_char{{"GCA", 'A'},
                               {"GAA", 'E'},
                               {"ACT", 'T'},
                               {"CAT", 'H'},
@@ -79,6 +133,28 @@ map<string, char> codon_table{{"GCA", 'A'},
                               {"AGG", 'R'},
                               {"CTT", 'L'}};
 
+int aa_char_to_aa(const char aa_char, const string& amino_acids){
+    return int(amino_acids.find(aa_char));
+}
+
+array<int, 64> build_codon_to_aa_vector(map<string, char>& triplet_str_to_aa_char, const string& amino_acids) {
+    array<int, 64> codon_to_aa;
+    string triplet_str(3, ' ');
+    for (unsigned n_1{0}; n_1 < 4; n_1++) {
+        triplet_str[0]=nucleotides[n_1];
+        for (unsigned n_2{0}; n_2 < 4; n_2++) {
+            triplet_str[1]=nucleotides[n_2];
+            for (unsigned n_3{0}; n_3 < 4; n_3++) {
+                triplet_str[2]=nucleotides[n_3];
+                codon_to_aa[triplet_to_codon(n_1,n_2,n_3)] = aa_char_to_aa(triplet_str_to_aa_char[triplet_str], amino_acids);
+            }
+        }
+    }
+    return codon_to_aa;
+}
+
+array<int, 64> const codon_to_aa_vector(build_codon_to_aa_vector(triplet_str_to_aa_char, amino_acids));
+
 // Random generator engine with seed 0
 default_random_engine re(0);
 
@@ -86,19 +162,20 @@ default_random_engine re(0);
 class Sequence_dna {
 private:
     const unsigned length; // The DNA sequence length
-    vector<unsigned char> dna_seq; // The DNA sequence string (contains only A,T,G and C)
-    Matrix4d mutation_rate; // The matrix of mutation rates between nucleotides
+    vector<int> codon_seq; // The DNA sequence string (contains only A,T,G and C)
+    Matrix<double, 4, 4> mutation_rate_matrix; // The matrix of mutation rates between nucleotides
+    vector<double> aa_fitness_profil; // The fitness profil of amino-acids
 
 public:
     // Constructor of Sequence_dna
-    Sequence_dna(const unsigned len) : length{len}, dna_seq(len, 0) {
+    Sequence_dna(const unsigned len) : length{len}, codon_seq(len, 0), aa_fitness_profil(21, 0.) {
         // Length is the size of the DNA sequence
 
         // Uniform random generator between 0 (included) and 3 (included) for assigning nucleotides
-        uniform_int_distribution<unsigned char> unif_int(0, 3);
+        uniform_int_distribution<unsigned char> unif_int(0, 63);
 
         for (unsigned i{0}; i < length; i++) {
-            dna_seq[i] = unif_int(re);
+            codon_seq[i] = unif_int(re);
         }
 
         // Uniform random generator between 0. and 1. for assigning mutation rates
@@ -109,59 +186,77 @@ public:
             for (unsigned to{0}; to < 4; to++) { // For each nucleotide (to)
                 // Assign random mutation rates if their is really a mutation (not from G to G for example)
                 if (from != to) {
-                    mutation_rate(from, to) = unif_real(re);
-                    total -= mutation_rate(from, to);
+                    mutation_rate_matrix(from, to) = unif_real(re);
+                    total -= mutation_rate_matrix(from, to);
                 }
             }
-            mutation_rate(from, from) = total;
+            mutation_rate_matrix(from, from) = total;
         }
-    }
 
-    // Is Sequence_dna a coding sequence ?
-    bool is_coding() const { return length % 3 == 0; }
+        for (unsigned aa_index{0}; aa_index < 20; aa_index++) {
+            aa_fitness_profil[aa_index] = unif_real(re);
+        }
+
+    }
 
     // Translate the DNA sequence to amino-acid sequence
     string translate() const {
-        // Assert that the sequence is a multiple of 3.
-        if (!is_coding()) { throw logic_error("The DNA sequence is not coding (not a multiple of 3)"); }
+        string protein(length, ' ');
 
-        // The amino-acid sequence is 3 times shorter than the DNA sequence
-        unsigned protein_size{length / 3};
-        string protein(protein_size, ' ');
-        string codon(3, ' ');
-
-        for (unsigned i{0}; i < protein_size; i++) {
-            // Use the codon_table to translate codon to amino-acid
-            for (unsigned n{0}; n < 3; n++) {
-                codon[n] = nucleotides[dna_seq[3 * i + n]];
-            }
-            protein[i] = codon_table[codon];
+        for (unsigned i{0}; i < length; i++) {
+            // Use the codon_to_aa_vector to translate codon to amino-acid
+            protein[i] = amino_acids[codon_to_aa_vector[codon_seq[i]]];
         }
 
         return protein; // return the amino-acid sequence as a string
     }
 
+    double substitution_rate(int codon_from, int codon_to, int n_from, int n_to) {
+        double rate_fixation{1.};
+        double s{0};
+
+        if (codon_to_aa_vector[codon_to] == 20){
+            rate_fixation=0.;
+        } else if (codon_from != codon_to){
+            s = aa_fitness_profil[codon_to_aa_vector[codon_to]] - aa_fitness_profil[codon_to_aa_vector[codon_from]];
+            if (s==.0){
+                rate_fixation=1;
+            } else {
+                rate_fixation=s/(1-exp(-s));
+            }
+        } else {
+            rate_fixation = 1.;
+        }
+
+        return rate_fixation * mutation_rate_matrix(n_from, n_to);
+    }
+
     double next_substitution(double &time_left) {
 
         // The number of transitions possible is 4 times the sequence length (4 nucleotides possible per position)
-        unsigned nbr_transitions{4 * length};
+        unsigned nbr_transitions{9 * length};
 
         // Initialize the vector of transition rates at 0
-        vector<double> transition_rates(nbr_transitions, 0.);
+        vector<double> transition_rates(nbr_transitions, 0);
 
         // Initialize the total sum of transition rates at 0
         double total_transition_rates{0.};
 
-        for (unsigned n{0}; n < length; n++) { // For all indices of the sequence length
+        array<tuple<int, int, int>, 9> neighbors;
+        int codon_from{0}, codon_to{0}, n_from{0}, n_to{0};
 
-            for (unsigned t{0}; t < 4; t++) { // For all possible transitions
+        for (unsigned n{0}; n < length; n++) { // For all indices of the sequence length
+            codon_from = codon_seq[n];
+            neighbors = codon_to_neighbors_vector[codon_from];
+            for (unsigned tr{0}; tr<9; tr++) { // For all possible transitions
                 // Don't count if transition to the same nucleotide as already present
-                if (t != dna_seq[n]) {
-                    // Assign to the transition rates the mutation rate given by the matrix
-                    transition_rates[4 * n + t] = mutation_rate(dna_seq[n], t);
-                    // Increment the total sum of transition rates using the mutation rate 2D array
-                    total_transition_rates += transition_rates[4 * n + t];
-                }
+                tie(codon_to, n_from, n_to) = neighbors[tr];
+
+                // Assign to the transition rates given by the method substitution rate
+                transition_rates[9 * n + tr] = substitution_rate(codon_from, codon_to, n_from, n_to);
+                // Increment the total sum of transition rates using the mutation rate 2D array
+                total_transition_rates += transition_rates[9 * n + tr];
+
             }
         }
 
@@ -187,7 +282,9 @@ public:
             }
 
             // Mutate the chosen nucleotide with the transition given by the loop break
-            dna_seq[index / 4] = (unsigned char) (index % 4);
+            neighbors = codon_to_neighbors_vector[codon_seq[index / 9]];
+            tie(codon_to, n_from, n_to) = neighbors[index % 9];
+            codon_seq[index / 9] = codon_to;
 
         } else if (time_left < 0.) {
             time_left = 0.;
@@ -201,17 +298,35 @@ public:
         }
     }
 
+
+
     // Generate substitutions until equilibrium by calculating explicitly the equilibrium (fast)
     void burn_in_fast() {
-        for (unsigned n{0}; n < length; n++) { // For all indices of the sequence length
+        Matrix64x64 codon_matrix(Matrix64x64::Zero());
+        array<tuple<int, int, int>, 9> neighbors;
+        int codon_to{0}, n_from{0}, n_to{0};
 
-            Matrix4d mtranspose{mutation_rate.transpose()};
-            FullPivLU<Matrix4d> lu_decomp{mtranspose};
-            Vector4d kernel{lu_decomp.kernel()};
+        for (unsigned codon_from{0}; codon_from < 64; codon_from++) {
+            neighbors = codon_to_neighbors_vector[codon_from];
+            double total{0};
+            for (unsigned tr{0}; tr<9; tr++) { // For all possible transitions
+                // Don't count if transition to the same nucleotide as already present
+                tie(codon_to, n_from, n_to) = neighbors[tr];
+                codon_matrix(codon_to , codon_from) = substitution_rate(codon_from, codon_to, n_from, n_to);
+                total -= codon_matrix(codon_to, codon_from);
+                // Increment the total sum of transition rates using the mutation rate 2D array
+            }
+            codon_matrix(codon_from, codon_from) = total;
+        }
+
+        FullPivLU<Matrix64x64> lu_decomp(codon_matrix);
+        Vector64 kernel(lu_decomp.kernel());
+
+        for (unsigned n{0}; n < length; n++) { // For all indices of the sequence length
 
             // Initialize the total sum of transition rates at 0
             double total_transition_rates{0.};
-            for (unsigned to{0}; to < 4; to++) { // For each nucleotide (to)
+            for (unsigned to{0}; to < 64; to++) { // For each nucleotide (to)
                 // Increment the total sum of transition rates using the marginal transition rates
                 total_transition_rates += kernel(to);
             }
@@ -221,8 +336,8 @@ public:
             double random_cumulative_transition_rates = unif(re);
             double cumulative_transition_rates{0.};
 
-            unsigned index{0};
-            for (unsigned m{0}; m < 4; m++) {
+            int index{0};
+            for (unsigned m{0}; m < 64; m++) {
                 // Iterate through the cumulative transition rates and break the loop when it is greater than...
                 // ...the random cumulative transition rates
                 cumulative_transition_rates += kernel(m);
@@ -233,25 +348,29 @@ public:
             }
 
             // Mutate the nucleotide with the transition given by the loop break
-            dna_seq[n] = (unsigned char) index;
+            codon_seq[n] = index;
         }
     }
 
     // Get attribute method for the DNA string
-    vector<unsigned char> get_dna() const { return dna_seq; }
+    vector<int> get_codon_seq() const { return codon_seq; }
 
     // Get attribute method for the DNA string
     string get_dna_str() const {
-        string dna_str(length, ' ');
+        string dna_str(length * 3, ' ');
+        int n_1{0}, n_2{0}, n_3{0};
         for (unsigned i{0}; i < length; i++) {
-            dna_str[i] = nucleotides[dna_seq[i]];
+            tie(n_1, n_2, n_3) = codon_to_triplet_vector[codon_seq[i]];
+            dna_str[3*i] = nucleotides[n_1];
+            dna_str[3*i+1] = nucleotides[n_2];
+            dna_str[3*i+2] = nucleotides[n_3];
         }
         return dna_str; // return the DNA sequence as a string
     }
 
     // Set attribute method for the DNA string
-    void set_dna(vector<unsigned char> const dna) {
-        dna_seq = dna;
+    void set_codon_seq(vector<int> const codon) {
+        codon_seq = codon;
     }
 };
 
@@ -305,7 +424,7 @@ public:
         } else {
             // If the node is internal, iterate through the direct children
             for (auto child : children) {
-                child.sequence_dna.set_dna(sequence_dna.get_dna());
+                child.sequence_dna.set_codon_seq(sequence_dna.get_codon_seq());
                 child.traverse();
             }
         }
