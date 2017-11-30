@@ -3,13 +3,17 @@
 #include <array>
 #include <map>
 #include <random>
+#include <iomanip>
+
+using namespace std;
+double epsilon = numeric_limits<double>::epsilon();
+
 #include "Eigen/Dense"
 
 using namespace Eigen;
-typedef Matrix<double, 64, 64> Matrix64x64;
-typedef Matrix<double, 64, 1> Vector64;
 
-using namespace std;
+typedef Matrix<double, 64, 64> Matrix64x64;
+typedef Matrix<double, 4, 4> Matrix4x4;
 
 // Definitions:
 // Nucleotide: a char from 0 to 3 (included) encoding one of the nucleotide (ATGC).
@@ -21,7 +25,7 @@ using namespace std;
 //                                - in 3rd position the nucleotide after mutation.
 
 // String of all nucleotides.
-string const nucleotides{"ATGC"};
+string const nucleotides{"ACGT"};
 
 // Function to map a triplet of 3 nucleotides (1st, 2nd and 3rd positions) to the corresponding codon.
 // n_1 : the nucleotide in 1st position
@@ -225,16 +229,17 @@ private:
     vector<char> codon_seq;
 
     // The matrix of mutation rates between nucleotides.
-    Matrix<double, 4, 4> mutation_rate_matrix;
+    Matrix4x4 mutation_rate_matrix;
 
     // The fitness profil of amino-acids.
-    vector<double> aa_fitness_profil;
+    array<double, 20> aa_fitness_profil;
 
 public:
     // Constructor of Sequence_dna.
     // len: the size of the DNA sequence.
-    Sequence_dna(const unsigned len) : length{len}, codon_seq(len, 0), aa_fitness_profil(21, 0.) {
+    Sequence_dna(const unsigned len) : length{len}, codon_seq(len, 0) {
 
+        // Initialize randomly the codon sequence.
         // Uniform random generator between 0 (included) and 63 (included) for assigning codons.
         uniform_int_distribution<char> unif_int(0, 63);
 
@@ -243,28 +248,8 @@ public:
             codon_seq[codon] = unif_int(re);
         }
 
-        // Uniform random generator between 0. and 1. for assigning mutation rates.
-        uniform_real_distribution<double> unif_real(0., 1);
-
-        // For each original nucleotide.
-        for (char from{0}; from < 4; from++) {
-            double total{0};
-            // For each mutated nucleotide.
-            for (char to{0}; to < 4; to++) { 
-                // Assign randomly mutation rates if their is really a mutation (not from G to G for example).
-                if (from != to) {
-                    mutation_rate_matrix(from, to) = unif_real(re);
-                    total -= mutation_rate_matrix(from, to);
-                }
-            }
-            mutation_rate_matrix(from, from) = total;
-        }
-
-        // Assign randomly the fitness of amino-acids.
-        for (char aa_index{0}; aa_index < 20; aa_index++) {
-            aa_fitness_profil[aa_index] = unif_real(re);
-        }
-
+        mutation_rate_matrix.Zero();
+        aa_fitness_profil.fill(0.);
     }
 
     // Method translating the codon sequence to amino-acid sequence.
@@ -295,14 +280,14 @@ public:
         // Note that, if the mutated and original amino-acids are synonymous, the rate of fixation is 1.
         if (codon_to_aa_array[codon_to] == 20) {
             rate_fixation = 0.;
-        } else if (codon_from != codon_to) {
+        } else if (codon_to_aa_array[codon_from] != codon_to_aa_array[codon_to]) {
             // Selective strength between the mutated and original amino-acids.
-            double s{0};
+            double s{0.};
             s = aa_fitness_profil[codon_to_aa_array[codon_to]] - aa_fitness_profil[codon_to_aa_array[codon_from]];
 
             // If the selective strength is 0, the rate of fixation is neutral.
             // Else, the rate of fixation is computed using population genetic formulas (Kimura).
-            if (s == .0) {
+            if (fabs(s) <= epsilon) {
                 rate_fixation = 1;
             } else {
                 rate_fixation = s / (1 - exp(-s));
@@ -401,11 +386,13 @@ public:
     void at_equilibrium() {
 
         // Matrix of substitution rates between codons.
-        Matrix64x64 codon_matrix(Matrix64x64::Zero());
+        Matrix64x64 codon_matrix;
+        codon_matrix.Zero();
 
         // For each possible codon before mutation.
         for (char codon_from{0}; codon_from < 64; codon_from++) {
 
+            //cout << "Codon " << int(codon_from)  << " coding for " << int(codon_to_aa_array[codon_from]) << " with fitness " << aa_fitness_profil[codon_to_aa_array[codon_from]] << endl ;
             // Array of neighbors of the codon (codons differing by only 1 mutation).
             array<tuple<char, char, char>, 9> neighbors = codon_to_neighbors_array[codon_from];
 
@@ -421,7 +408,9 @@ public:
 
                 // Assign the substitution rate given by the method substitution rate.
                 // Note that the matrix is transposed !
-                codon_matrix(codon_to, codon_from) = substitution_rate(codon_from, codon_to, n_from, n_to);
+                if (codon_to_aa_array[codon_to] != 20) {
+                    codon_matrix(codon_to, codon_from) = mutation_rate_matrix(n_from, n_to);
+                }
 
                 // Increment the total rate of substitutions.
                 total -= codon_matrix(codon_to, codon_from);
@@ -429,10 +418,25 @@ public:
             codon_matrix(codon_from, codon_from) = total;
         }
 
+        // cout << "The substitution matrix " << endl;
+        // cout << setprecision(2) << codon_matrix.transpose() << endl;
+
         // Compute the kernel of the substitution rate matrix.
         // This kernel is a vector of the codon frequencies (not normalized to 1) at equilibrium.
-        FullPivLU<Matrix64x64> lu_decomp(codon_matrix);
-        Vector64 codon_frequencies(lu_decomp.kernel());
+        Matrix<double, 64, Dynamic> kernel = codon_matrix.fullPivLu().kernel();
+        Matrix<double, 64, 1> codon_frequencies;
+
+        cout << kernel.transpose() << endl;
+        if (kernel.cols() > 1) {
+            cout << "The kernel has " << kernel.cols() << " dimensions, this is weird ! " << endl;
+            uniform_int_distribution<unsigned> unif_int(0, unsigned(kernel.cols()) - 1);
+            unsigned chosen_row = unif_int(re);
+            codon_frequencies = kernel.col(chosen_row);
+
+        } else {
+            codon_frequencies = kernel.col(0);
+        }
+
 
         // For each codon of the sequence.
         for (unsigned codon{0}; codon < length; codon++) {
@@ -443,6 +447,8 @@ public:
             // For each codon frequency of the vector of the codon frequencies.
             for (char codon_frequency{0}; codon_frequency < 64; codon_frequency++) {
 
+
+                codon_frequencies(codon_frequency) *= exp(aa_fitness_profil[codon_to_aa_array[codon_frequency]]);
                 // Increment the total sum of equilibrium frequencies.
                 total_frequencies += codon_frequencies(codon_frequency);
             }
@@ -473,6 +479,22 @@ public:
     // Set attribute method for the codon sequence.
     void set_codon_seq(vector<char> const codon) {
         codon_seq = codon;
+    }
+
+    // Get attribute method for the mutation rate matrix.
+    Matrix4x4 get_mutation_rate() const { return mutation_rate_matrix; }
+
+    // Set attribute method for the mutation rate matrix.
+    void set_mutation_rate(Matrix4x4 const mutation_rate) {
+        mutation_rate_matrix = mutation_rate;
+    }
+
+    // Get attribute method for the amino-acid fitness profil.
+    array<double, 20> get_fitness_profil() const { return aa_fitness_profil; }
+
+    // Set attribute method for the amino-acid fitness profil.
+    void set_fitness_profil(array<double, 20> const fitness_profil) {
+        aa_fitness_profil = fitness_profil;
     }
 
     // Method returning the DNA string corresponding to the codon sequence.
@@ -547,9 +569,17 @@ public:
             // If the node is internal, iterate through the direct children.
             for (auto child : children) {
                 child.sequence_dna.set_codon_seq(sequence_dna.get_codon_seq());
+                child.sequence_dna.set_mutation_rate(sequence_dna.get_mutation_rate());
+                child.sequence_dna.set_fitness_profil(sequence_dna.get_fitness_profil());
                 child.traverse();
             }
         }
+    }
+
+    // Set method for the parameters of evolution of the sequence
+    void set_evolution_parameters(Matrix4x4 mutation_rate, array<double, 20> fitness_profil) {
+        sequence_dna.set_mutation_rate(mutation_rate);
+        sequence_dna.set_fitness_profil(fitness_profil);
     }
 
     // Set the the DNA sequence to the mutation-selection equilibrium.
@@ -627,8 +657,29 @@ int main() {
                     ",((Capra_hircus:0.011884,Capra_aegagrus:0.011884)'0.7-1.9':0.044887,Ovis_aries:0.056771)'4.6-7"
                     ".0':0.126113)'13.6-25.4':0.455399,Sus_scrofa:0.638283)'63.1-64.8':0.167041)'75.6-88.1':0.038697"
                     ")'79.1-92.4':0.170222)'92.5-115.2'"};
-
     Node root(mammals, 300);
+
+    Matrix4x4 mutation_rate;
+    double mu = 1 * pow(10, -1);
+    double lambda = 3;
+    mutation_rate << 0, 1, 1, lambda,
+            lambda, 0, 1, lambda,
+            lambda, 1, 0, lambda,
+            lambda, 1, 1, 0;
+    mutation_rate *= mu;
+    mutation_rate -= mutation_rate.rowwise().sum().asDiagonal();
+    cout << mutation_rate << endl;
+
+    array<double, 20> fitness_profil = {1.7830905565995203, -8.88516749902602, -14.972475863529304, -20.95780726937854, -13.73497016606984, -19.020319063311945, -14.160471912103915, -13.643172537635007, -13.223562462912703, -15.62622712780431, -15.830573980120626, -12.964254177962768, -0.09239213906124488, -14.003529892427391, -10.286389894899152, 4.599545479312862, 0.0, -7.503309417915666, -2.421609962963574, -4.018132770162478};
+
+    array<double, 20> pic_fitness;
+    pic_fitness.fill(-10);
+    pic_fitness[5] = 1.;
+
+    array<double, 20> flat_fitness;
+    flat_fitness.fill(1.);
+
+    root.set_evolution_parameters(mutation_rate, pic_fitness);
     root.at_equilibrium();
     root.traverse();
 
