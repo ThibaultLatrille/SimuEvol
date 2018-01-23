@@ -42,7 +42,7 @@ char triplet_to_codon(char n_1, char n_2, char n_3) {
 
 // Function to build an array mapping each of the 64 codons to their respective triplet.
 array<array<char, 3>, 64> build_codon_to_triplet_array() {
-    array<array<char, 3>, 64> codon_to_triplet_vec;
+    array<array<char, 3>, 64> codon_to_triplet_vec = {};
 
     for (char n_1{0}; n_1 < 4; n_1++) {
         // n_1 is the first position of the triplet.
@@ -192,7 +192,7 @@ array<char, 64> build_codon_to_aa_array(map<string, char> &triplet_str_to_aa_cha
                                         const string &amino_acids,
                                         array<array<char, 3>, 64> &codon_to_triplet) {
     // Array mapping each of the 64 codons to their respective amino-acid.
-    array<char, 64> codon_to_aa;
+    array<char, 64> codon_to_aa = {};
 
     // For each codon
     for (char codon{0}; codon < 64; codon++) {
@@ -237,7 +237,7 @@ private:
 public:
     // Constructor of Sequence_dna.
     // len: the size of the DNA sequence.
-    Sequence_dna(const unsigned len) : length{len}, codon_seq(len, 0) {
+    explicit Sequence_dna(const unsigned len) : length{len}, codon_seq(len, 0), aa_fitness_profil{} {
 
         // Initialize randomly the codon sequence.
         // Uniform random generator between 0 (included) and 63 (included) for assigning codons.
@@ -249,7 +249,6 @@ public:
         }
 
         mutation_rate_matrix.Zero();
-        aa_fitness_profil.fill(0.);
     }
 
     // Method translating the codon sequence to amino-acid sequence.
@@ -477,7 +476,7 @@ public:
     vector<char> get_codon_seq() const { return codon_seq; }
 
     // Set attribute method for the codon sequence.
-    void set_codon_seq(vector<char> const codon) {
+    void set_codon_seq(vector<char> const &codon) {
         codon_seq = codon;
     }
 
@@ -485,7 +484,7 @@ public:
     Matrix4x4 get_mutation_rate() const { return mutation_rate_matrix; }
 
     // Set attribute method for the mutation rate matrix.
-    void set_mutation_rate(Matrix4x4 const mutation_rate) {
+    void set_mutation_rate(Matrix4x4 const& mutation_rate) {
         mutation_rate_matrix = mutation_rate;
     }
 
@@ -493,7 +492,7 @@ public:
     array<double, 20> get_fitness_profil() const { return aa_fitness_profil; }
 
     // Set attribute method for the amino-acid fitness profil.
-    void set_fitness_profil(array<double, 20> const fitness_profil) {
+    void set_fitness_profil(array<double, 20> const& fitness_profil) {
         aa_fitness_profil = fitness_profil;
     }
 
@@ -532,15 +531,15 @@ private:
 public:
 
     // Constructor
-    Node(const string &name, const string &len, const string &newick, const Sequence_dna &seq) :
-            name{name}, length{stod(len)}, newick{newick}, sequence_dna{seq} {
+    Node(string name, const string &len, string newick, Sequence_dna seq) :
+            name{move(name)}, length{stod(len)}, newick{move(newick)}, sequence_dna{move(seq)} {
 
         // Parse the newick tree descending of the node.
         parse_newick();
     }
 
-    Node(const string &newick, const unsigned length) :
-            name{"Root"}, length{0.}, newick{newick}, sequence_dna(length) {
+    Node(string newick, const unsigned length) :
+            name{"Root"}, length{0.}, newick{move(newick)}, sequence_dna(length) {
 
         // Parse the newick tree descending of the node.
         parse_newick();
@@ -567,7 +566,7 @@ public:
             cout << sequence_dna.get_dna_str() << endl;
         } else {
             // If the node is internal, iterate through the direct children.
-            for (auto child : children) {
+            for (auto& child : children) {
                 child.sequence_dna.set_codon_seq(sequence_dna.get_codon_seq());
                 child.sequence_dna.set_mutation_rate(sequence_dna.get_mutation_rate());
                 child.sequence_dna.set_fitness_profil(sequence_dna.get_fitness_profil());
@@ -577,7 +576,7 @@ public:
     }
 
     // Set method for the parameters of evolution of the sequence
-    void set_evolution_parameters(Matrix4x4 mutation_rate, array<double, 20> fitness_profil) {
+    void set_evolution_parameters(Matrix4x4 const &mutation_rate, array<double, 20> const &fitness_profil) {
         sequence_dna.set_mutation_rate(mutation_rate);
         sequence_dna.set_fitness_profil(fitness_profil);
     }
@@ -598,7 +597,7 @@ public:
             // While the current position is lower than the size of the string, their is at least one node to parse.
             while (position < max_position) {
                 // 'subtree' is the left hand side of the node name, it can be a subtree or nothing if the node is a leaf.
-                string subtree{""};
+                string subtree{};
                 if (newick[position] == '(') {
 
                     size_t postpoint{position};
@@ -619,9 +618,9 @@ public:
                 }
 
                 // 'name_suffix' contains the name of the node and the branch length.
-                string name_suffix{""};
+                string name_suffix{};
 
-                size_t next_sep = newick.substr(position).find(",");
+                size_t next_sep = newick.substr(position).find(',');
                 if (next_sep == string::npos) {
                     name_suffix = newick.substr(position);
                     position = max_position;
@@ -631,9 +630,9 @@ public:
                 }
 
                 // 'length' contains the name of the node.
-                string length{""};
+                string length{};
                 // 'name' contains the branch length of the node.
-                string name{""};
+                string name{};
                 size_t ddot = name_suffix.rfind(':');
                 if (ddot != string::npos) {
                     length = name_suffix.substr(ddot + 1);
@@ -672,14 +671,14 @@ int main() {
 
     array<double, 20> fitness_profil = {1.7830905565995203, -8.88516749902602, -14.972475863529304, -20.95780726937854, -13.73497016606984, -19.020319063311945, -14.160471912103915, -13.643172537635007, -13.223562462912703, -15.62622712780431, -15.830573980120626, -12.964254177962768, -0.09239213906124488, -14.003529892427391, -10.286389894899152, 4.599545479312862, 0.0, -7.503309417915666, -2.421609962963574, -4.018132770162478};
 
-    array<double, 20> pic_fitness;
+    array<double, 20> pic_fitness = {};
     pic_fitness.fill(-10);
     pic_fitness[5] = 1.;
 
-    array<double, 20> flat_fitness;
+    array<double, 20> flat_fitness = {};
     flat_fitness.fill(1.);
 
-    root.set_evolution_parameters(mutation_rate, pic_fitness);
+    root.set_evolution_parameters(mutation_rate, fitness_profil);
     root.at_equilibrium();
     root.traverse();
 
