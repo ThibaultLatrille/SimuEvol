@@ -12,9 +12,9 @@ double epsilon = numeric_limits<double>::epsilon();
 
 using namespace Eigen;
 
-typedef Matrix<double, 64, 64> Matrix64x64;
 typedef Matrix<double, 4, 4> Matrix4x4;
 
+#define DOCOPT_HEADER_ONLY
 #include "docopt.cpp/docopt.h"
 
 // Definitions:
@@ -44,7 +44,7 @@ char triplet_to_codon(char n_1, char n_2, char n_3) {
 
 // Function to build an array mapping each of the 64 codons to their respective triplet.
 array<array<char, 3>, 64> build_codon_to_triplet_array() {
-    array<array<char, 3>, 64> codon_to_triplet_vec = {};
+    array<array<char, 3>, 64> codon_to_triplet_vec = {0};
 
     for (char n_1{0}; n_1 < 4; n_1++) {
         // n_1 is the first position of the triplet.
@@ -79,7 +79,7 @@ build_codon_to_neighbors_array(array<array<char, 3>, 64> &codon_to_triplet) {
             // The original nucleotide which is going to be mutated.
             char n_from = triplet_from[position];
 
-            // For each possible mutation (3 possible).
+            // For each possible mutation (3 possible mutations).
             for (char mutation{0}; mutation < 3; mutation++) {
                 // The mutated nucleotide.
                 char n_to = n_from;
@@ -103,9 +103,9 @@ build_codon_to_neighbors_array(array<array<char, 3>, 64> &codon_to_triplet) {
 }
 
 // Array mapping each of the 64 codons to their respective triplet.
-// The set of neighbors contains the 9 codons which differ by only 1 nucleotide (3 positions * 3 possible mutations).
 auto codon_to_triplet_array = build_codon_to_triplet_array();
 
+// The set of neighbors contains the 9 codons which differ by only 1 nucleotide (3 positions * 3 possible mutations).
 // Array which maps each of the 64 codons to the set of their 9 respective neighbors.
 auto const codon_to_neighbors_array = build_codon_to_neighbors_array(codon_to_triplet_array);
 
@@ -194,7 +194,7 @@ array<char, 64> build_codon_to_aa_array(map<string, char> &triplet_str_to_aa_cha
                                         const string &amino_acids,
                                         array<array<char, 3>, 64> &codon_to_triplet) {
     // Array mapping each of the 64 codons to their respective amino-acid.
-    array<char, 64> codon_to_aa = {};
+    array<char, 64> codon_to_aa = {0};
 
     // For each codon
     for (char codon{0}; codon < 64; codon++) {
@@ -239,17 +239,7 @@ private:
 public:
     // Constructor of Sequence_dna.
     // len: the size of the DNA sequence.
-    explicit Sequence_dna(const unsigned len) : length{len}, codon_seq(len, 0), aa_fitness_profiles{} {
-
-        // Initialize randomly the codon sequence.
-        // Uniform random generator between 0 (included) and 63 (included) for assigning codons.
-        uniform_int_distribution<char> unif_int(0, 63);
-
-        // Assign each codon randomly.
-        for (char codon{0}; codon < length; codon++) {
-            codon_seq[codon] = unif_int(re);
-        }
-
+    explicit Sequence_dna(const unsigned len) : length{len}, codon_seq(len, 0), aa_fitness_profiles{0} {
         mutation_rate_matrix.Zero();
     }
 
@@ -257,10 +247,10 @@ public:
     string translate() const {
         string protein(length, ' ');
 
-        // For each codon
-        for (unsigned codon{0}; codon < length; codon++) {
-            // Use the codon_to_aa_array to translate codon to amino-acid.
-            protein[codon] = amino_acids[codon_to_aa_array[codon_seq[codon]]];
+        // For each site
+        for (unsigned site{0}; site < length; site++) {
+            // Use the codon_to_aa_array to translate site to amino-acid.
+            protein[site] = amino_acids[codon_to_aa_array[codon_seq[site]]];
         }
 
         return protein; // return the amino-acid sequence as a string.
@@ -315,11 +305,11 @@ public:
         // Sum of substitution rates.
         double total_substitution_rates{0.};
 
-        // For all codon of the sequence.
-        for (unsigned codon_index{0}; codon_index < length; codon_index++) {
+        // For all site of the sequence.
+        for (unsigned site{0}; site < length; site++) {
             // Codon original before substitution.
 
-            char codon_from = codon_seq[codon_index];
+            char codon_from = codon_seq[site];
 
             // Array of neighbors of the original codon (codons differing by only 1 mutation).
             array<tuple<char, char, char>, 9> neighbors = codon_to_neighbors_array[codon_from];
@@ -332,9 +322,9 @@ public:
                 tie(codon_to, n_from, n_to) = neighbors[neighbor];
 
                 // Assign the substitution rate given by the method substitution rate.
-                substitution_rates[9 * codon_index + neighbor] = substitution_rate(codon_from, codon_to, n_from, n_to, aa_fitness_profiles[codon_index]);
+                substitution_rates[9 * site + neighbor] = substitution_rate(codon_from, codon_to, n_from, n_to, aa_fitness_profiles[site]);
                 // Increment the sum of substitution rates
-                total_substitution_rates += substitution_rates[9 * codon_index + neighbor];
+                total_substitution_rates += substitution_rates[9 * site + neighbor];
 
             }
         }
@@ -387,72 +377,48 @@ public:
     // Set the the DNA sequence to the mutation-selection equilibrium.
     void at_equilibrium() {
 
-        // Matrix of substitution rates between codons.
-        Matrix64x64 codon_matrix;
-        codon_matrix.Zero();
-
-        // For each possible codon before mutation.
-        for (char codon_from{0}; codon_from < 64; codon_from++) {
-
-            // Array of neighbors of the codon (codons differing by only 1 mutation).
-            array<tuple<char, char, char>, 9> neighbors = codon_to_neighbors_array[codon_from];
-
-            // Total rate of substitution from codon to all neighbors.
-            double total{0};
-
-            // For all neighbors.
-            for (unsigned neighbor{0}; neighbor < 9; neighbor++) {
-
-                // Codon after mutation, Nucleotide original and Nucleotide after mutation.
-                char codon_to{0}, n_from{0}, n_to{0};
-                tie(codon_to, n_from, n_to) = neighbors[neighbor];
-
-                // Assign the substitution rate given by the method substitution rate.
-                // Note that the matrix is transposed !
-                if (codon_to_aa_array[codon_to] != 20) {
-                    codon_matrix(codon_to, codon_from) = mutation_rate_matrix(n_from, n_to);
-                }
-
-                // Increment the total rate of substitutions.
-                total -= codon_matrix(codon_to, codon_from);
-            }
-            codon_matrix(codon_from, codon_from) = total;
-        }
-
-        // Compute the kernel of the substitution rate matrix.
-        // This kernel is a vector of the codon frequencies (not normalized to 1) at equilibrium.
-        Matrix<double, 64, Dynamic> kernel = codon_matrix.fullPivLu().kernel();
-        Matrix<double, 64, 1> codon_frequencies;
+        // Compute the kernel of the mutation-rate matrix.
+        // This kernel is a vector of the nucleotides frequencies (not normalized to 1) at equilibrium.
+        Matrix<double, 4, Dynamic> kernel = mutation_rate_matrix.transpose().fullPivLu().kernel();
+        Matrix<double, 4, 1> nuc_frequencies;
 
         if (kernel.cols() > 1) {
-            cout << "The kernel has " << kernel.cols() << " dimensions, this is weird ! " << endl;
+            cerr << "The kernel has " << kernel.cols() << " dimensions, this is weird ! " << endl;
             uniform_int_distribution<unsigned> unif_int(0, unsigned(kernel.cols()) - 1);
             unsigned chosen_row = unif_int(re);
-            codon_frequencies = kernel.col(chosen_row);
+            nuc_frequencies = kernel.col(chosen_row);
 
         } else {
-            codon_frequencies = kernel.col(0);
+            nuc_frequencies = kernel.col(0);
         }
 
+        array<double, 64> codon_frequencies{0};
 
-        // For each codon of the sequence.
-        for (unsigned codon{0}; codon < length; codon++) {
+        // For each site of the sequence.
+        for (unsigned site{0}; site < length; site++) {
 
             // Initialize the total sum of equilibrium frequency at 0.
             double total_frequencies{0.};
 
-            // For each codon frequency of the vector of the codon frequencies.
-            for (char codon_index{0}; codon_index < 64; codon_index++) {
+            // For each site of the vector of the site frequencies.
+            for (char codon{0}; codon < 64; codon++) {
+                double codon_freq{1.};
 
-                if (codon_to_aa_array[codon_index] != 20) {
-                    codon_frequencies(codon_index) *= exp(aa_fitness_profiles[codon][codon_to_aa_array[codon_index]]);
+                // Translate the site to a triplet of DNA nucleotides
+                array<char, 3> triplet = codon_to_triplet_array[codon];
+                for (char position{0}; position < 3; position++) {
+                    codon_freq *= nuc_frequencies(triplet[position]);
+                }
+
+                if (codon_to_aa_array[codon] != 20) {
+                    codon_frequencies[codon] = exp(aa_fitness_profiles[site][codon_to_aa_array[codon]]);
                 } else {
-                    codon_frequencies(codon_index) = 0.;
+                    codon_frequencies[codon] = 0.;
                 }
 
 
                 // Increment the total sum of equilibrium frequencies.
-                total_frequencies += codon_frequencies(codon_index);
+                total_frequencies += codon_frequencies[codon];
             }
 
             // Uniform random generator between 0 and the total sum of equilibrium frequencies.
@@ -463,15 +429,15 @@ public:
             char index{0};
             for (char m{0}; m < 64; m++) {
                 // Iterate through the cumulative frequencies and break the loop when it is greater than the random cumulative frequencies.
-                cumulative_frequencies += codon_frequencies(m);
+                cumulative_frequencies += codon_frequencies[m];
                 if (random_cumulative_frequencies < cumulative_frequencies) {
                     index = m;
                     break;
                 }
             }
 
-            // Substitute the codon with the substitution given by the loop break.
-            codon_seq[codon] = index;
+            // Substitute the site with the substitution given by the loop break.
+            codon_seq[site] = index;
         }
     }
 
@@ -499,16 +465,16 @@ public:
         // The DNA string is 3 times larger than the codon sequence.
         string dna_str(length * 3, ' ');
 
-        // For each codon of the sequence.
-        for (unsigned codon{0}; codon < length; codon++) {
+        // For each site of the sequence.
+        for (unsigned site{0}; site < length; site++) {
 
             // Assert there is no stop in the sequence.
-            assert(codon_to_aa_array[codon_seq[codon]] != 20);
+            assert(codon_to_aa_array[codon_seq[site]] != 20);
 
-            // Translate the codon to a triplet of DNA nucleotides
-            array<char, 3> triplet = codon_to_triplet_array[codon_seq[codon]];
+            // Translate the site to a triplet of DNA nucleotides
+            array<char, 3> triplet = codon_to_triplet_array[codon_seq[site]];
             for (char position{0}; position < 3; position++) {
-                dna_str[3 * codon + position] = nucleotides[triplet[position]];
+                dna_str[3 * site + position] = nucleotides[triplet[position]];
             }
         }
         return dna_str; // return the DNA sequence as a string.
@@ -560,7 +526,7 @@ public:
             // If the node is a leaf, return 1.
             nbr_leaves = 1;
         } else {
-            // Else if the node is internal, iterate through the direct children.
+            // Else, if the node is internal, iterate through the direct children.
             for (auto &child : children) {
                 nbr_leaves += child.nbr_leaves();
             }
@@ -670,7 +636,7 @@ string open_newick(string const &file_name) {
 }
 
 vector<array<double, 20>> open_preferences(string const &file_name) {
-    vector<array<double, 20>> fitness_profiles{};
+    vector<array<double, 20>> fitness_profiles{0};
 
     ifstream input_stream(file_name);
     if (!input_stream) cerr << "Can't open preferences file!";
@@ -682,7 +648,7 @@ vector<array<double, 20>> open_preferences(string const &file_name) {
 
     while (getline(input_stream, line)) {
 
-        array<double, 20> fitness_profil{};
+        array<double, 20> fitness_profil{0};
         string word;
         istringstream line_stream(line);
         unsigned counter{0};
