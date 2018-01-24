@@ -5,9 +5,8 @@
 #   git config --global core.excludesfile '~/.gitignore_global'
 
 *~
+/docopt.cpp/examples
 /cmake-build-debug
-a.out
-CMakeLists.txt
 .idea/
 /*.srctrlbm
 /*.srctrldb
