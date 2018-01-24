@@ -11,13 +11,15 @@ $ cd /SimuEvol
 
 ### Compile SimuEvol
 
-...to be written....
+```
+$ g++ main.cpp -std=c++14 -o SimuEvol
+```
 
 ### Run SimuEvol
 
 ```
-$ SimuEvol --help
-$ SimuEvol --protein=lactamase
+$ ./SimuEvol --help
+$ ./SimuEvol --protein=lactamase
 ```
 
 ### Authors
