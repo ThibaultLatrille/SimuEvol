@@ -3,7 +3,7 @@
 #include <array>
 #include <map>
 #include <random>
-#include <iomanip>
+#include <fstream>
 
 using namespace std;
 double epsilon = numeric_limits<double>::epsilon();
@@ -14,6 +14,8 @@ using namespace Eigen;
 
 typedef Matrix<double, 64, 64> Matrix64x64;
 typedef Matrix<double, 4, 4> Matrix4x4;
+
+#include "docopt.cpp/docopt.h"
 
 // Definitions:
 // Nucleotide: a char from 0 to 3 (included) encoding one of the nucleotide (ATGC).
@@ -108,7 +110,7 @@ auto codon_to_triplet_array = build_codon_to_triplet_array();
 auto const codon_to_neighbors_array = build_codon_to_neighbors_array(codon_to_triplet_array);
 
 // String containing the 21 amino-acids (20 + stop) for translations from index to amino-acid character
-string const amino_acids{"ARNDCQEGHILKMFPSTWYVX"};
+string const amino_acids{"ACDEFGHIKLMNPQRSTVWYX"};
 
 // Map from codons to amino-acids
 map<string, char> triplet_str_to_aa_char = {{"GCA", 'A'},
@@ -231,13 +233,13 @@ private:
     // The matrix of mutation rates between nucleotides.
     Matrix4x4 mutation_rate_matrix;
 
-    // The fitness profil of amino-acids.
-    array<double, 20> aa_fitness_profil;
 
+    // The fitness profiles of amino-acids.
+    vector<array<double, 20>> aa_fitness_profiles;
 public:
     // Constructor of Sequence_dna.
     // len: the size of the DNA sequence.
-    explicit Sequence_dna(const unsigned len) : length{len}, codon_seq(len, 0), aa_fitness_profil{} {
+    explicit Sequence_dna(const unsigned len) : length{len}, codon_seq(len, 0), aa_fitness_profiles{} {
 
         // Initialize randomly the codon sequence.
         // Uniform random generator between 0 (included) and 63 (included) for assigning codons.
@@ -270,7 +272,7 @@ public:
     // codon_to: codon mutated.
     // n_from: nucleotide original.
     // n_to: nucleotide mutated.
-    double substitution_rate(char codon_from, char codon_to, char n_from, char n_to) {
+    double substitution_rate(char codon_from, char codon_to, char n_from, char n_to, array<double, 20> fitness_profil) {
         // Rate of fixation initialized to 1 (neutral mutation)
         double rate_fixation{1.};
 
@@ -282,7 +284,7 @@ public:
         } else if (codon_to_aa_array[codon_from] != codon_to_aa_array[codon_to]) {
             // Selective strength between the mutated and original amino-acids.
             double s{0.};
-            s = aa_fitness_profil[codon_to_aa_array[codon_to]] - aa_fitness_profil[codon_to_aa_array[codon_from]];
+            s = fitness_profil[codon_to_aa_array[codon_to]] - fitness_profil[codon_to_aa_array[codon_from]];
 
             // If the selective strength is 0, the rate of fixation is neutral.
             // Else, the rate of fixation is computed using population genetic formulas (Kimura).
@@ -316,6 +318,7 @@ public:
         // For all codon of the sequence.
         for (unsigned codon_index{0}; codon_index < length; codon_index++) {
             // Codon original before substitution.
+
             char codon_from = codon_seq[codon_index];
 
             // Array of neighbors of the original codon (codons differing by only 1 mutation).
@@ -329,7 +332,7 @@ public:
                 tie(codon_to, n_from, n_to) = neighbors[neighbor];
 
                 // Assign the substitution rate given by the method substitution rate.
-                substitution_rates[9 * codon_index + neighbor] = substitution_rate(codon_from, codon_to, n_from, n_to);
+                substitution_rates[9 * codon_index + neighbor] = substitution_rate(codon_from, codon_to, n_from, n_to, aa_fitness_profiles[codon_index]);
                 // Increment the sum of substitution rates
                 total_substitution_rates += substitution_rates[9 * codon_index + neighbor];
 
@@ -391,7 +394,6 @@ public:
         // For each possible codon before mutation.
         for (char codon_from{0}; codon_from < 64; codon_from++) {
 
-            //cout << "Codon " << int(codon_from)  << " coding for " << int(codon_to_aa_array[codon_from]) << " with fitness " << aa_fitness_profil[codon_to_aa_array[codon_from]] << endl ;
             // Array of neighbors of the codon (codons differing by only 1 mutation).
             array<tuple<char, char, char>, 9> neighbors = codon_to_neighbors_array[codon_from];
 
@@ -417,15 +419,11 @@ public:
             codon_matrix(codon_from, codon_from) = total;
         }
 
-        // cout << "The substitution matrix " << endl;
-        // cout << setprecision(2) << codon_matrix.transpose() << endl;
-
         // Compute the kernel of the substitution rate matrix.
         // This kernel is a vector of the codon frequencies (not normalized to 1) at equilibrium.
         Matrix<double, 64, Dynamic> kernel = codon_matrix.fullPivLu().kernel();
         Matrix<double, 64, 1> codon_frequencies;
 
-        cout << kernel.transpose() << endl;
         if (kernel.cols() > 1) {
             cout << "The kernel has " << kernel.cols() << " dimensions, this is weird ! " << endl;
             uniform_int_distribution<unsigned> unif_int(0, unsigned(kernel.cols()) - 1);
@@ -444,12 +442,17 @@ public:
             double total_frequencies{0.};
 
             // For each codon frequency of the vector of the codon frequencies.
-            for (char codon_frequency{0}; codon_frequency < 64; codon_frequency++) {
+            for (char codon_index{0}; codon_index < 64; codon_index++) {
+
+                if (codon_to_aa_array[codon_index] != 20) {
+                    codon_frequencies(codon_index) *= exp(aa_fitness_profiles[codon][codon_to_aa_array[codon_index]]);
+                } else {
+                    codon_frequencies(codon_index) = 0.;
+                }
 
 
-                codon_frequencies(codon_frequency) *= exp(aa_fitness_profil[codon_to_aa_array[codon_frequency]]);
                 // Increment the total sum of equilibrium frequencies.
-                total_frequencies += codon_frequencies(codon_frequency);
+                total_frequencies += codon_frequencies(codon_index);
             }
 
             // Uniform random generator between 0 and the total sum of equilibrium frequencies.
@@ -472,28 +475,22 @@ public:
         }
     }
 
-    // Get attribute method for the codon sequence.
-    vector<char> get_codon_seq() const { return codon_seq; }
-
     // Set attribute method for the codon sequence.
-    void set_codon_seq(vector<char> const &codon) {
-        codon_seq = codon;
+    void set_parameters(Sequence_dna const& sequence_dna) {
+        codon_seq = sequence_dna.codon_seq;
+        mutation_rate_matrix = sequence_dna.mutation_rate_matrix;
+        aa_fitness_profiles = sequence_dna.aa_fitness_profiles;
     }
 
-    // Get attribute method for the mutation rate matrix.
-    Matrix4x4 get_mutation_rate() const { return mutation_rate_matrix; }
-
     // Set attribute method for the mutation rate matrix.
-    void set_mutation_rate(Matrix4x4 const& mutation_rate) {
+    void set_mutation_rate(Matrix4x4 const &mutation_rate) {
         mutation_rate_matrix = mutation_rate;
     }
 
-    // Get attribute method for the amino-acid fitness profil.
-    array<double, 20> get_fitness_profil() const { return aa_fitness_profil; }
-
     // Set attribute method for the amino-acid fitness profil.
-    void set_fitness_profil(array<double, 20> const& fitness_profil) {
-        aa_fitness_profil = fitness_profil;
+    void set_fitness_profiles(vector<array<double, 20>> const &fitness_profiles) {
+        assert(length == fitness_profiles.size());
+        aa_fitness_profiles = fitness_profiles;
     }
 
     // Method returning the DNA string corresponding to the codon sequence.
@@ -555,6 +552,22 @@ public:
         children.push_back(node);
     }
 
+    // Recursively iterate through the subtree and count the number of leaves.
+    unsigned nbr_leaves() {
+        unsigned nbr_leaves = 0;
+
+        if (is_leaf()) {
+            // If the node is a leaf, return 1.
+            nbr_leaves = 1;
+        } else {
+            // Else if the node is internal, iterate through the direct children.
+            for (auto &child : children) {
+                nbr_leaves += child.nbr_leaves();
+            }
+        }
+        return nbr_leaves;
+    }
+
     // Recursively iterate through the subtree.
     void traverse() {
         // Substitutions of the DNA sequence is generated.
@@ -562,23 +575,20 @@ public:
 
         if (is_leaf()) {
             // If the node is a leaf, output the DNA sequence and name.
-            cout << ">" << name << endl;
-            cout << sequence_dna.get_dna_str() << endl;
+            cout << name << " " << sequence_dna.get_dna_str() << endl;
         } else {
             // If the node is internal, iterate through the direct children.
-            for (auto& child : children) {
-                child.sequence_dna.set_codon_seq(sequence_dna.get_codon_seq());
-                child.sequence_dna.set_mutation_rate(sequence_dna.get_mutation_rate());
-                child.sequence_dna.set_fitness_profil(sequence_dna.get_fitness_profil());
+            for (auto &child : children) {
+                child.sequence_dna.set_parameters(sequence_dna);
                 child.traverse();
             }
         }
     }
 
     // Set method for the parameters of evolution of the sequence
-    void set_evolution_parameters(Matrix4x4 const &mutation_rate, array<double, 20> const &fitness_profil) {
+    void set_evolution_parameters(Matrix4x4 const &mutation_rate, vector<array<double, 20>> const &fitness_profiles) {
         sequence_dna.set_mutation_rate(mutation_rate);
-        sequence_dna.set_fitness_profil(fitness_profil);
+        sequence_dna.set_fitness_profiles(fitness_profiles);
     }
 
     // Set the the DNA sequence to the mutation-selection equilibrium.
@@ -649,17 +659,79 @@ public:
     }
 };
 
+string open_newick(string const &file_name) {
+    ifstream input_stream(file_name);
+    if (!input_stream) cerr << "Can't open newick file!";
 
-int main() {
-    string mammals{
-            "(Homo_sapiens:1.014243,(Canis_lupus_familiaris:0.844021,(Equus_caballus:0.805325,((Bos_taurus:0.182884"
-                    ",((Capra_hircus:0.011884,Capra_aegagrus:0.011884)'0.7-1.9':0.044887,Ovis_aries:0.056771)'4.6-7"
-                    ".0':0.126113)'13.6-25.4':0.455399,Sus_scrofa:0.638283)'63.1-64.8':0.167041)'75.6-88.1':0.038697"
-                    ")'79.1-92.4':0.170222)'92.5-115.2'"};
-    Node root(mammals, 300);
+    string line;
+    getline(input_stream, line);
+
+    return line;
+}
+
+vector<array<double, 20>> open_preferences(string const &file_name) {
+    vector<array<double, 20>> fitness_profiles{};
+
+    ifstream input_stream(file_name);
+    if (!input_stream) cerr << "Can't open preferences file!";
+
+    string line;
+
+    // skip the header of the file
+    getline(input_stream, line);
+
+    while (getline(input_stream, line)) {
+
+        array<double, 20> fitness_profil{};
+        string word;
+        istringstream line_stream(line);
+        unsigned counter{0};
+
+        while (getline(line_stream, word, ' ')) {
+            if (counter > 2) {
+                fitness_profil[counter - 3] = log(stod(word));
+            }
+            counter++;
+        }
+
+        fitness_profiles.push_back(fitness_profil);
+    }
+    return fitness_profiles;
+}
+
+static const char USAGE[] =
+R"(
+Usage:
+      SimuEvol [--protein=<input>]
+      SimuEvol --help
+      SimuEvol --version
+
+Options:
+-h --help           show this help message and exit
+--version           show version and exit
+--protein=<input>   specify input protein [default: gal4].
+)";
+
+int main(int argc, char* argv[]) {
+
+    auto args = docopt::docopt(USAGE,
+                             { argv + 1, argv + argc },
+                             true,               // show help if requested
+                             "SimuEvol 0.1a");  // version string
+
+    string protein{"gal4"};
+    if (args["--protein"]){
+        protein = args["--protein"].asString();
+    }
+
+    vector<array<double, 20>> fitness_profiles = open_preferences("/home/thibault/SimuEvol/data/" + protein + ".txt");
+    auto nbr_sites = static_cast<unsigned>(fitness_profiles.size());
+
+    string newick_tree = open_newick("/home/thibault/SimuEvol/data/" + protein + ".newick");
+    Node root(newick_tree, nbr_sites);
 
     Matrix4x4 mutation_rate;
-    double mu = 1 * pow(10, -1);
+    double mu = 5 * pow(10, -1);
     double lambda = 3;
     mutation_rate << 0, 1, 1, lambda,
             lambda, 0, 1, lambda,
@@ -667,19 +739,10 @@ int main() {
             lambda, 1, 1, 0;
     mutation_rate *= mu;
     mutation_rate -= mutation_rate.rowwise().sum().asDiagonal();
-    cout << mutation_rate << endl;
 
-    array<double, 20> fitness_profil = {1.7830905565995203, -8.88516749902602, -14.972475863529304, -20.95780726937854, -13.73497016606984, -19.020319063311945, -14.160471912103915, -13.643172537635007, -13.223562462912703, -15.62622712780431, -15.830573980120626, -12.964254177962768, -0.09239213906124488, -14.003529892427391, -10.286389894899152, 4.599545479312862, 0.0, -7.503309417915666, -2.421609962963574, -4.018132770162478};
-
-    array<double, 20> pic_fitness = {};
-    pic_fitness.fill(-10);
-    pic_fitness[5] = 1.;
-
-    array<double, 20> flat_fitness = {};
-    flat_fitness.fill(1.);
-
-    root.set_evolution_parameters(mutation_rate, fitness_profil);
+    root.set_evolution_parameters(mutation_rate, fitness_profiles);
     root.at_equilibrium();
+    cout << root.nbr_leaves() << " " << nbr_sites * 3 << endl;
     root.traverse();
 
     return 0;
