@@ -221,11 +221,17 @@ array<char, 64> const codon_to_aa_array = build_codon_to_aa_array(triplet_str_to
 // Random generator engine with seed 0.
 default_random_engine re(0);
 
+struct Substitution {
+    unsigned site{0};
+    char codon_from{0};
+    char codon_to{0};
+};
+
 // Class representing DNA sequence.
 class Sequence_dna {
 private:
-    // The sequence length (each position is a codon, thus the DNA sequence is 3 times greater).
-    const unsigned length;
+    // The number of sites in the sequence (each position is a codon, thus the DNA sequence is 3 times greater).
+    const unsigned nbr_sites;
 
     // The sequence of codons.
     vector<char> codon_seq;
@@ -238,17 +244,17 @@ private:
     vector<array<double, 20>> aa_fitness_profiles;
 public:
     // Constructor of Sequence_dna.
-    // len: the size of the DNA sequence.
-    explicit Sequence_dna(const unsigned len) : length{len}, codon_seq(len, 0), aa_fitness_profiles{0} {
+    // size: the size of the DNA sequence.
+    explicit Sequence_dna(const unsigned size) : nbr_sites{size}, codon_seq(size, 0), aa_fitness_profiles{0} {
         mutation_rate_matrix.Zero();
     }
 
     // Method translating the codon sequence to amino-acid sequence.
     string translate() const {
-        string protein(length, ' ');
+        string protein(nbr_sites, ' ');
 
         // For each site
-        for (unsigned site{0}; site < length; site++) {
+        for (unsigned site{0}; site < nbr_sites; site++) {
             // Use the codon_to_aa_array to translate site to amino-acid.
             protein[site] = amino_acids[codon_to_aa_array[codon_seq[site]]];
         }
@@ -256,48 +262,15 @@ public:
         return protein; // return the amino-acid sequence as a string.
     }
 
-    // Method returning the substitution rate (mutation rate * rate of fixation) between an original an a mutated codon.
-    // The original and mutated nucleotides are also necessary !
-    // codon_from: codon original.
-    // codon_to: codon mutated.
-    // n_from: nucleotide original.
-    // n_to: nucleotide mutated.
-    double substitution_rate(char codon_from, char codon_to, char n_from, char n_to, array<double, 20> fitness_profil) {
-        // Rate of fixation initialized to 1 (neutral mutation)
-        double rate_fixation{1.};
-
-        // If the mutated amino-acid is a stop codon, the rate of fixation is 0.
-        // Else, if the mutated and original amino-acids are non-synonymous, we compute the rate of fixation.
-        // Note that, if the mutated and original amino-acids are synonymous, the rate of fixation is 1.
-        if (codon_to_aa_array[codon_to] == 20) {
-            rate_fixation = 0.;
-        } else if (codon_to_aa_array[codon_from] != codon_to_aa_array[codon_to]) {
-            // Selective strength between the mutated and original amino-acids.
-            double s{0.};
-            s = fitness_profil[codon_to_aa_array[codon_to]] - fitness_profil[codon_to_aa_array[codon_from]];
-
-            // If the selective strength is 0, the rate of fixation is neutral.
-            // Else, the rate of fixation is computed using population genetic formulas (Kimura).
-            if (fabs(s) <= epsilon) {
-                rate_fixation = 1;
-            } else {
-                rate_fixation = s / (1 - exp(-s));
-            }
-        }
-
-        // The substitution rate is the mutation rate multiplied by the rate of fixation.
-        return rate_fixation * mutation_rate_matrix(n_from, n_to);
-    }
-
     // Method computing the next substitution event to occur, and the time for it to happen.
     // This method takes a time as input. If there is enough time given, the substitution event is computed.
     // This method also returns the time (given as input) decremented by the time needed for the substitution event to occur.
     // If there is not enough time given, no substitution event is computed and the method returns 0.
     // time_left: The time available for a substitution event to occur.
-    double next_substitution(double &time_left) {
+    double next_substitution(double &time_left, vector<Substitution> &substitutions) {
 
-        // Number of possible substitutions is 9 times the sequence length (3 substitutions for each 3 possible positions).
-        unsigned nbr_substitutions{9 * length};
+        // Number of possible substitutions is 9 times the number of sites (3 substitutions for each 3 possible positions).
+        unsigned nbr_substitutions{9 * nbr_sites};
 
         // Vector of substitution rates.
         vector<double> substitution_rates(nbr_substitutions, 0);
@@ -306,7 +279,7 @@ public:
         double total_substitution_rates{0.};
 
         // For all site of the sequence.
-        for (unsigned site{0}; site < length; site++) {
+        for (unsigned site{0}; site < nbr_sites; site++) {
             // Codon original before substitution.
 
             char codon_from = codon_seq[site];
@@ -322,7 +295,30 @@ public:
                 tie(codon_to, n_from, n_to) = neighbors[neighbor];
 
                 // Assign the substitution rate given by the method substitution rate.
-                substitution_rates[9 * site + neighbor] = substitution_rate(codon_from, codon_to, n_from, n_to, aa_fitness_profiles[site]);
+                // Rate of fixation initialized to 1 (neutral mutation)
+                double rate_fixation{1.};
+
+                // If the mutated amino-acid is a stop codon, the rate of fixation is 0.
+                // Else, if the mutated and original amino-acids are non-synonymous, we compute the rate of fixation.
+                // Note that, if the mutated and original amino-acids are synonymous, the rate of fixation is 1.
+                if (codon_to_aa_array[codon_to] == 20) {
+                    rate_fixation = 0.;
+                } else if (codon_to_aa_array[codon_from] != codon_to_aa_array[codon_to]) {
+                    // Selective strength between the mutated and original amino-acids.
+                    double s{0.};
+                    s = aa_fitness_profiles[site][codon_to_aa_array[codon_to]];
+                    s -= aa_fitness_profiles[site][codon_to_aa_array[codon_from]];
+                    // If the selective strength is 0, the rate of fixation is neutral.
+                    // Else, the rate of fixation is computed using population genetic formulas (Kimura).
+                    if (fabs(s) <= epsilon) {
+                        rate_fixation = 1;
+                    } else {
+                        rate_fixation = s / (1 - exp(-s));
+                    }
+                }
+
+                // The substitution rate is the mutation rate multiplied by the rate of fixation.
+                substitution_rates[9 * site + neighbor] = rate_fixation * mutation_rate_matrix(n_from, n_to);
                 // Increment the sum of substitution rates
                 total_substitution_rates += substitution_rates[9 * site + neighbor];
 
@@ -356,7 +352,11 @@ public:
             char codon_to{0}, n_from{0}, n_to{0};
 
             tie(codon_to, n_from, n_to) = neighbors[index % 9];
-            codon_seq[index / 9] = codon_to;
+            unsigned site = index / 9;
+
+            Substitution substitution = {site, codon_seq[site], codon_to};
+            substitutions.push_back(substitution);
+            codon_seq[site] = codon_to;
 
         } else if (time_left < 0.) {
             time_left = 0.;
@@ -367,9 +367,9 @@ public:
 
     // Method computing all substitution event occuring during a given time-frame.
     // t: time during which substitution events occur (typically branch length).
-    void run_substitutions(double t) {
+    void run_substitutions(double t, vector<Substitution> &substitutions) {
         while (t > 0) {
-            t = next_substitution(t);
+            t = next_substitution(t, substitutions);
         }
     }
 
@@ -395,7 +395,7 @@ public:
         array<double, 64> codon_frequencies{0};
 
         // For each site of the sequence.
-        for (unsigned site{0}; site < length; site++) {
+        for (unsigned site{0}; site < nbr_sites; site++) {
 
             // Initialize the total sum of equilibrium frequency at 0.
             double total_frequencies{0.};
@@ -455,7 +455,7 @@ public:
 
     // Set attribute method for the amino-acid fitness profil.
     void set_fitness_profiles(vector<array<double, 20>> const &fitness_profiles) {
-        assert(length == fitness_profiles.size());
+        assert(nbr_sites == fitness_profiles.size());
         aa_fitness_profiles = fitness_profiles;
     }
 
@@ -463,10 +463,10 @@ public:
     string get_dna_str() const {
 
         // The DNA string is 3 times larger than the codon sequence.
-        string dna_str(length * 3, ' ');
+        string dna_str(nbr_sites * 3, ' ');
 
         // For each site of the sequence.
-        for (unsigned site{0}; site < length; site++) {
+        for (unsigned site{0}; site < nbr_sites; site++) {
 
             // Assert there is no stop in the sequence.
             assert(codon_to_aa_array[codon_seq[site]] != 20);
@@ -490,19 +490,20 @@ private:
     string newick;  // The newick tree descending from the node.
     vector<Node> children;  // Vector of direct children (first order, no grand-children).
     Sequence_dna sequence_dna;  // The DNA sequence attached to the node.
+    vector<Substitution> substitutions;  // The number of substitutions in the branch attached to the node.
 
 public:
 
     // Constructor
     Node(string name, const string &len, string newick, Sequence_dna seq) :
-            name{move(name)}, length{stod(len)}, newick{move(newick)}, sequence_dna{move(seq)} {
+            name{move(name)}, length{stod(len)}, newick{move(newick)}, sequence_dna{move(seq)}, substitutions{0} {
 
         // Parse the newick tree descending of the node.
         parse_newick();
     }
 
-    Node(string newick, const unsigned length) :
-            name{"Root"}, length{0.}, newick{move(newick)}, sequence_dna(length) {
+    Node(string newick, const unsigned nbr_sites) :
+            name{"Root"}, length{0.}, newick{move(newick)}, sequence_dna(nbr_sites), substitutions{0} {
 
         // Parse the newick tree descending of the node.
         parse_newick();
@@ -516,6 +517,32 @@ public:
     // Add a node as the vector of children.
     void add_child(const Node &node) {
         children.push_back(node);
+    }
+
+    // Recursively iterate through the subtree and count the number of nodes.
+    double tot_length() {
+        double tot_length = length;
+
+        if (!is_leaf()) {
+            // Else, if the node is internal, iterate through the direct children.
+            for (auto &child : children) {
+                tot_length += child.tot_length();
+            }
+        }
+        return tot_length;
+    }
+
+    // Recursively iterate through the subtree and count the number of nodes.
+    unsigned nbr_nodes() {
+        unsigned nbr_nodes = 1;
+
+        if (!is_leaf()) {
+            // Else, if the node is internal, iterate through the direct children.
+            for (auto &child : children) {
+                nbr_nodes += child.nbr_nodes();
+            }
+        }
+        return nbr_nodes;
     }
 
     // Recursively iterate through the subtree and count the number of leaves.
@@ -534,19 +561,35 @@ public:
         return nbr_leaves;
     }
 
+    // Recursively iterate through the subtree and count the number of substitutions.
+    unsigned long nbr_substitutions() {
+        unsigned long nbr_substitutions = substitutions.size();
+
+        if (!is_leaf()) {
+            // Else, if the node is internal, iterate through the direct children.
+            for (auto &child : children) {
+                nbr_substitutions += child.nbr_substitutions();
+            }
+        }
+        return nbr_substitutions;
+    }
+
     // Recursively iterate through the subtree.
-    void traverse() {
+    void traverse(string & output_filename) {
         // Substitutions of the DNA sequence is generated.
-        sequence_dna.run_substitutions(length);
+        sequence_dna.run_substitutions(length, substitutions);
 
         if (is_leaf()) {
             // If the node is a leaf, output the DNA sequence and name.
-            cout << name << " " << sequence_dna.get_dna_str() << endl;
+            ofstream output_file;
+            output_file.open(output_filename, ios_base::app);
+            output_file << name << " " << sequence_dna.get_dna_str() << endl;
+            output_file.close();
         } else {
             // If the node is internal, iterate through the direct children.
             for (auto &child : children) {
                 child.sequence_dna.set_parameters(sequence_dna);
-                child.traverse();
+                child.traverse(output_filename);
             }
         }
     }
@@ -625,6 +668,7 @@ public:
     }
 };
 
+
 string open_newick(string const &file_name) {
     ifstream input_stream(file_name);
     if (!input_stream) cerr << "Can't open newick file!";
@@ -668,14 +712,15 @@ vector<array<double, 20>> open_preferences(string const &file_name) {
 static const char USAGE[] =
 R"(
 Usage:
-      SimuEvol [--protein=<input>]
+      SimuEvol [--protein=<name>] [--output=<filename>]
       SimuEvol --help
       SimuEvol --version
 
 Options:
--h --help           show this help message and exit
---version           show version and exit
---protein=<input>   specify input protein [default: gal4].
+-h --help              show this help message and exit
+--version              show version and exit
+--protein=<name>       specify input protein name [default: gal4]
+--output=<filename>    specify input protein name [default: protein.ali]
 )";
 
 int main(int argc, char* argv[]) {
@@ -690,10 +735,17 @@ int main(int argc, char* argv[]) {
         protein = args["--protein"].asString();
     }
 
-    vector<array<double, 20>> fitness_profiles = open_preferences("/home/thibault/SimuEvol/data/" + protein + ".txt");
+    string output{"../data/"};
+    if (args["--output"]){
+        output += args["--output"].asString();
+    } else {
+        output += protein + ".ali";
+    }
+
+    vector<array<double, 20>> fitness_profiles = open_preferences("../data/" + protein + ".txt");
     auto nbr_sites = static_cast<unsigned>(fitness_profiles.size());
 
-    string newick_tree = open_newick("/home/thibault/SimuEvol/data/" + protein + ".newick");
+    string newick_tree = open_newick("../data/" + protein + ".newick");
     Node root(newick_tree, nbr_sites);
 
     Matrix4x4 mutation_rate;
@@ -706,10 +758,19 @@ int main(int argc, char* argv[]) {
     mutation_rate *= mu;
     mutation_rate -= mutation_rate.rowwise().sum().asDiagonal();
 
+    // If the node is a leaf, output the DNA sequence and name.
+    ofstream output_file;
+    output_file.open(output);
+    output_file << root.nbr_leaves() << " " << nbr_sites * 3 << endl;
+    output_file.close();
+
+    cout << "The tree contains " << root.nbr_nodes() << " nodes for " << root.nbr_leaves() << " species at the tips." << endl;
+    cout << "The tree has a total branch length of " << root.tot_length() << "." << endl;
+    cout << "The DNA sequence is " << nbr_sites * 3 << " base pairs long." << endl;
+
     root.set_evolution_parameters(mutation_rate, fitness_profiles);
     root.at_equilibrium();
-    cout << root.nbr_leaves() << " " << nbr_sites * 3 << endl;
-    root.traverse();
-
+    root.traverse(output);
+    cout << "The simulation mapped " << root.nbr_substitutions() << " substitutions along the tree." << endl;
     return 0;
 }
