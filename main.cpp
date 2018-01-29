@@ -356,6 +356,7 @@ public:
 
             Substitution substitution = {site, codon_seq[site], codon_to};
             substitutions.push_back(substitution);
+
             codon_seq[site] = codon_to;
 
         } else if (time_left < 0.) {
@@ -712,15 +713,18 @@ vector<array<double, 20>> open_preferences(string const &file_name) {
 static const char USAGE[] =
 R"(
 Usage:
-      SimuEvol [--protein=<name>] [--output=<filename>]
+      SimuEvol [--preferences=<file_path>] [--newick=<file_path>] [--output=<file_path>] [--mu=<0.5>] [--lambda=<3>]
       SimuEvol --help
       SimuEvol --version
 
 Options:
--h --help              show this help message and exit
---version              show version and exit
---protein=<name>       specify input protein name [default: gal4]
---output=<filename>    specify input protein name [default: protein.ali]
+-h --help                    show this help message and exit
+--version                    show version and exit
+--preferences=<file_path>    specify input site-specific preferences file [default: ../data/gal4.txt]
+--newick=<file_path>         specify input newick tree [default: ../data/gal4.newick]
+--output=<file_path>         specify output protein name [default: ../data/gal4.ali]
+--mu=<0.5>                   specify the mutation rate [default: 0.5]
+--lambda=<3>                 specify the strong to weak mutation bias [default: 3]
 )";
 
 int main(int argc, char* argv[]) {
@@ -730,27 +734,36 @@ int main(int argc, char* argv[]) {
                              true,               // show help if requested
                              "SimuEvol 0.1a");  // version string
 
-    string protein{"gal4"};
-    if (args["--protein"]){
-        protein = args["--protein"].asString();
+    string preferences_path{"../data/gal4.txt"};
+    if (args["--preferences"]){
+        preferences_path = args["--preferences"].asString();
     }
 
-    string output{"../data/"};
+    string newick_path{"../data/gal4.newick"};
+    if (args["--newick"]){
+        newick_path = args["--newick"].asString();
+    }
+
+    string output_path{"../data/gal4.ali"};
     if (args["--output"]){
-        output += args["--output"].asString();
-    } else {
-        output += protein + ".ali";
+        output_path = args["--output"].asString();
     }
 
-    vector<array<double, 20>> fitness_profiles = open_preferences("../data/" + protein + ".txt");
+    vector<array<double, 20>> fitness_profiles = open_preferences(preferences_path);
     auto nbr_sites = static_cast<unsigned>(fitness_profiles.size());
 
-    string newick_tree = open_newick("../data/" + protein + ".newick");
+    string newick_tree = open_newick(newick_path);
     Node root(newick_tree, nbr_sites);
 
     Matrix4x4 mutation_rate;
-    double mu = 5 * pow(10, -1);
-    double lambda = 3;
+    double mu = 0.5;
+    if (args["--mu"]){
+        mu = stod(args["--mu"].asString());
+    }
+    double lambda = 3.0;
+    if (args["--lambda"]){
+        mu = stod(args["--lambda"].asString());
+    }
     mutation_rate << 0, 1, 1, lambda,
             lambda, 0, 1, lambda,
             lambda, 1, 0, lambda,
@@ -758,9 +771,8 @@ int main(int argc, char* argv[]) {
     mutation_rate *= mu;
     mutation_rate -= mutation_rate.rowwise().sum().asDiagonal();
 
-    // If the node is a leaf, output the DNA sequence and name.
     ofstream output_file;
-    output_file.open(output);
+    output_file.open(output_path);
     output_file << root.nbr_leaves() << " " << nbr_sites * 3 << endl;
     output_file.close();
 
@@ -770,7 +782,7 @@ int main(int argc, char* argv[]) {
 
     root.set_evolution_parameters(mutation_rate, fitness_profiles);
     root.at_equilibrium();
-    root.traverse(output);
+    root.traverse(output_path);
     cout << "The simulation mapped " << root.nbr_substitutions() << " substitutions along the tree." << endl;
     return 0;
 }
