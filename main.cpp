@@ -262,7 +262,7 @@ public:
             }
 
             if (Codon::codon_to_aa_array[codon] != 20) {
-                codon_frequencies[codon] = exp(aa_fitness_profil[Codon::codon_to_aa_array[codon]]);
+                codon_frequencies[codon] = codon_freq * exp(aa_fitness_profil[Codon::codon_to_aa_array[codon]]);
             } else {
                 codon_frequencies[codon] = 0.;
             }
@@ -704,7 +704,7 @@ vector<array<double, 20>> open_preferences(string const &file_name) {
 static char const USAGE[] =
         R"(
 Usage:
-      SimuEvol [--preferences=<file_path>] [--newick=<file_path>] [--output=<file_path>] [--mu=<0.5>] [--lambda=<3>] [--p=<0.01>] [--tied=<false>]
+      SimuEvol [--preferences=<file_path>] [--newick=<file_path>] [--output=<file_path>] [--mu=<0.5>] [--lambda=<3>] [--p=<0.0>] [--tied=<false>]
       SimuEvol --help
       SimuEvol --version
 
@@ -716,7 +716,7 @@ Options:
 --output=<file_path>         specify output protein name [default: ../data/gal4]
 --mu=<0.5>                   specify the mutation rate [default: 0.5]
 --lambda=<3>                 specify the strong to weak mutation bias [default: 3]
---p=<0.01>                   specify the probability to randomize the fitness landscape [default: 0.01]
+--p=<0.0>                    specify the probability to randomize the fitness landscape [default: 0.01]
 --tied=false                 Tied must be set to true to take into account epistasis [default: false]
 )";
 
@@ -778,7 +778,7 @@ int main(int argc, char *argv[]) {
     cout << "The tree has a total branch length of " << root.tot_length() << "." << endl;
     cout << "The DNA sequence is " << nbr_sites * 3 << " base pairs long." << endl;
 
-    double p = 0.01;
+    double p = 0.0;
     if (args["--p"]) {
         p = stod(args["--p"].asString());
     }
@@ -803,7 +803,7 @@ int main(int argc, char *argv[]) {
     cout << "On average, this is " << static_cast<double>(nbr_synonymous + nbr_non_synonymous) / nbr_sites << " substitutions per site." << endl;
     cout << nbr_synonymous << " synonymous and " << nbr_non_synonymous << " non-synonymous substitutions." << endl;
 
-    cout << "Predicted omega: " << root.predicted_omega() << endl;
-    cout << "Simulated omega: " << root.simulated_omega() << endl;
+    cout << "w0=" << root.predicted_omega() << endl;
+    cout << "w=" << root.simulated_omega() << endl;
     return 0;
 }
