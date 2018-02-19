@@ -6,6 +6,7 @@
 using namespace std;
 
 #include "Eigen/Dense"
+
 typedef Eigen::Matrix<double, 4, 4> Matrix4x4;
 
 #define DOCOPT_HEADER_ONLY
@@ -16,11 +17,36 @@ struct Substitution {
     unsigned site{0};
     char codon_from{0};
     char codon_to{0};
+    double dn{0.};
+    double ds{0.};
 };
 
+//Function for average
+double avg(vector<double> &v) {
+    double return_value = 0.0;
+    size_t n = v.size();
+
+    for (int i = 0; i < n; i++) {
+        return_value += v[i];
+    }
+
+    return return_value / n;
+}
+
+//Function for variance
+double variance(vector<double> &v) {
+    double v_squarred = 0.0;
+    size_t n = v.size();
+
+    for (int i = 0; i < n; i++) {
+        v_squarred += pow(v[i], 2);
+    }
+
+    return (v_squarred / n) - pow(avg(v), 2);
+}
 
 bool is_synonymous(Substitution const &s) {
-    return (Codon::codon_to_aa_array.at(s.codon_from) == Codon::codon_to_aa_array.at(s.codon_to));
+    return (Codon::codon_to_aa_array[s.codon_from] == Codon::codon_to_aa_array[s.codon_to]);
 }
 
 
@@ -57,7 +83,7 @@ public:
         // For each site
         for (unsigned site{0}; site < nbr_sites; site++) {
             // Use the codon_to_aa_array to translate site to amino-acid.
-            protein.at(site) = Codon::amino_acids.at(Codon::codon_to_aa_array.at(codon_seq.at(site)));
+            protein[site] = Codon::amino_acids[Codon::codon_to_aa_array[codon_seq[site]]];
         }
 
         return protein; // return the amino-acid sequence as a string.
@@ -68,10 +94,11 @@ public:
     // This method also returns the time (given as input) decremented by the time needed for the substitution event to occur.
     // If there is not enough time given, no substitution event is computed and the method returns 0.
     // time_left: The time available for a substitution event to occur.
-    double next_substitution(double &time_left, vector<Substitution> &substitutions) {
+    double next_substitution(double &time_left, vector<Substitution> &substitutions_vec,
+                             unsigned site_begin, unsigned site_end) {
 
         // Number of possible substitutions is 9 times the number of sites (3 substitutions for each 3 possible positions).
-        unsigned nbr_substitutions{9 * nbr_sites};
+        unsigned nbr_substitutions{9 * (site_end - site_begin)};
 
         // Vector of substitution rates.
         vector<double> substitution_rates(nbr_substitutions, 0);
@@ -79,49 +106,55 @@ public:
         // Sum of substitution rates.
         double total_substitution_rates{0.};
 
+        double dn{.0}, ds{.0};
+
         // For all site of the sequence.
-        for (unsigned site{0}; site < nbr_sites; site++) {
+        for (unsigned site{site_begin}; site < site_end; site++) {
             // Codon original before substitution.
 
-            char codon_from = codon_seq.at(site);
+            char codon_from = codon_seq[site];
 
             // Array of neighbors of the original codon (codons differing by only 1 mutation).
-            array<tuple<char, char, char>, 9> neighbors = Codon::codon_to_neighbors_array.at(codon_from);
+            array<tuple<char, char, char>, 9> neighbors = Codon::codon_to_neighbors_array[codon_from];
 
             // For all possible neighbors.
             for (char neighbor{0}; neighbor < 9; neighbor++) {
 
                 // Codon after mutation, Nucleotide original and Nucleotide after mutation.
                 char codon_to{0}, n_from{0}, n_to{0};
-                tie(codon_to, n_from, n_to) = neighbors.at(neighbor);
+                tie(codon_to, n_from, n_to) = neighbors[neighbor];
 
                 // Assign the substitution rate given by the method substitution rate.
-                // Rate of fixation initialized to 1 (neutral mutation)
-                double rate_fixation{1.};
+                // Rate of substitution initialized to 0 (deleterious mutation)
+                double rate_substitution{0.};
 
                 // If the mutated amino-acid is a stop codon, the rate of fixation is 0.
                 // Else, if the mutated and original amino-acids are non-synonymous, we compute the rate of fixation.
                 // Note that, if the mutated and original amino-acids are synonymous, the rate of fixation is 1.
-                if (Codon::codon_to_aa_array.at(codon_to) == 20) {
-                    rate_fixation = 0.;
-                } else if (Codon::codon_to_aa_array.at(codon_from) != Codon::codon_to_aa_array.at(codon_to)) {
+                if (Codon::codon_to_aa_array[codon_to] == 20) {
+                    rate_substitution = 0.;
+                } else if (Codon::codon_to_aa_array[codon_from] != Codon::codon_to_aa_array[codon_to]) {
                     // Selective strength between the mutated and original amino-acids.
                     double s{0.};
-                    s = aa_fitness_profiles.at(site).at(Codon::codon_to_aa_array.at(codon_to));
-                    s -= aa_fitness_profiles.at(site).at(Codon::codon_to_aa_array.at(codon_from));
+                    s = aa_fitness_profiles[site][Codon::codon_to_aa_array[codon_to]];
+                    s -= aa_fitness_profiles[site][Codon::codon_to_aa_array[codon_from]];
                     // If the selective strength is 0, the rate of fixation is neutral.
                     // Else, the rate of fixation is computed using population genetic formulas (Kimura).
                     if (fabs(s) <= Codon::epsilon) {
-                        rate_fixation = 1;
+                        rate_substitution = mutation_rate_matrix(n_from, n_to);
                     } else {
-                        rate_fixation = s / (1 - exp(-s));
+                        // The substitution rate is the mutation rate multiplied by the rate of fixation.
+                        rate_substitution = mutation_rate_matrix(n_from, n_to) * s / (1 - exp(-s));
                     }
+                    dn += mutation_rate_matrix(n_from, n_to);
+                } else {
+                    rate_substitution = mutation_rate_matrix(n_from, n_to);
+                    ds += mutation_rate_matrix(n_from, n_to);
                 }
 
-                // The substitution rate is the mutation rate multiplied by the rate of fixation.
-                substitution_rates.at(9 * site + neighbor) = rate_fixation * mutation_rate_matrix(n_from, n_to);
+                substitution_rates[9 * (site - site_begin) + neighbor] = rate_substitution;
                 // Increment the sum of substitution rates
-                total_substitution_rates += substitution_rates.at(9 * site + neighbor);
+                total_substitution_rates += rate_substitution;
 
             }
         }
@@ -138,35 +171,36 @@ public:
             double cumulative_substitution_rates{0.};
 
             unsigned index = 0;
-            for (unsigned t{0}; t < nbr_substitutions; t++) {
+            for (unsigned t{0}; t < substitution_rates.size(); t++) {
                 // Iterate through the cumulative substitution rates and break the loop when it is greater than the random cumulative substitution rates
-                cumulative_substitution_rates += substitution_rates.at(t);
+                cumulative_substitution_rates += substitution_rates[t];
                 if (random_cumulative_substitution_rates < cumulative_substitution_rates) {
                     index = t;
                     break;
                 }
             }
+            unsigned site = site_begin + index / 9;
+            char codom_from = codon_seq[site];
 
             // Array of neighbors of the original codon (codons differing by only 1 mutation).
-            array<tuple<char, char, char>, 9> neighbors = Codon::codon_to_neighbors_array.at(codon_seq.at(index / 9));
+            array<tuple<char, char, char>, 9> neighbors = Codon::codon_to_neighbors_array[codom_from];
+
             // Codon after mutation, Nucleotide original and Nucleotide after mutation.
             char codon_to{0}, n_from{0}, n_to{0};
 
-            tie(codon_to, n_from, n_to) = neighbors.at(index % 9);
-            unsigned site = index / 9;
+            tie(codon_to, n_from, n_to) = neighbors[index % 9];
 
-            Substitution substitution = {site, codon_seq.at(site), codon_to};
-            substitutions.push_back(substitution);
-
+            Substitution sub = {site, codom_from, codon_to, 1. / dn, 1. / ds};
+            substitutions_vec.push_back(sub);
 
             // Random shuffle of the fitness landscape
             uniform_real_distribution<double> unif_rand_proba(0, 1);
             double rand_uni = unif_rand_proba(Codon::re);
             if (rand_uni < proba_permutation) {
-                shuffle(aa_fitness_profiles.at(site).begin(), aa_fitness_profiles.at(site).end(), Codon::re);
+                shuffle(aa_fitness_profiles[site].begin(), aa_fitness_profiles[site].end(), Codon::re);
             }
 
-            codon_seq.at(site) = codon_to;
+            codon_seq[site] = codon_to;
 
         } else if (time_left < 0.) {
             time_left = 0.;
@@ -174,19 +208,30 @@ public:
         return time_left;
     }
 
-
     // Method computing all substitution event occuring during a given time-frame.
     // t: time during which substitution events occur (typically branch length).
-    void run_substitutions(double t, vector<Substitution> &substitutions) {
+    // This method is o(n²) where n is the number of sites, but can take into account epistatic effects
+    void run_substitutions_tied(double t, vector<Substitution> &subs) {
         while (t > 0) {
-            t = next_substitution(t, substitutions);
+            t = next_substitution(t, subs, 0, nbr_sites);
         }
     }
 
+    // Method computing all substitution event occuring during a given time-frame.
+    // t: time during which substitution events occur (typically branch length).
+    // This method is o(n) where n is the number of sites, but can't take into account epistatic effects
+    void run_substitutions_untied(double t, vector<Substitution> &subs) {
+        for (unsigned site{0}; site < nbr_sites; site++) {
+            double site_t{t};
+            while (site_t > 0) {
+                site_t = next_substitution(site_t, subs, site, site + 1);
+            }
+        }
+    }
 
-    // Set the the DNA sequence to the mutation-selection equilibrium.
-    void at_equilibrium() {
-
+    // Method computing the equilibrium frequencies for one site.
+    // aa_fitness_profil: The amino-acid fitness profil of the given site.
+    array<double, 64> codon_frequencies(array<double, 20> const &aa_fitness_profil) {
         // Compute the kernel of the mutation-rate matrix.
         // This kernel is a vector of the nucleotides frequencies (not normalized to 1) at equilibrium.
         Eigen::Matrix<double, 4, Eigen::Dynamic> kernel = mutation_rate_matrix.transpose().fullPivLu().kernel();
@@ -204,42 +249,54 @@ public:
 
         array<double, 64> codon_frequencies{0};
 
-        // For each site of the sequence.
-        for (unsigned site{0}; site < nbr_sites; site++) {
+        // Initialize the total sum of equilibrium frequency at 0.
+        double total_frequencies{0.};
 
-            // Initialize the total sum of equilibrium frequency at 0.
-            double total_frequencies{0.};
+        // For each site of the vector of the site frequencies.
+        for (char codon{0}; codon < 64; codon++) {
+            double codon_freq{1.};
 
-            // For each site of the vector of the site frequencies.
-            for (char codon{0}; codon < 64; codon++) {
-                double codon_freq{1.};
-
-                // Translate the site to a triplet of DNA nucleotides
-                array<char, 3> triplet = Codon::codon_to_triplet_array.at(codon);
-                for (char position{0}; position < 3; position++) {
-                    codon_freq *= nuc_frequencies(triplet.at(position));
-                }
-
-                if (Codon::codon_to_aa_array.at(codon) != 20) {
-                    codon_frequencies.at(codon) = exp(aa_fitness_profiles.at(site).at(Codon::codon_to_aa_array.at(codon)));
-                } else {
-                    codon_frequencies.at(codon) = 0.;
-                }
-
-
-                // Increment the total sum of equilibrium frequencies.
-                total_frequencies += codon_frequencies.at(codon);
+            // For all nucleotides in the codon
+            for (auto &nuc: Codon::codon_to_triplet_array[codon]) {
+                codon_freq *= nuc_frequencies(nuc);
             }
 
+            if (Codon::codon_to_aa_array[codon] != 20) {
+                codon_frequencies[codon] = exp(aa_fitness_profil[Codon::codon_to_aa_array[codon]]);
+            } else {
+                codon_frequencies[codon] = 0.;
+            }
+
+
+            // Increment the total sum of equilibrium frequencies.
+            total_frequencies += codon_frequencies[codon];
+        }
+
+        // Normalize the vector of equilibrium frequencies.
+        for (char codon{0}; codon < 64; codon++) {
+            codon_frequencies[codon] /= total_frequencies;
+        }
+
+        return codon_frequencies;
+    };
+
+    // Set the the DNA sequence to the mutation-selection equilibrium.
+    void at_equilibrium() {
+
+        // For all site of the sequence.
+        for (unsigned site{0}; site < nbr_sites; site++) {
+
+            array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profiles[site]);
+
             // Uniform random generator between 0 and the total sum of equilibrium frequencies.
-            uniform_real_distribution<double> unif(0, total_frequencies);
+            uniform_real_distribution<double> unif(0., 1.);
             double random_cumulative_frequencies = unif(Codon::re);
             double cumulative_frequencies{0.};
 
             char index{0};
             for (char m{0}; m < 64; m++) {
                 // Iterate through the cumulative frequencies and break the loop when it is greater than the random cumulative frequencies.
-                cumulative_frequencies += codon_frequencies.at(m);
+                cumulative_frequencies += codon_freqs[m];
                 if (random_cumulative_frequencies < cumulative_frequencies) {
                     index = m;
                     break;
@@ -247,7 +304,7 @@ public:
             }
 
             // Substitute the site with the substitution given by the loop break.
-            codon_seq.at(site) = index;
+            codon_seq[site] = index;
         }
     }
 
@@ -275,6 +332,61 @@ public:
         proba_permutation = proba_randomize;
     }
 
+    // Theoretical computation of the predicted omega
+    double predicted_omega() {
+        vector<double> omega_per_site(nbr_sites, 0.);
+
+        // For all site of the sequence.
+        for (unsigned site{0}; site < nbr_sites; site++) {
+            // Codon original before substitution.
+
+            array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profiles[site]);
+
+
+            double dn{0.}, d0{0.};
+            for (char codon_from{0}; codon_from < 64; codon_from++) {
+                if (Codon::codon_to_aa_array[codon_from] != 20) {
+
+                    // For all possible neighbors.
+                    for (auto &neighbor: Codon::codon_to_neighbors_array[codon_from]) {
+
+                        // Codon after mutation, Nucleotide original and Nucleotide after mutation.
+                        char codon_to{0}, n_from{0}, n_to{0};
+                        tie(codon_to, n_from, n_to) = neighbor;
+
+
+                        // If the mutated amino-acid is a stop codon, the rate of fixation is 0.
+                        // Else, if the mutated and original amino-acids are non-synonymous, we compute the rate of fixation.
+                        // Note that, if the mutated and original amino-acids are synonymous, the rate of fixation is 1.
+                        if (Codon::codon_to_aa_array[codon_to] != 20 and
+                            Codon::codon_to_aa_array[codon_from] != Codon::codon_to_aa_array[codon_to]) {
+                            // Selective strength between the mutated and original amino-acids.
+                            double s{0.};
+                            // Rate of fixation initialized to 1 (neutral mutation)
+                            double rate_fixation{1.};
+
+                            s = aa_fitness_profiles[site][Codon::codon_to_aa_array[codon_to]];
+                            s -= aa_fitness_profiles[site][Codon::codon_to_aa_array[codon_from]];
+                            // If the selective strength is 0, the rate of fixation is neutral.
+                            // Else, the rate of fixation is computed using population genetic formulas (Kimura).
+                            if (fabs(s) <= Codon::epsilon) {
+                                rate_fixation = 1;
+                            } else {
+                                rate_fixation = s / (1 - exp(-s));
+                            }
+
+                            dn += codon_freqs[codon_from] * mutation_rate_matrix(n_from, n_to) * rate_fixation;
+                            d0 += codon_freqs[codon_from] * mutation_rate_matrix(n_from, n_to);
+                        }
+                    }
+                }
+
+            }
+            omega_per_site[site] = dn / d0;
+        }
+        return avg(omega_per_site);
+    }
+
     // Method returning the DNA string corresponding to the codon sequence.
     string get_dna_str() const {
 
@@ -285,12 +397,12 @@ public:
         for (unsigned site{0}; site < nbr_sites; site++) {
 
             // Assert there is no stop in the sequence.
-            assert(Codon::codon_to_aa_array.at(codon_seq.at(site)) != 20);
+            assert(Codon::codon_to_aa_array[codon_seq[site]] != 20);
 
             // Translate the site to a triplet of DNA nucleotides
-            array<char, 3> triplet = Codon::codon_to_triplet_array.at(codon_seq.at(site));
+            array<char, 3> triplet = Codon::codon_to_triplet_array[codon_seq[site]];
             for (char position{0}; position < 3; position++) {
-                dna_str.at(3 * site + position) = Codon::nucleotides.at(triplet.at(position));
+                dna_str[3 * site + position] = Codon::nucleotides[triplet[position]];
             }
         }
         return dna_str; // return the DNA sequence as a string.
@@ -312,14 +424,14 @@ public:
 
     // Constructor
     Node(string name, string const &len, string newick, Sequence_dna seq) :
-            name{move(name)}, length{stod(len)}, newick{move(newick)}, sequence_dna{move(seq)}, substitutions{0} {
+            name{move(name)}, length{stod(len)}, newick{move(newick)}, sequence_dna{move(seq)} {
 
         // Parse the newick tree descending of the node.
         parse_newick();
     }
 
     Node(string newick, unsigned const nbr_sites) :
-            name{"Root"}, length{0.}, newick{move(newick)}, sequence_dna(nbr_sites), substitutions{0} {
+            name{"Root"}, length{0.}, newick{move(newick)}, sequence_dna(nbr_sites) {
 
         // Parse the newick tree descending of the node.
         parse_newick();
@@ -378,40 +490,54 @@ public:
     }
 
     // Recursively iterate through the subtree and count the number of substitutions.
-    long nbr_substitutions(bool synonymous = false) {
-        long nbr_substitutions{0};
+    tuple<long, long> nbr_substitutions() {
+        long nbr_non_syn{0}, nbr_syn{0};
 
-        if (synonymous) {
-            nbr_substitutions = count_if(substitutions.begin(), substitutions.end(), is_synonymous);
-        } else {
-            nbr_substitutions = substitutions.size();
-        }
+        nbr_syn = count_if(substitutions.begin(), substitutions.end(), is_synonymous);
+        nbr_non_syn = substitutions.size() - nbr_syn;
 
         if (!is_leaf()) {
             // Else, if the node is internal, iterate through the direct children.
             for (auto &child : children) {
-                nbr_substitutions += child.nbr_substitutions(synonymous);
+                long child_nbr_syn{0}, child_nbr_non_syn{0};
+                tie(child_nbr_non_syn, child_nbr_syn) = child.nbr_substitutions();
+                nbr_non_syn += child_nbr_non_syn;
+                nbr_syn += child_nbr_syn;
             }
         }
-        return nbr_substitutions;
+        return make_tuple(nbr_non_syn, nbr_syn);
     }
 
     // Recursively iterate through the subtree.
-    void traverse(string &output_filename) {
+    void traverse(string &output_filename, bool tied) {
         // Substitutions of the DNA sequence is generated.
-        sequence_dna.run_substitutions(length, substitutions);
+        if (tied) {
+            sequence_dna.run_substitutions_tied(length, substitutions);
+        } else {
+            sequence_dna.run_substitutions_untied(length, substitutions);
+        }
+
 
         if (is_leaf()) {
             // If the node is a leaf, output the DNA sequence and name.
-            ofstream output_file;
-            output_file.open(output_filename, ios_base::app);
-            output_file << name << " " << sequence_dna.get_dna_str() << endl;
-            output_file.close();
+            string dna_str = sequence_dna.get_dna_str();
+
+            // .ali format
+            ofstream ali_file;
+            ali_file.open(output_filename + ".ali", ios_base::app);
+            ali_file << name << " " << dna_str << endl;
+            ali_file.close();
+
+            // .fasta format
+            ofstream fasta_file;
+            fasta_file.open(output_filename + ".fasta", ios_base::app);
+            fasta_file << ">" << name << endl << dna_str << endl;
+            fasta_file.close();
         } else {
             // If the node is internal, iterate through the direct children.
             for (auto &child : children) {
                 child.sequence_dna.set_parameters(sequence_dna);
-                child.traverse(output_filename);
+                child.traverse(output_filename, tied);
             }
         }
     }
@@ -423,6 +549,47 @@ public:
         sequence_dna.set_mutation_rate(mutation_rate);
         sequence_dna.set_fitness_profiles(fitness_profiles);
         sequence_dna.set_proba_permutation(proba_permutation);
+    }
+
+    // Theoretical prediction of omega from the parameters of the simulation
+    double predicted_omega() {
+        return sequence_dna.predicted_omega();
+    }
+
+    // Recursively iterate through the subtree and count the number of substitutions.
+    tuple<double, double> evolutionary_rates() {
+        double dn{0}, ds{0};
+
+        for (auto &substitution: substitutions) {
+            if (is_synonymous(substitution)){
+                ds += substitution.ds;
+            } else {
+                dn += substitution.dn;
+            }
+        }
+
+        if (!is_leaf()) {
+            // Else, if the node is internal, iterate through the direct children.
+            for (auto &child : children) {
+                double dn_child{0.}, ds_child{0.};
+                tie(dn_child, ds_child) = child.evolutionary_rates();
+                dn += dn_child;
+                ds += ds_child;
+            }
+        }
+        return make_tuple(dn, ds);
+    }
+
+    // Simulated omega from the substitutions
+    double simulated_omega() {
+        double dn{0}, ds{0};
+        tie(dn, ds) = evolutionary_rates();
+        if (ds == .0) {
+            cerr << "There is no synonymous substitutions generated by the simulation, dN/dS can't be computed!" << endl;
+            return .0;
+        } else {
+            return dn / ds;
+        }
     }
 
     // Set the the DNA sequence to the mutation-selection equilibrium.
@@ -442,7 +609,7 @@ public:
             while (position < max_position) {
                 // 'subtree' is the left hand side of the node name, it can be a subtree or nothing if the node is a leaf.
                 string subtree{};
-                if (newick.at(position) == '(') {
+                if (newick[position] == '(') {
 
                     size_t postpoint{position};
                     unsigned nbr_open{1};
@@ -451,9 +618,9 @@ public:
                         if (nbr_open == 0) {
                             postpoint = i;
                             break;
-                        } else if (newick.at(i) == '(') {
+                        } else if (newick[i] == '(') {
                             nbr_open++;
-                        } else if (newick.at(i) == ')') {
+                        } else if (newick[i] == ')') {
                             nbr_open--;
                         };
                     }
@@ -524,7 +691,7 @@ vector<array<double, 20>> open_preferences(string const &file_name) {
 
         while (getline(line_stream, word, ' ')) {
             if (counter > 2) {
-                fitness_profil.at(counter - 3) = log(stod(word));
+                fitness_profil[counter - 3] = log(stod(word));
             }
             counter++;
         }
@@ -537,19 +704,20 @@ vector<array<double, 20>> open_preferences(string const &file_name) {
 static char const USAGE[] =
         R"(
 Usage:
-      SimuEvol [--preferences=<file_path>] [--newick=<file_path>] [--output=<file_path>] [--mu=<0.5>] [--lambda=<3>] [--p=<0.01>]
+      SimuEvol [--preferences=<file_path>] [--newick=<file_path>] [--output=<file_path>] [--mu=<0.5>] [--lambda=<3>] [--p=<0.01>] [--tied=<false>]
       SimuEvol --help
       SimuEvol --version
 
 Options:
 -h --help                    show this help message and exit
 --version                    show version and exit
---preferences=<file_path>    specify input site-specific preferences file .at(default: ../data/gal4.txt)
---newick=<file_path>         specify input newick tree .at(default: ../data/gal4.newick)
---output=<file_path>         specify output protein name .at(default: ../data/gal4.ali)
---mu=<0.5>                   specify the mutation rate .at(default: 0.5)
---lambda=<3>                 specify the strong to weak mutation bias .at(default: 3)
---p=<0.01>                   specify the probability to randomize the fitness landscape .at(default: 0.01)
+--preferences=<file_path>    specify input site-specific preferences file [default: ../data/gal4.txt]
+--newick=<file_path>         specify input newick tree [default: ../data/gal4.newick]
+--output=<file_path>         specify output protein name [default: ../data/gal4]
+--mu=<0.5>                   specify the mutation rate [default: 0.5]
+--lambda=<3>                 specify the strong to weak mutation bias [default: 3]
+--p=<0.01>                   specify the probability to randomize the fitness landscape [default: 0.01]
+--tied=false                 Tied must be set to true to take into account epistasis [default: false]
 )";
 
 int main(int argc, char *argv[]) {
@@ -559,19 +727,19 @@ int main(int argc, char *argv[]) {
                                true,               // show help if requested
                                "SimuEvol 0.1a");  // version string
 
-    string preferences_path{"../data/gal4.txt"};
-    if (args.at("--preferences")) {
-        preferences_path = args.at("--preferences").asString();
+    string preferences_path{"../data_prefs/np_cst.txt"};
+    if (args["--preferences"]) {
+        preferences_path = args["--preferences"].asString();
     }
 
-    string newick_path{"../data/gal4.newick"};
-    if (args.at("--newick")) {
-        newick_path = args.at("--newick").asString();
+    string newick_path{"../data_trees/gal4.newick"};
+    if (args["--newick"]) {
+        newick_path = args["--newick"].asString();
     }
 
-    string output_path{"../data/gal4.ali"};
-    if (args.at("--output")) {
-        output_path = args.at("--output").asString();
+    string output_path{"../data_alignment/gal4"};
+    if (args["--output"]) {
+        output_path = args["--output"].asString();
     }
 
     vector<array<double, 20>> fitness_profiles = open_preferences(preferences_path);
@@ -582,12 +750,12 @@ int main(int argc, char *argv[]) {
 
     Matrix4x4 mutation_rate;
     double mu = 0.5;
-    if (args.at("--mu")) {
-        mu = stod(args.at("--mu").asString());
+    if (args["--mu"]) {
+        mu = stod(args["--mu"].asString());
     }
     double lambda = 3.0;
-    if (args.at("--lambda")) {
-        lambda = stod(args.at("--lambda").asString());
+    if (args["--lambda"]) {
+        lambda = stod(args["--lambda"].asString());
     }
     mutation_rate << 0, 1, 1, lambda,
             lambda, 0, 1, lambda,
@@ -596,10 +764,14 @@ int main(int argc, char *argv[]) {
     mutation_rate *= mu;
     mutation_rate -= mutation_rate.rowwise().sum().asDiagonal();
 
-    ofstream output_file;
-    output_file.open(output_path);
-    output_file << root.nbr_leaves() << " " << nbr_sites * 3 << endl;
-    output_file.close();
+    ofstream ali_file;
+    ali_file.open(output_path + ".ali");
+    ali_file << root.nbr_leaves() << " " << nbr_sites * 3 << endl;
+    ali_file.close();
+
+    ofstream fasta_file;
+    fasta_file.open(output_path + ".fasta");
+    fasta_file.close();
 
     cout << "The tree contains " << root.nbr_nodes() << " nodes for " << root.nbr_leaves() << " species at the tips."
          << endl;
@@ -607,17 +779,31 @@ int main(int argc, char *argv[]) {
     cout << "The DNA sequence is " << nbr_sites * 3 << " base pairs long." << endl;
 
     double p = 0.01;
-    if (args.at("--p")) {
-        p = stod(args.at("--p").asString());
+    if (args["--p"]) {
+        p = stod(args["--p"].asString());
     }
 
+    cout << "The mutation transition matrix (" << Codon::nucleotides << ") is: " << endl;
+    cout << mutation_rate << endl;
+    cout << "There is a probability of " << p << " to permute the fitness landscape if a substitution occurs." << endl;
+
     root.set_evolution_parameters(mutation_rate, fitness_profiles, p);
+
+    bool tied = false;
+    if (args["--tied"]) {
+        tied = args["--tied"].asString() == "true";
+    }
+
     root.at_equilibrium();
-    root.traverse(output_path);
-    long nbr_substitutions = root.nbr_substitutions();
-    long nbr_synonymous = root.nbr_substitutions(true);
-    cout << "The simulation mapped " << nbr_substitutions << " substitutions along the tree." << endl;
-    cout << nbr_synonymous << " synonymous and " << nbr_substitutions - nbr_synonymous
-         << " non-synonymous substitutions." << endl;
+    root.traverse(output_path, tied);
+
+    long nbr_non_synonymous, nbr_synonymous;
+    tie(nbr_non_synonymous, nbr_synonymous) = root.nbr_substitutions();
+    cout << "The simulation mapped " << nbr_synonymous + nbr_non_synonymous << " substitutions along the tree." << endl;
+    cout << "On average, this is " << static_cast<double>(nbr_synonymous + nbr_non_synonymous) / nbr_sites << " substitutions per site." << endl;
+    cout << nbr_synonymous << " synonymous and " << nbr_non_synonymous << " non-synonymous substitutions." << endl;
+
+    cout << "Predicted omega: " << root.predicted_omega() << endl;
+    cout << "Simulated omega: " << root.simulated_omega() << endl;
     return 0;
 }

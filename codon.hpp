@@ -43,7 +43,7 @@ namespace Codon {
                 for (char n_3{0}; n_3 < 4; n_3++) {
                     // n_3 is the third position of the triplet.
                     std::array<char, 3> triplet = {n_1, n_2, n_3};
-                    codon_to_triplet_vec.at(triplet_to_codon(n_1, n_2, n_3)) = triplet;
+                    codon_to_triplet_vec[triplet_to_codon(n_1, n_2, n_3)] = triplet;
                 }
             }
         }
@@ -62,12 +62,12 @@ namespace Codon {
         for (char codon{0}; codon < 64; codon++) {
 
             // The triplet corresponding to this codon.
-            std::array<char, 3> triplet_from = codon_to_triplet.at(codon);
+            std::array<char, 3> triplet_from = codon_to_triplet[codon];
 
             // For each position in the triplet (3 positions).
             for (char position{0}; position < 3; position++) {
                 // The original nucleotide which is going to be mutated.
-                char n_from = triplet_from.at(position);
+                char n_from = triplet_from[position];
 
                 // For each possible mutation (3 possible mutations).
                 for (char mutation{0}; mutation < 3; mutation++) {
@@ -79,13 +79,13 @@ namespace Codon {
 
                     // The mutated triplet.
                     std::array<char, 3> triplet_to = triplet_from;
-                    triplet_to.at(position) = n_to;
+                    triplet_to[position] = n_to;
 
                     // The mutated codon.
-                    char codon_to = triplet_to_codon(triplet_to.at(0), triplet_to.at(1), triplet_to.at(2));
+                    char codon_to = triplet_to_codon(triplet_to[0], triplet_to[1], triplet_to[2]);
 
                     // Assign the neighbor to the array of neighbors.
-                    codon_to_neighbors.at(codon).at(3 * position + mutation) = std::make_tuple(codon_to, n_from, n_to);
+                    codon_to_neighbors[codon][3 * position + mutation] = std::make_tuple(codon_to, n_from, n_to);
                 }
             }
         }
@@ -190,16 +190,16 @@ namespace Codon {
         for (char codon{0}; codon < 64; codon++) {
 
             // Triplet corresponding to the codon
-            std::array<char, 3> triplet = codon_to_triplet_array.at(codon);
+            std::array<char, 3> triplet = codon_to_triplet_array[codon];
 
             // String containing the translated triplet (e.g "ATG")
             std::string triplet_str(3, ' ');
             for (char position{0}; position < 3; position++) {
-                triplet_str.at(position) = nucleotides.at(triplet.at(position));
+                triplet_str[position] = nucleotides[triplet[position]];
             }
 
             // Amino-acid corresponding to the translated string
-            codon_to_aa.at(codon) = aa_char_to_aa(triplet_str_to_aa_char.at(triplet_str), amino_acids);
+            codon_to_aa[codon] = aa_char_to_aa(triplet_str_to_aa_char.at(triplet_str), amino_acids);
         }
         return codon_to_aa;
     }
