@@ -94,11 +94,10 @@ public:
     // This method also returns the time (given as input) decremented by the time needed for the substitution event to occur.
     // If there is not enough time given, no substitution event is computed and the method returns 0.
     // time_left: The time available for a substitution event to occur.
-    double next_substitution(double &time_left, vector<Substitution> &substitutions_vec,
-                             unsigned site_begin, unsigned site_end) {
+    double next_substitution(double &time_left, vector<Substitution> &substitutions_vec) {
 
         // Number of possible substitutions is 9 times the number of sites (3 substitutions for each 3 possible positions).
-        unsigned nbr_substitutions{9 * (site_end - site_begin)};
+        unsigned nbr_substitutions{9 * nbr_sites};
 
         // Vector of substitution rates.
         vector<double> substitution_rates(nbr_substitutions, 0);
@@ -109,7 +108,7 @@ public:
         double dn{.0}, ds{.0};
 
         // For all site of the sequence.
-        for (unsigned site{site_begin}; site < site_end; site++) {
+        for (unsigned site{0}; site < nbr_sites; site++) {
             // Codon original before substitution.
 
             char codon_from = codon_seq[site];
@@ -152,7 +151,7 @@ public:
                     ds += mutation_rate_matrix(n_from, n_to);
                 }
 
-                substitution_rates[9 * (site - site_begin) + neighbor] = rate_substitution;
+                substitution_rates[9 * site + neighbor] = rate_substitution;
                 // Increment the sum of substitution rates
                 total_substitution_rates += rate_substitution;
 
@@ -179,7 +178,7 @@ public:
                     break;
                 }
             }
-            unsigned site = site_begin + index / 9;
+            unsigned site = index / 9;
             char codom_from = codon_seq[site];
 
             // Array of neighbors of the original codon (codons differing by only 1 mutation).
@@ -211,23 +210,12 @@ public:
     // Method computing all substitution event occuring during a given time-frame.
     // t: time during which substitution events occur (typically branch length).
     // This method is o(n²) where n is the number of sites, but can take into account epistatic effects
-    void run_substitutions_tied(double t, vector<Substitution> &subs) {
+    void run_substitutions(double t, vector<Substitution> &subs) {
         while (t > 0) {
-            t = next_substitution(t, subs, 0, nbr_sites);
+            t = next_substitution(t, subs);
         }
     }
 
-    // Method computing all substitution event occuring during a given time-frame.
-    // t: time during which substitution events occur (typically branch length).
-    // This method is o(n) where n is the number of sites, but can't take into account epistatic effects
-    void run_substitutions_untied(double t, vector<Substitution> &subs) {
-        for (unsigned site{0}; site < nbr_sites; site++) {
-            double site_t{t};
-            while (site_t > 0) {
-                site_t = next_substitution(site_t, subs, site, site + 1);
-            }
-        }
-    }
 
     // Method computing the equilibrium frequencies for one site.
     // aa_fitness_profil: The amino-acid fitness profil of the given site.
@@ -509,14 +497,9 @@ public:
     }
 
     // Recursively iterate through the subtree.
-    void traverse(string &output_filename, bool tied) {
+    void traverse(string &output_filename) {
         // Substitutions of the DNA sequence is generated.
-        if (tied) {
-            sequence_dna.run_substitutions_tied(length, substitutions);
-        } else {
-            sequence_dna.run_substitutions_untied(length, substitutions);
-        }
-
+        sequence_dna.run_substitutions(length, substitutions);
 
         if (is_leaf()) {
             // If the node is a leaf, output the DNA sequence and name.
@@ -537,7 +520,7 @@ public:
             // If the node is internal, iterate through the direct children.
             for (auto &child : children) {
                 child.sequence_dna.set_parameters(sequence_dna);
-                child.traverse(output_filename, tied);
+                child.traverse(output_filename);
             }
         }
     }
@@ -704,7 +687,7 @@ vector<array<double, 20>> open_preferences(string const &file_name) {
 static char const USAGE[] =
         R"(
 Usage:
-      SimuEvol [--preferences=<file_path>] [--newick=<file_path>] [--output=<file_path>] [--mu=<0.5>] [--lambda=<3>] [--p=<0.0>] [--tied=<false>]
+      SimuEvol [--preferences=<file_path>] [--newick=<file_path>] [--output=<file_path>] [--mu=<0.5>] [--lambda=<3>] [--p=<0.0>]
       SimuEvol --help
       SimuEvol --version
 
@@ -716,8 +699,7 @@ Options:
 --output=<file_path>         specify output protein name [default: ../data/gal4]
 --mu=<0.5>                   specify the mutation rate [default: 0.5]
 --lambda=<3>                 specify the strong to weak mutation bias [default: 3]
---p=<0.0>                    specify the probability to randomize the fitness landscape [default: 0.01]
---tied=false                 Tied must be set to true to take into account epistasis [default: false]
+--p=<0.0>                    specify the probability to randomize the fitness landscape [default: 0.0]
 )";
 
 int main(int argc, char *argv[]) {
@@ -753,7 +735,7 @@ int main(int argc, char *argv[]) {
     if (args["--mu"]) {
         mu = stod(args["--mu"].asString());
     }
-    double lambda = 3.0;
+    double lambda = 10.0;
     if (args["--lambda"]) {
         lambda = stod(args["--lambda"].asString());
     }
@@ -789,13 +771,8 @@ int main(int argc, char *argv[]) {
 
     root.set_evolution_parameters(mutation_rate, fitness_profiles, p);
 
-    bool tied = false;
-    if (args["--tied"]) {
-        tied = args["--tied"].asString() == "true";
-    }
-
     root.at_equilibrium();
-    root.traverse(output_path, tied);
+    root.traverse(output_path);
 
     long nbr_non_synonymous, nbr_synonymous;
     tie(nbr_non_synonymous, nbr_synonymous) = root.nbr_substitutions();
