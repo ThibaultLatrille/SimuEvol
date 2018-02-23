@@ -6,7 +6,9 @@
 
 ```
 $ git clone https://github.com/ThibaultLatrille/SimuEvol.git
-$ cd /SimuEvol
+$ cd ./SimuEvol
+$ git submodule init
+$ git submodule update
 ```
 
 ### Compile SimuEvol
