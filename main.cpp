@@ -646,7 +646,7 @@ public:
 
 string open_newick(string const &file_name) {
     ifstream input_stream(file_name);
-    if (!input_stream) cerr << "Can't open newick file!";
+    if (!input_stream) cerr << "Can't open newick file!" << endl;
 
     string line;
     getline(input_stream, line);
@@ -658,7 +658,7 @@ vector<array<double, 20>> open_preferences(string const &file_name) {
     vector<array<double, 20>> fitness_profiles{0};
 
     ifstream input_stream(file_name);
-    if (!input_stream) cerr << "Can't open preferences file!";
+    if (!input_stream) cerr << "Can't open preferences file!" << endl;
 
     string line;
 
@@ -709,7 +709,7 @@ int main(int argc, char *argv[]) {
                                true,               // show help if requested
                                "SimuEvol 0.1a");  // version string
 
-    string preferences_path{"../data_prefs/np_cst.txt"};
+    string preferences_path{"../data_prefs/np.txt"};
     if (args["--preferences"]) {
         preferences_path = args["--preferences"].asString();
     }
@@ -746,6 +746,11 @@ int main(int argc, char *argv[]) {
     mutation_rate *= mu;
     mutation_rate -= mutation_rate.rowwise().sum().asDiagonal();
 
+    double p = 0.0;
+    if (args["--p"]) {
+        p = stod(args["--p"].asString());
+    }
+
     ofstream ali_file;
     ali_file.open(output_path + ".ali");
     ali_file << root.nbr_leaves() << " " << nbr_sites * 3 << endl;
@@ -755,32 +760,35 @@ int main(int argc, char *argv[]) {
     fasta_file.open(output_path + ".fasta");
     fasta_file.close();
 
-    cout << "The tree contains " << root.nbr_nodes() << " nodes for " << root.nbr_leaves() << " species at the tips."
+    // .txt output
+    ofstream txt_file;
+    txt_file.open(output_path + ".txt");
+    txt_file << "The tree contains " << root.nbr_nodes() << " nodes for " << root.nbr_leaves() << " species at the tips."
          << endl;
-    cout << "The tree has a total branch length of " << root.tot_length() << "." << endl;
-    cout << "The DNA sequence is " << nbr_sites * 3 << " base pairs long." << endl;
-
-    double p = 0.0;
-    if (args["--p"]) {
-        p = stod(args["--p"].asString());
-    }
-
-    cout << "The mutation transition matrix (" << Codon::nucleotides << ") is: " << endl;
-    cout << mutation_rate << endl;
-    cout << "There is a probability of " << p << " to permute the fitness landscape if a substitution occurs." << endl;
+    txt_file << "The tree has a total branch length of " << root.tot_length() << "." << endl;
+    txt_file << "The DNA sequence is " << nbr_sites * 3 << " base pairs long." << endl;
+    txt_file << "The mutation transition matrix (" << Codon::nucleotides << ") is: " << endl;
+    txt_file << mutation_rate << endl;
+    txt_file << "There is a probability of " << p << " to permute the fitness landscape if a substitution occurs." << endl;
+    txt_file.close();
 
     root.set_evolution_parameters(mutation_rate, fitness_profiles, p);
-
     root.at_equilibrium();
     root.traverse(output_path);
 
     long nbr_non_synonymous, nbr_synonymous;
     tie(nbr_non_synonymous, nbr_synonymous) = root.nbr_substitutions();
-    cout << "The simulation mapped " << nbr_synonymous + nbr_non_synonymous << " substitutions along the tree." << endl;
-    cout << "On average, this is " << static_cast<double>(nbr_synonymous + nbr_non_synonymous) / nbr_sites << " substitutions per site." << endl;
-    cout << nbr_synonymous << " synonymous and " << nbr_non_synonymous << " non-synonymous substitutions." << endl;
 
-    cout << "w0=" << root.predicted_omega() << endl;
-    cout << "w=" << root.simulated_omega() << endl;
+    // .txt output
+    txt_file.open(output_path + ".txt", ios_base::app);
+    txt_file << "The simulation mapped " << nbr_synonymous + nbr_non_synonymous << " substitutions along the tree." << endl;
+    txt_file << "On average, this is " << static_cast<double>(nbr_synonymous + nbr_non_synonymous) / nbr_sites << " substitutions per site." << endl;
+    txt_file << nbr_synonymous << " synonymous and " << nbr_non_synonymous << " non-synonymous substitutions." << endl;
+    txt_file << "w0=" << root.predicted_omega() << endl;
+    txt_file << "w=" << root.simulated_omega() << endl;
+    txt_file.close();
+
+    cout << "Simulation computed. Log of the simulation available at: " << endl;
+    cout << output_path + ".txt" << endl;
     return 0;
 }
