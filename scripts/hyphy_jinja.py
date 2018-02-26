@@ -178,10 +178,10 @@ def build_matrices(nuc_freqs, sym_vars):
 
 
 def build_hyphy_batchfile(raw_batch_path, batch_outfile,  fasta_infile, tree_infile,
-                          rates=[0, 5], freqs=[0, 1, 3]):
+                          rates=list([0, 5]), freqs=list([0, 1, 3])):
     # Parse input arguments and set up input/outfile files accordingly
     name = batch_outfile.split('/')[-1]
-    raw_batchfile = raw_batch_path + "/scripts/globalDNDS_raw_jinja.bf"
+    raw_batchfile = raw_batch_path + "/globalDNDS_raw_jinja.bf"
 
     # Calculate frequency parameterizations
     print("Calculating frequency parameterizations.")
@@ -238,7 +238,7 @@ def parse_input(arguments):
                   "The second argument is the path to the output batch. " \
                   "The third argument is the alignment file. " \
                   "The fourth argument is the newick tree file"
-    assert (len(arguments) == 4), usage_error
+    assert (len(arguments) == 5), usage_error
 
     directory = arguments[1]
     batch = arguments[2]
