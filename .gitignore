@@ -15,6 +15,7 @@
 /data_figures
 /qsub
 /Omega_MutSel
+/notebooks
 *.pyc
 *.log
 *.contdiff
