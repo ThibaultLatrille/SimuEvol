@@ -9,7 +9,10 @@
 /cmake-build-debug
 .idea/
 /data_bayescode
+/data_alignment
 /data_hyphy
+/data_prefs
+/data_figures
 /qsub
 /Omega_MutSel
 *.pyc
