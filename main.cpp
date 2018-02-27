@@ -22,6 +22,18 @@ struct Substitution {
 };
 
 //Function for average
+double sum(vector<double> &v) {
+    double return_value = 0.0;
+    size_t n = v.size();
+
+    for (int i = 0; i < n; i++) {
+        return_value += v[i];
+    }
+
+    return return_value;
+}
+
+//Function for average
 double avg(vector<double> &v) {
     double return_value = 0.0;
     size_t n = v.size();
@@ -321,8 +333,10 @@ public:
     }
 
     // Theoretical computation of the predicted omega
-    double predicted_omega() {
+    double predicted_omega(bool averaged=true) {
         vector<double> omega_per_site(nbr_sites, 0.);
+        vector<double> dn_per_site(nbr_sites, 0.);
+        vector<double> ds_per_site(nbr_sites, 0.);
 
         // For all site of the sequence.
         for (unsigned site{0}; site < nbr_sites; site++) {
@@ -370,9 +384,15 @@ public:
                 }
 
             }
+            dn_per_site[site] = dn;
+            ds_per_site[site] = d0;
             omega_per_site[site] = dn / d0;
         }
-        return avg(omega_per_site);
+        if (averaged) {
+            return avg(omega_per_site);
+        } else {
+            return sum(dn_per_site) / sum(ds_per_site);
+        }
     }
 
     // Method returning the DNA string corresponding to the codon sequence.
@@ -535,8 +555,8 @@ public:
     }
 
     // Theoretical prediction of omega from the parameters of the simulation
-    double predicted_omega() {
-        return sequence_dna.predicted_omega();
+    double predicted_omega(bool average) {
+        return sequence_dna.predicted_omega(average);
     }
 
     // Recursively iterate through the subtree and count the number of substitutions.
@@ -714,12 +734,12 @@ int main(int argc, char *argv[]) {
         preferences_path = args["--preferences"].asString();
     }
 
-    string newick_path{"../data_trees/gal4.newick"};
+    string newick_path{"../data_trees/np.newick"};
     if (args["--newick"]) {
         newick_path = args["--newick"].asString();
     }
 
-    string output_path{"../data_alignment/gal4"};
+    string output_path{"../data_alignment/np"};
     if (args["--output"]) {
         output_path = args["--output"].asString();
     }
@@ -784,7 +804,8 @@ int main(int argc, char *argv[]) {
     txt_file << "The simulation mapped " << nbr_synonymous + nbr_non_synonymous << " substitutions along the tree." << endl;
     txt_file << "On average, this is " << static_cast<double>(nbr_synonymous + nbr_non_synonymous) / nbr_sites << " substitutions per site." << endl;
     txt_file << nbr_synonymous << " synonymous and " << nbr_non_synonymous << " non-synonymous substitutions." << endl;
-    txt_file << "w0=" << root.predicted_omega() << endl;
+    txt_file << "w0_avg=" << root.predicted_omega(true) << endl;
+    txt_file << "w0=" << root.predicted_omega(false) << endl;
     txt_file << "w=" << root.simulated_omega() << endl;
     txt_file.close();
 
