@@ -13,9 +13,11 @@ Second, we set up the hyphy batch file which makes use of these frequencies.
 Third, we generate the MG1 and MG3 matrix files.
 '''
 
-import sys
 import numpy as np
 import jinja2
+from collections import defaultdict
+import argparse
+from ete3 import Tree
 
 codon_dict = {"AAA": "K", "AAC": "N", "AAG": "K", "AAT": "N", "ACA": "T", "ACC": "T", "ACG": "T", "ACT": "T",
               "AGA": "R", "AGC": "S", "AGG": "R", "AGT": "S", "ATA": "I", "ATC": "I", "ATG": "M", "ATT": "I",
@@ -28,6 +30,10 @@ codon_dict = {"AAA": "K", "AAC": "N", "AAG": "K", "AAT": "N", "ACA": "T", "ACC":
 
 codons = sorted(codon_dict.keys())
 nucindex = {'A': 0, 'C': 1, 'G': 2, 'T': 3}
+
+
+def nested_dict_init():
+    return defaultdict(nested_dict_init)
 
 
 def get_nuc_diff(source, target, grab_position=False):
@@ -93,12 +99,16 @@ def build_emp_codon_freqs(nuc_freqs):
     return codon_freqs
 
 
+def p_stop_var(nuc_freqs):
+    return "p_stop_{0}".format(len(set(nuc_freqs.values())))
+
+
 def build_codon_freqs(nuc_freqs):
     ''' Compute codon frequencies from GTR nucleotide frequencies. '''
     codon_freqs = [""] * 61
     for i, codon in enumerate(codons):
         codon_freqs[i] = "*".join([nuc_freqs[codon[j]] for j in range(3)])
-        codon_freqs[i] += "/(1-p_stop)"
+        codon_freqs[i] += "/(1-{0})".format(p_stop_var(nuc_freqs))
     return codon_freqs
 
 
@@ -115,13 +125,18 @@ def array_to_hyphy_freq(f):
 def build_nuc_vars(nuc_freqs):
     ''' Compute codon frequencies from GTR nucleotide frequencies. '''
     const_freq = nuc_freqs['T']
-    const_freq_sum = "+".join([var for var in nuc_freqs.values() if var != const_freq])
-    nuc_globals = " ".join(["global {0}={1};".format(var, 1/len(nuc_freqs)) for var in nuc_freqs.values() if var != const_freq])
-    nuc_globals += " global {0}:=1-({1});".format(const_freq, const_freq_sum)
-    nuc_globals += " global p_stop:={0}; ".format(
-        "+".join(["*".join([nuc_freqs[n] for n in stop]) for stop in ["TGA", "TAA", "TAG"]]))
+    values_set = set(nuc_freqs.values())
+    assert len(values_set) == 2 or len(values_set) == 4, "There must either 2 or 4 frequencies parameters"
+    nuc_globals = " ".join(["global {0}=.25;".format(var) for var in values_set if var != const_freq])
 
-    nuc_globals += " ".join(["{0}:>0; {0}:<1;".format(p) for p in nuc_freqs.values()])
+    const_freq_sum = "+".join([var for var in values_set if var != const_freq])
+    ratio = len(values_set) / len(nuc_freqs.values())
+    nuc_globals += " global {0}:={1}-({2});".format(const_freq, ratio, const_freq_sum)
+
+    p_stop = "+".join(["*".join([nuc_freqs[n] for n in stop]) for stop in ["TGA", "TAA", "TAG"]])
+    nuc_globals += " global {0}:={1}; ".format(p_stop_var(nuc_freqs), p_stop)
+
+    nuc_globals += " ".join(["{0}:>0; {0}:<{1};".format(p, ratio) for p in values_set])
     return nuc_globals
 
 
@@ -134,6 +149,17 @@ def is_TI(source, target):
         return True
     else:
         return False
+
+
+def weak_strong(source, target):
+    weak = ["A", "T"]
+    out_str = ""
+    for nuc in [source, target]:
+        if nuc in weak:
+            out_str += "W"
+        else:
+            out_str += "S"
+    return out_str
 
 
 def build_rates(param):
@@ -152,7 +178,23 @@ def build_rates(param):
     return gtr_vars
 
 
-def build_matrices(nuc_freqs, sym_vars):
+def build_omega_rates(param):
+    assert param in [1, 4, 6]
+    gtr_omega_vars = {}
+    for n_1 in nucindex.keys():
+        for n_2 in nucindex.keys():
+            if n_1 != n_2:
+                key = n_1 + n_2
+                if param == 1:
+                    gtr_omega_vars[key] = "w"
+                if param == 4:
+                    gtr_omega_vars[key] = "w_" + weak_strong(n_1, n_2)
+                elif param == 6:
+                    gtr_omega_vars[key] = "w_" + "".join(sorted(n_1 + n_2))
+    return gtr_omega_vars
+
+
+def build_matrices(nuc_freqs, exchan_vars, omega_vars):
     ''' Create MG94-style matrices (use target nucleotide frequencies).  '''
     matrix = '{61, 61, \n'  # MG94
 
@@ -167,10 +209,10 @@ def build_matrices(nuc_freqs, sym_vars):
                 freq = str(nuc_freqs[diff[1]])
                 # Create string for matrix element
                 element = '{' + str(i) + ',' + str(j) + ',t'
-                if diff in sym_vars:
-                    element += '*' + sym_vars[diff]
+                if diff in exchan_vars:
+                    element += '*' + exchan_vars[diff]
                 if codon_dict[source] != codon_dict[target]:
-                    element += '*w'
+                    element += '*' + omega_vars[diff]
                 matrix += element + '*' + freq + '} '
 
     # And save to file.
@@ -178,17 +220,18 @@ def build_matrices(nuc_freqs, sym_vars):
 
 
 def build_hyphy_batchfile(raw_batch_path, batch_outfile,  fasta_infile, tree_infile,
-                          rates=list([0, 5]), freqs=list([0, 1, 3])):
+                          rates=list([0, 1, 5]), freqs=list([0, 1, 3]), omega=list([1, 4])):
     # Parse input arguments and set up input/outfile files accordingly
     name = batch_outfile.split('/')[-1]
     raw_batchfile = raw_batch_path + "/globalDNDS_raw_jinja.bf"
 
     # Calculate frequency parameterizations
-    print("Calculating frequency parameterizations.")
-    nuc_freqs_dict, nuc_vars_dict, codon_freqs_dict = dict(), dict(), dict()
+    print("Calculating frequency parametrization.")
+    nuc_freqs_dict, codon_freqs_dict = dict(), dict()
     nuc_freqs_dict[1] = {'A': 'p_at', 'C': 'p_cg', 'G': 'p_cg', 'T': 'p_at'}
     nuc_freqs_dict[3] = {'A': 'p_a', 'C': 'p_c', 'G': 'p_g', 'T': 'p_t'}
 
+    nuc_vars_dict, rate_vars_dict, omega_vars_dict = dict(), dict(), dict()
     for freq_param in freqs:
         assert freq_param in [0, 1, 3], "The number of free parameters for nucleotide frequencies is invalid"
 
@@ -201,21 +244,27 @@ def build_hyphy_batchfile(raw_batch_path, batch_outfile,  fasta_infile, tree_inf
 
         codon_freqs_dict[freq_param] = array_to_hyphy_freq(codon_freqs)
 
-    matrices_dict, rate_vars_dict = dict(), dict()
+    omega_rates_dict = dict()
+    for omega_param in omega:
+        assert omega_param in [1, 4, 6], "The number of free parameters for omega is invalid"
+        omega_rates_dict[omega_param] = build_omega_rates(omega_param)
+        omega_rates_set = set(omega_rates_dict[omega_param].values())
+        omega_vars_dict[omega_param] = " ".join(["global {0}=1.0; {0}:>0;".format(var) for var in omega_rates_set])
+
+    matrices_dict = nested_dict_init()
     for rate_param in rates:
-        assert rate_param in [0, 1, 5], "The number of free parameters for symetric rates frequencies is invalid"
+        assert rate_param in [0, 1, 5], "The number of free parameters for symmetric rates frequencies is invalid"
         rates = build_rates(rate_param)
         rate_vars_dict[rate_param] = " ".join(["global {0}=1.0; {0}:>0;".format(var) for var in set(rates.values())])
 
-        matrices_dict[rate_param] = dict()
         for freq_param, freqs in nuc_freqs_dict.items():
-            matrices_dict[rate_param][freq_param] = build_matrices(freqs, rates)
+            for omega_param, omega_rates in omega_rates_dict.items():
+                matrices_dict[rate_param][freq_param][omega_param] = build_matrices(freqs, rates, omega_rates)
 
     # Create the hyphy batchfile to include the frequencies calculated here. Note that we need to do this since no
     # actual alignment exists which includes all protein positions, so cannot be read in by hyphy file.
-    tree_file = open(tree_infile, 'r')
-    tree = tree_file.readline()[:-2]
-    tree_file.close()
+    tree_file = Tree(tree_infile)
+    tree = tree_file.write(format=9)
 
     env = jinja2.Environment(loader=jinja2.FileSystemLoader("/"))
     template = env.get_template(raw_batchfile)
@@ -223,6 +272,7 @@ def build_hyphy_batchfile(raw_batch_path, batch_outfile,  fasta_infile, tree_inf
                         codon_freqs_dict=codon_freqs_dict,
                         nuc_vars_dict=nuc_vars_dict,
                         rate_vars_dict=rate_vars_dict,
+                        omega_vars_dict=omega_vars_dict,
                         tree=tree, name=name,
                         fasta_infile=fasta_infile
                         ).dump(batch_outfile)
@@ -232,28 +282,28 @@ def build_hyphy_batchfile(raw_batch_path, batch_outfile,  fasta_infile, tree_inf
     return batch_outfile
 
 
-def parse_input(arguments):
-    usage_error = "\n\n Usage: python prefs_to_freqs.py <raw_batch> <batch> <fasta> <newick>.\n" \
-                  "The first argument is the path to the dir containing the raw batch. " \
-                  "The second argument is the path to the output batch. " \
-                  "The third argument is the alignment file. " \
-                  "The fourth argument is the newick tree file"
-    assert (len(arguments) == 5), usage_error
-
-    directory = arguments[1]
-    batch = arguments[2]
-    fasta = arguments[3]
-    tree = arguments[4]
-
-    return directory, batch, fasta, tree
-
-
 if __name__ == '__main__':
-    if len(sys.argv) == 5:
-        raw, output, fasta, newick = parse_input(sys.argv)
-    else:
-        raw, output, fasta, newick = "/home/thibault/SimuEvol/", \
-                                   "/home/thibault/SimuEvol/data_hyphy/npcst.bf", \
-                                   "/home/thibault/SimuEvol/data_alignment/npcst.fasta", \
-                                   "/home/thibault/SimuEvol/data_trees/np.newick"
-    build_hyphy_batchfile(raw, output, fasta, newick, [0, 5], [0, 1, 3])
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('-d', '--directory', required=False, type=str,
+                        default='/home/thibault/panhome/SimuEvol/scripts',
+                        dest="d", metavar="<dir_raw_batch>",
+                        help="The path to the directory containing the raw batch (globalDNDS_raw_jinja.bf)")
+    parser.add_argument('-b', '--batch', required=False, type=str,
+                        default='/home/thibault/SimuEvol/data_hyphy/npcst.bf',
+                        dest="b", metavar="<batch_output_path.bf>",
+                        help="The path to the output batch.")
+    parser.add_argument('-f', '--fasta', required=False, type=str,
+                        default="/home/thibault/SimuEvol/data_alignment/npcst.fasta",
+                        dest="f", metavar="<.fasta>",
+                        help="The path to fasta alignment file")
+    parser.add_argument('-t', '--tree', required=False, type=str,
+                        default="/home/thibault/SimuEvol/data_trees/np.newick",
+                        dest="t", metavar="<.newick>",
+                        help="The path to the newick tree file")
+    parser.add_argument('-p', '--parameters', required=False, type=str,
+                        default="0_5-0_1_3-1_4_6",
+                        dest="p", metavar="<parameters>",
+                        help="The parameters of the GTR-Matrix")
+    args = parser.parse_args()
+    params = [list(map(int, p.split("_"))) for p in args.p.split("-")]
+    build_hyphy_batchfile(args.d, args.b, args.f, args.t, params[0], params[1], params[2])

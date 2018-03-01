@@ -1,17 +1,17 @@
 import numpy as np
 import os
+from subprocess import run
 
 current_dir = "/panhome/tlatrill/SimuEvol"
 
-nbr_sites = 500
-protein = "gal4"
-mixture = False
-alpha = 0.5
-chain = 2
+nbr_sites = 300
+protein = "lactamase"
+mixture = True
+alpha = 0.1
+chain = 1
 id_prefix = "{0}_{1}_{2}_{3}_{4}".format(nbr_sites, protein, mixture, alpha, chain)
 
-nbr_cpu = 4
-nbr_points = 30
+nbr_points = 20
 
 data_path = "{0}/data_hyphy/{1}".format(current_dir, id_prefix)
 os.makedirs(data_path, exist_ok=True)
@@ -33,35 +33,52 @@ prefs_file.close()
 for qsub_id, mut_bias in enumerate(np.logspace(-1, 1, nbr_points)):
     id_sufix = "id{0}_m{1:.5f}".format(qsub_id, mut_bias)
     qsub_name = "{0}_{1}".format(id_prefix, id_sufix)
-    qsub_path = "{0}/qsub/{1}.pbs".format(current_dir, qsub_name)
-    qsub = open(qsub_path, 'w')
-    qsub.write("#!/bin/bash\n")
-    qsub.write("#\n")
-    qsub.write("#PBS -q q1day\n")
-    qsub.write("#PBS -l nodes=1:ppn={0},mem=4gb\n".format(nbr_cpu))
-    qsub.write("#PBS -o /pandata/tlatrill/read/read_out_{0}\n".format(qsub_name))
-    qsub.write("#PBS -e /pandata/tlatrill/read/read_err_{0}\n".format(qsub_name))
-    qsub.write("#PBS -j oe\n")
-    qsub.write("#PBS -W umask=022\n")
-    qsub.write("#PBS -r n\n")
-    qsub.write("#PBS -r n\n")
 
     # Run SimuEvol with the given mutional bias, and amino-acid preferences file and the tree
     ali_path = "{0}/data_alignment/{1}".format(current_dir, qsub_name)
     simu_evol_result = "{0}.txt".format(ali_path)
-    mu = 20 / (1 + mut_bias)
-    simu_evol_cmd = current_dir + "/SimuEvol --preferences={0} --newick={1} --output={2} --mu={3} --lambda={4}\n"
-    qsub.write(simu_evol_cmd.format(prefs_path, newick_path, ali_path, mu, mut_bias))
+    mu = 10 / (1 + mut_bias)
+    simu_evol_cmd = current_dir + "/SimuEvol --preferences={0} --newick={1} --output={2} --mu={3} --lambda={4}"
+    print("Running SimuEvol with mu={0} and lambda={1}".format(mu, mut_bias))
+    run(simu_evol_cmd.format(prefs_path, newick_path, ali_path, mu, mut_bias), shell=True)
+    print("SimuEvol completed !")
+    
+    for model, nbr_cpu in [("hyphy", 8), ("bayescode", 1)]:
+        qsub_path = "{0}/qsub/{1}_{2}.pbs".format(current_dir, qsub_name, model)
 
-    # Run SimuEvol with the given mutional bias, and amino-acid preferences file and the tree
-    fasta_path = ali_path + ".fasta"
-    scripts_dir = "{0}/scripts".format(current_dir)
-    hyphy_batch_path = "{0}/{1}.bf".format(data_path, id_sufix)
-    batchfile_cmd = "python3 {0}/hyphy_jinja.py {0} {1} {2} {3}\n"
-    qsub.write(batchfile_cmd.format(scripts_dir, hyphy_batch_path, fasta_path, newick_path))
+        qsub_str = "#!/bin/bash\n"
+        qsub_str += "#\n"
+        qsub_str += "#PBS -q q1day\n"
+        qsub_str += "#PBS -l nodes=1:ppn={0},mem=8gb\n".format(nbr_cpu)
+        qsub_str += "#PBS -o /pandata/tlatrill/read/read_out_{0}_{1}\n".format(qsub_name, model)
+        qsub_str += "#PBS -e /pandata/tlatrill/read/read_err_{0}_{1}\n".format(qsub_name, model)
+        qsub_str += "#PBS -j oe\n"
+        qsub_str += "#PBS -W umask=022\n"
+        qsub_str += "#PBS -r n\n"
+        qsub_str += "#PBS -r n\n"
+        qsub_str += "TMP=/tmp/tlatrill$RANDOM\n"
+        qsub_str += "export TMPDIR=$TMP\n"
 
-    qsub.write("HYPHYMP {0} CPU={1}\n".format(hyphy_batch_path, nbr_cpu))
+        if model == "hyphy":
+            # Run SimuEvol with the given mutional bias, and amino-acid preferences file and the tree
+            fasta_path = ali_path + ".fasta"
+            scripts_dir = "{0}/scripts".format(current_dir)
+            hyphy_batch_path = "{0}/{1}.bf".format(data_path, id_sufix)
+            batchfile_cmd = "python3 {0}/hyphy_jinja.py -d {0} -b {1} -f {2} -t {3} -p '0-0_1_3-1_4' \n"
 
-    qsub.write("rm -f {0}\n".format(qsub_path))
-    qsub.close()
-    print(qsub_name)
+            qsub_str += batchfile_cmd.format(scripts_dir, hyphy_batch_path, fasta_path, newick_path)
+            qsub_str += "HYPHYMP {0} CPU={1}\n".format(hyphy_batch_path, nbr_cpu)
+        else:
+            bayescode_path = "{0}/data_bayescode/{1}".format(current_dir, qsub_name)
+            bayescode_cmd = "globom -d {0} -t {1} -x 1 400 {2}\n".format(ali_path, newick_path, bayescode_path)
+
+            qsub_str += bayescode_cmd
+
+        qsub_str += "rm -f {0}\n".format(qsub_path)
+        
+        qsub = open(qsub_path, 'w')
+        qsub.write(qsub_str)
+        qsub.close()
+
+        run("qsub {0}".format(qsub_path), shell=True)
+        print(qsub_path)
