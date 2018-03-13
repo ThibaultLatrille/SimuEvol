@@ -19,6 +19,7 @@ namespace Codon {
     // String of all nucleotides.
     std::string const nucleotides{"ACGT"};
 
+
     // Function to map a triplet of 3 nucleotides (1st, 2nd and 3rd positions) to the corresponding codon.
     // n_1 : the nucleotide in 1st position
     // n_2 : the nucleotide in 2nd position
