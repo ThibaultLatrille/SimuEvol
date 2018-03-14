@@ -1,8 +1,6 @@
 /* T. Latrille.
 Hyphy inference for an "experimental" dataset using GTR mutation matrix
 */
-
-t; t:>0;
 {% for var in vars_all.values() %}{{ var }} {% endfor %}
 
 LIKELIHOOD_FUNCTION_OUTPUT = 1;
@@ -38,14 +36,23 @@ Freq_f{{ freq_param }}_w{{ omega_param }}={{ freqs }};
 {% for freq_param, matrices_dict_l2 in matrices_dict_l1.items() %}
 {% for omega_param, matrix in matrices_dict_l2.items() %}
 ////////////// w{{ omega_param }}_r{{ rate_param }}_f{{ freq_param }} //////////////
-t; t:>0;
 {% for var in vars_nested_dict[rate_param][freq_param][omega_param].values() %}{{ var }} {% endfor %}
 
 Model Model_r{{ rate_param  }}_f{{ freq_param }}_w{{ omega_param }} = (Matrix_r{{ rate_param  }}_f{{ freq_param }}_w{{ omega_param }}, Freq_f{{ freq_param }}_w{{ omega_param }}, 0);
 UseModel (USE_NO_MODEL);
 UseModel(Model_r{{ rate_param  }}_f{{ freq_param }}_w{{ omega_param }});
-Tree    Tree01 = {{ tree }};
-LikelihoodFunction  LikModel_r{{ rate_param  }}_f{{ freq_param }}_w{{ omega_param }} = (filt_data, Tree01);
+Tree    Tree_r{{ rate_param  }}_f{{ freq_param }}_w{{ omega_param }} = {{ tree }};
+
+branchNames 	= BranchName (Tree_r{{ rate_param  }}_f{{ freq_param }}_w{{ omega_param }}, -1);
+branchLengths	= BranchLength (Tree_r{{ rate_param  }}_f{{ freq_param }}_w{{ omega_param }}, -1);
+
+for (k = 0; k < Columns(branchNames)-1; k=k+1)
+{
+	ExecuteCommands("Tree_r{{ rate_param  }}_f{{ freq_param }}_w{{ omega_param }}." + branchNames[k] + ".t:=" + branchLengths[k] + ";");
+}
+
+LikelihoodFunction  LikModel_r{{ rate_param  }}_f{{ freq_param }}_w{{ omega_param }} = (filt_data, Tree_r{{ rate_param  }}_f{{ freq_param }}_w{{ omega_param }});
 Optimize (paramValues, LikModel_r{{ rate_param  }}_f{{ freq_param }}_w{{ omega_param }});
+fprintf (stdout, LikModel_r{{ rate_param  }}_f{{ freq_param }}_w{{ omega_param }});
 fprintf ("{{ name }}_r{{ rate_param  }}_f{{ freq_param }}_w{{ omega_param }}_hyout.txt", LikModel_r{{ rate_param  }}_f{{ freq_param }}_w{{ omega_param }});
 {% endfor %}{% endfor %}{% endfor %}

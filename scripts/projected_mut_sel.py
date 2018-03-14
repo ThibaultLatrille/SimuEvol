@@ -121,7 +121,7 @@ def build_matrices(nuc_freqs, exchan_vars, omega_param, vars_dict):
                 assert (len(str(x)) == 1), "Problem with determining nucleotide difference between codons"
                 freq = str(nuc_freqs[diff[1]])
                 # Create string for matrix element
-                element = '{' + str(i) + ',' + str(j) + ',t'
+                element = '{' + str(i) + ',' + str(j) + ',mu*t'
                 if diff in exchan_vars:
                     element += '*' + exchan_vars[diff]
                 if codon_dict[source] != codon_dict[target]:
@@ -172,6 +172,7 @@ def build_hyphy_batchfile(raw_batch_path, batch_outfile, fasta_infile, tree_infi
             for omega_param in omega:
                 vars_nested_dict[rate_param][freq_param][omega_param] = dict()
                 vars_dict = vars_nested_dict[rate_param][freq_param][omega_param]
+                vars_dict["mu"] = "global mu=1; mu:>0;"
 
                 nuc_freqs = nuc_freqs_dict[freq_param]
                 build_nuc_vars(nuc_freqs_dict[freq_param], vars_dict)
@@ -195,7 +196,7 @@ def build_hyphy_batchfile(raw_batch_path, batch_outfile, fasta_infile, tree_infi
     # Create the hyphy batchfile to include the frequencies calculated here. Note that we need to do this since no
     # actual alignment exists which includes all protein positions, so cannot be read in by hyphy file.
     tree_file = Tree(tree_infile)
-    tree = tree_file.write(format=9)
+    tree = tree_file.write(format=0)
 
     env = jinja2.Environment(loader=jinja2.FileSystemLoader("/"))
     template = env.get_template(raw_batchfile)

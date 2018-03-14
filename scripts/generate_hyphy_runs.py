@@ -46,8 +46,6 @@ for qsub_id, mut_bias in enumerate(np.logspace(-1, 1, nbr_points)):
     qsub_str += "#PBS -W umask=022\n"
     qsub_str += "#PBS -r n\n"
     qsub_str += "#PBS -r n\n"
-    qsub_str += "TMP=/tmp/tlatrill$RANDOM\n"
-    qsub_str += "export TMPDIR=$TMP\n"
 
     # Run SimuEvol with the given mutional bias, and amino-acid preferences file and the tree
     ali_path = "{0}/data_alignment/{1}".format(current_dir, qsub_name)
