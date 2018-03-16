@@ -2,8 +2,14 @@ import numpy as np
 import os
 from subprocess import run
 
-current_dir = "/panhome/tlatrill/SimuEvol"
-# current_dir = "/home/thibault/SimuEvol"
+cluster = True
+
+if cluster:
+    current_dir = "/panhome/tlatrill/SimuEvol"
+    cmd = "qsub"
+else:
+    current_dir = "/home/thibault/SimuEvol"
+    cmd = "sh"
 
 nbr_sites = 2000
 protein = "np"
@@ -12,7 +18,7 @@ alpha = 0.1
 chain = 1
 id_prefix = "{0}_{1}_{2}_{3}_{4}".format(nbr_sites, protein, mixture, alpha, chain)
 
-nbr_cpu = 8
+nbr_cpu = 4
 nbr_points = 30
 
 data_path = "{0}/data_hyphy/{1}".format(current_dir, id_prefix)
@@ -39,7 +45,7 @@ for qsub_id, mut_bias in enumerate(np.logspace(-1, 1, nbr_points)):
     qsub_str = "#!/bin/bash\n"
     qsub_str += "#\n"
     qsub_str += "#PBS -q q1day\n"
-    qsub_str += "#PBS -l nodes=1:ppn={0},mem=8gb\n".format(nbr_cpu)
+    qsub_str += "#PBS -l nodes=1:ppn={0},mem=4gb\n".format(nbr_cpu)
     qsub_str += "#PBS -o /pandata/tlatrill/read/read_out_{0}\n".format(qsub_name)
     qsub_str += "#PBS -e /pandata/tlatrill/read/read_err_{0}\n".format(qsub_name)
     qsub_str += "#PBS -j oe\n"
@@ -68,5 +74,6 @@ for qsub_id, mut_bias in enumerate(np.logspace(-1, 1, nbr_points)):
     qsub.write(qsub_str)
     qsub.close()
 
-    run("qsub {0}".format(qsub_path), shell=True)
-    print(qsub_path)
+    print("Running " + qsub_path)
+    run("{0} {1}".format(cmd, qsub_path), shell=True)
+    print("Finished running")

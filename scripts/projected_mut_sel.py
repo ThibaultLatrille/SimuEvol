@@ -107,12 +107,20 @@ def build_matrices(nuc_freqs, exchan_vars, omega_param, vars_dict):
     matrix = '{61, 61, \n'  # MG94
     codon_freqs = [""] * 61
     beta_set = set()
+    epsilon_set = set()
+
+    def epsilon_name(codon, omega_param):
+        epsilon = "e_" + codon_dict[codon]
+        if codon_dict[codon] == codon_dict["ATG"] and omega_param == 95:
+            epsilon += "_cst"
+        return epsilon
+
     for i, source in enumerate(codons):
         codon_freqs[i] = "*".join([nuc_freqs[source[j]] for j in range(3)])
         if omega_param == 95 or omega_param == 20:
-            epsilon = "e_" + codon_dict[source]
+            epsilon = epsilon_name(source, omega_param)
             codon_freqs[i] += "*" + epsilon
-            vars_dict[epsilon] = "global {0}=1.0; {0}:>0;".format(epsilon)
+            epsilon_set.add(epsilon)
 
         for j, target in enumerate(codons):
 
@@ -130,15 +138,26 @@ def build_matrices(nuc_freqs, exchan_vars, omega_param, vars_dict):
                         vars_dict["w"] = "global w=1.0; w:>0;"
                     elif omega_param == 95 or omega_param == 20:
                         if omega_param == 95:
-                            beta = 'w_' + "".join(sorted(codon_dict[source] + codon_dict[target]))
+                            beta = 'b_' + "".join(sorted(codon_dict[source] + codon_dict[target]))
                             vars_dict[beta] = "global {0}=1.0; {0}:>0;".format(beta)
                             beta_set.add(beta)
                             element += '*' + beta
-                        epsilon = 'e_' + codon_dict[target]
+                        epsilon = epsilon_name(target, omega_param)
                         element += '*' + epsilon
 
                 matrix += element + '*' + freq + '} '
     matrix += '}\n'
+
+    if omega_param == 95 or omega_param == 20:
+        if omega_param == 95:
+            const_epsilon = epsilon_name("ATG", omega_param)
+            epsilon_set.remove(const_epsilon)
+            assert len(epsilon_set) == 19, "There must be 20 amino-acids"
+            const_freq_sum = "+".join([var for var in epsilon_set])
+            vars_dict[const_epsilon] = "global {0}:=20-({1}); {0}:>0; {0}:<20;".format(const_epsilon, const_freq_sum)
+
+        for epsilon in epsilon_set:
+            vars_dict[epsilon] = "global {0}=1; {0}:>0; {0}:<20;".format(epsilon)
 
     print("{0} beta parameters out of {1:.0f} possible".format(len(beta_set), 20 * 19 / 2))
     z_var = "z_{0}".format(omega_param)
@@ -159,8 +178,8 @@ def build_hyphy_batchfile(raw_batch_path, batch_outfile, fasta_infile, tree_infi
     # Calculate frequency parameterizations
     print("Calculating frequency parametrization.")
     nuc_freqs_dict = dict()
-    nuc_freqs_dict[1] = {'A': 'p_at', 'C': 'p_cg', 'G': 'p_cg', 'T': 'p_at'}
-    nuc_freqs_dict[3] = {'A': 'p_a', 'C': 'p_c', 'G': 'p_g', 'T': 'p_t'}
+    nuc_freqs_dict[1] = {'A': 'p_AT', 'C': 'p_CG', 'G': 'p_CG', 'T': 'p_AT'}
+    nuc_freqs_dict[3] = {'A': 'p_A', 'C': 'p_C', 'G': 'p_G', 'T': 'p_T'}
 
     matrices_nested_dict = nested_dict_init()
     freqs_nested_dict = nested_dict_init()
