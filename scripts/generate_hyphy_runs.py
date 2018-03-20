@@ -2,7 +2,7 @@ import numpy as np
 import os
 from subprocess import run
 
-cluster = True
+cluster = False
 
 if cluster:
     current_dir = "/panhome/tlatrill/SimuEvol"
@@ -11,7 +11,7 @@ else:
     current_dir = "/home/thibault/SimuEvol"
     cmd = "sh"
 
-nbr_sites = 2000
+nbr_sites = 500
 protein = "np"
 mixture = True
 alpha = 0.1
@@ -19,7 +19,7 @@ chain = 1
 id_prefix = "{0}_{1}_{2}_{3}_{4}".format(nbr_sites, protein, mixture, alpha, chain)
 
 nbr_cpu = 4
-nbr_points = 30
+nbr_points = 2
 
 data_path = "{0}/data_hyphy/{1}".format(current_dir, id_prefix)
 os.makedirs(data_path, exist_ok=True)
