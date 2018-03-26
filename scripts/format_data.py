@@ -4,6 +4,13 @@ import glob
 from collections import defaultdict
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import colors
+from matplotlib import lines
+from matplotlib import markers
+
+colors_array = list(colors.cnames.keys())
+lines_array = list(lines.lineStyles.keys())
+markers_array = list(markers.MarkerStyle.markers.keys())
 
 
 def dico_from_file(filename):
@@ -197,7 +204,7 @@ def equilibrium_at_pct(hyphy_dico):
 
 nested_dict = nested_dict_init()
 current_dir = "/home/thibault/SimuEvol/"
-for file in sorted(os.listdir(current_dir + "/data_prefs"))[:2]:
+for file in sorted(os.listdir(current_dir + "/data_prefs")):
     prefix = file.strip().replace(".txt", "")
     hyphy_path = "{0}/data_hyphy/{1}".format(current_dir, prefix)
     if os.path.isdir(hyphy_path):
@@ -206,7 +213,6 @@ for file in sorted(os.listdir(current_dir + "/data_prefs"))[:2]:
         protein = param[1]
         mixture = param[2] == "True"
         alpha = float(param[3])
-        chain = int(param[4])
 
         protein_prefs_path = "{0}/data_prefs/{1}".format(current_dir, file)
 
@@ -227,8 +233,8 @@ for file in sorted(os.listdir(current_dir + "/data_prefs"))[:2]:
             nested_dict["$\lambda$"]["Alignment"][at_gc_pct] = at_gc_pct_obs
 
             prefs_list = prefs_path_to_list(protein_prefs_path)
-            nested_dict["%$_{AT}$"]["MutSel"][at_gc_pct] = theoretical_at_pct(prefs_list, at_gc_pct)
-            nested_dict["$\lambda$"]["MutSel"][at_gc_pct] = theoretical_at_gc_pct(prefs_list, at_gc_pct)
+            nested_dict["%$_{AT}$"]["Theoretical MutSel"][at_gc_pct] = theoretical_at_pct(prefs_list, at_gc_pct)
+            nested_dict["$\lambda$"]["Theoretical MutSel"][at_gc_pct] = theoretical_at_gc_pct(prefs_list, at_gc_pct)
 
             for hyphy_result in glob.glob("{0}/{1}*_hyout.txt".format(hyphy_path, batch)):
                 experiment = hyphy_result.replace("_hyout.txt", "").split(".bf_")[-1]
@@ -243,20 +249,25 @@ for file in sorted(os.listdir(current_dir + "/data_prefs"))[:2]:
 
                 if ("p_G" in hyphy_dico) and ("p_G" in hyphy_dico):
                     gc_pct = hyphy_dico["p_G"] + hyphy_dico["p_C"]
-                    nested_dict["%$_{AT}$"][experiment][at_gc_pct] = 1 - gc_pct
-                    nested_dict["$\lambda$"][experiment][at_gc_pct] = (1 - gc_pct) / gc_pct
+                    nested_dict["%$_{AT}$"][experiment + " Mutation"][at_gc_pct] = 1 - gc_pct
+                    nested_dict["$\lambda$"][experiment + " Mutation"][at_gc_pct] = (1 - gc_pct) / gc_pct
 
-                nested_dict["%$_{AT}$"][experiment + "_Equilibrium"][at_gc_pct] = equilibrium_at_pct(hyphy_dico)
-                nested_dict["$\lambda$"][experiment+"_Equilibrium"][at_gc_pct] = equilibrium_lambda(hyphy_dico)
+                nested_dict["%$_{AT}$"][experiment + " MutSel"][at_gc_pct] = equilibrium_at_pct(hyphy_dico)
+                nested_dict["$\lambda$"][experiment + " MutSel"][at_gc_pct] = equilibrium_lambda(hyphy_dico)
 
         for param in ["%$_{AT}$", "$\lambda$", "$\omega$"]:
             nested_dict_l1 = nested_dict[param]
             my_dpi = 96
             fig = plt.figure(figsize=(880 / my_dpi, 400 / my_dpi), dpi=my_dpi)
+            index = 0
             for experiment in sorted(nested_dict_l1.keys(), key=lambda x: x[::-1]):
                 x_list = sorted(nested_dict_l1[experiment].keys())
                 y_list = [nested_dict_l1[experiment][k] for k in x_list]
-                plt.plot(x_list, y_list, '--', label=experiment)
+                plt.plot(x_list, y_list,
+                         linestyle=':',
+                         marker=markers_array[index % len(markers_array)],
+                         label=experiment)
+                index += 1
             plt.xscale('log')
             plt.xlabel('$\lambda$')
             if 'AT' in param:
