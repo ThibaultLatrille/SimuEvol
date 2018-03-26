@@ -2,7 +2,7 @@ import numpy as np
 import os
 from subprocess import run
 
-cluster = False
+cluster = True
 
 if cluster:
     current_dir = "/panhome/tlatrill/SimuEvol"
@@ -11,15 +11,15 @@ else:
     current_dir = "/home/thibault/SimuEvol"
     cmd = "sh"
 
-nbr_sites = 500
+nbr_sites = 2000
 protein = "np"
 mixture = True
 alpha = 0.1
-chain = 1
+chain = 7.5
 id_prefix = "{0}_{1}_{2}_{3}_{4}".format(nbr_sites, protein, mixture, alpha, chain)
 
 nbr_cpu = 4
-nbr_points = 2
+nbr_points = 20
 
 data_path = "{0}/data_hyphy/{1}".format(current_dir, id_prefix)
 os.makedirs(data_path, exist_ok=True)
@@ -56,7 +56,7 @@ for qsub_id, mut_bias in enumerate(np.logspace(-1, 1, nbr_points)):
     # Run SimuEvol with the given mutional bias, and amino-acid preferences file and the tree
     ali_path = "{0}/data_alignment/{1}".format(current_dir, qsub_name)
     simu_evol_result = "{0}.txt".format(ali_path)
-    mu = 15.0
+    mu = 7.5
     simu_evol_cmd = current_dir + "/SimuEvol --preferences={0} --newick={1} --output={2} --mu={3} --lambda={4}"
     simu_evol_cmd = simu_evol_cmd.format(prefs_path, newick_path, ali_path, mu, mut_bias)
     simu_evol_cmd += " --w={0} --a={1} --p={2}\n".format(False, False, 0.0)
@@ -64,10 +64,15 @@ for qsub_id, mut_bias in enumerate(np.logspace(-1, 1, nbr_points)):
 
     fasta_path = ali_path + ".fasta"
     scripts_dir = "{0}/scripts".format(current_dir)
-    hyphy_batch_path = "{0}/{1}.bf".format(data_path, id_sufix)
-    batchfile_cmd = "python3 {0}/projected_mut_sel.py -d {0} -b {1} -f {2} -t {3} -p '0-3-1_20_95' \n"
-    qsub_str += batchfile_cmd.format(scripts_dir, hyphy_batch_path, fasta_path, newick_path)
-    qsub_str += "HYPHYMP {0} CPU={1}\n".format(hyphy_batch_path, nbr_cpu)
+    rate = 0  # can be 0, 1, or 5
+    freq = 3  # can be 1 or 3
+    for omega in [1, 20, 95]:
+        param = "{0}-{1}-{2}".format(rate, freq, omega)
+        hyphy_batch_path = "{0}/{1}_{2}.bf".format(data_path, id_sufix, param)
+        batchfile_cmd = "python3 {0}/projected_mut_sel.py -d {0} -b {1} -f {2} -t {3} -p '{4}' \n"
+        qsub_str += batchfile_cmd.format(scripts_dir, hyphy_batch_path, fasta_path, newick_path, param)
+        qsub_str += "HYPHYMP {0} CPU={1}\n".format(hyphy_batch_path, nbr_cpu)
+
     qsub_str += "rm -f {0}\n".format(qsub_path)
 
     qsub = open(qsub_path, 'w')
