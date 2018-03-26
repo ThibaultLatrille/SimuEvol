@@ -14,7 +14,6 @@ Third, we generate the MG1 and MG3 matrix files.
 '''
 
 import jinja2
-from collections import defaultdict
 import argparse
 from ete3 import Tree
 
@@ -29,10 +28,6 @@ codon_dict = {"AAA": "K", "AAC": "N", "AAG": "K", "AAT": "N", "ACA": "T", "ACC":
 
 codons = sorted(codon_dict.keys())
 nucindex = {'A': 0, 'C': 1, 'G': 2, 'T': 3}
-
-
-def nested_dict_init():
-    return defaultdict(nested_dict_init)
 
 
 def get_nuc_diff(source, target, grab_position=False):
@@ -58,7 +53,7 @@ def array_to_hyphy_freq(f):
     return hyphy_f
 
 
-def build_nuc_vars(nuc_freqs, vars_dict):
+def build_nuc_vars(nuc_freqs, vars_list, constrains_list):
     ''' Compute codon frequencies from GTR nucleotide frequencies. '''
     const_freq = nuc_freqs['T']
     values_set = set(nuc_freqs.values())
@@ -68,9 +63,9 @@ def build_nuc_vars(nuc_freqs, vars_dict):
 
     for var in values_set:
         if var != const_freq:
-            vars_dict[var] = "global {0}=.25; {0}:>0; {0}:<{1};".format(var, ratio)
+            vars_list.append("global {0}=0.25;".format(var))
 
-    vars_dict[const_freq] = "global {0}:={1}-({2}); {0}:>0; {0}:<{1};".format(const_freq, ratio, const_freq_sum)
+    constrains_list.append("global {0}:={1}-({2});".format(const_freq, ratio, const_freq_sum))
     return 1
 
 
@@ -85,7 +80,7 @@ def is_TI(source, target):
         return False
 
 
-def build_rates(param, vars_dict):
+def build_rates(param, vars_list, constrains_list):
     assert param in [0, 1, 5]
     gtr_vars = {}
     for n_1 in nucindex.keys():
@@ -95,25 +90,26 @@ def build_rates(param, vars_dict):
                 if param == 1 and is_TI(n_1, n_2):
                     gtr_vars[key] = "k"
                 if param == 5:
-                    value = "r_" + "".join(sorted(n_1 + n_2))
-                    if value != 'r_AC':
+                    value = "exch" + "".join(sorted(n_1 + n_2))
+                    if value != 'exchAC':
                         gtr_vars[key] = value
-                        vars_dict[value] = "global {0}=1.0; {0}:>0;".format(value)
+                        vars_list.append("global {0}=1.0;".format(value))
     return gtr_vars
 
 
-def build_matrices(nuc_freqs, exchan_vars, omega_param, vars_dict):
+def epsilon_name(codon, omega_param):
+    epsilon = "eps" + codon_dict[codon]
+    if codon_dict[codon] == codon_dict["ATG"] and omega_param == 95:
+        epsilon += "epsCST"
+    return epsilon
+
+
+def build_matrices(nuc_freqs, exchan_vars, omega_param, vars_list, constrains_list):
     ''' Create MG94-style matrices (use target nucleotide frequencies).  '''
     matrix = '{61, 61, \n'  # MG94
     codon_freqs = [""] * 61
     beta_set = set()
     epsilon_set = set()
-
-    def epsilon_name(codon, omega_param):
-        epsilon = "e_" + codon_dict[codon]
-        if codon_dict[codon] == codon_dict["ATG"] and omega_param == 95:
-            epsilon += "_cst"
-        return epsilon
 
     for i, source in enumerate(codons):
         codon_freqs[i] = "*".join([nuc_freqs[source[j]] for j in range(3)])
@@ -135,11 +131,11 @@ def build_matrices(nuc_freqs, exchan_vars, omega_param, vars_dict):
                 if codon_dict[source] != codon_dict[target]:
                     if omega_param == 1:
                         element += '*w'
-                        vars_dict["w"] = "global w=1.0; w:>0;"
+                        vars_list.append("global w=1.0;")
                     elif omega_param == 95 or omega_param == 20:
                         if omega_param == 95:
                             beta = 'b_' + "".join(sorted(codon_dict[source] + codon_dict[target]))
-                            vars_dict[beta] = "global {0}=1.0; {0}:>0;".format(beta)
+                            vars_list.append("global {0}=1.0;".format(beta))
                             beta_set.add(beta)
                             element += '*' + beta
                         epsilon = epsilon_name(target, omega_param)
@@ -154,23 +150,22 @@ def build_matrices(nuc_freqs, exchan_vars, omega_param, vars_dict):
             epsilon_set.remove(const_epsilon)
             assert len(epsilon_set) == 19, "There must be 20 amino-acids"
             const_freq_sum = "+".join([var for var in epsilon_set])
-            vars_dict[const_epsilon] = "global {0}:=20-({1}); {0}:>0; {0}:<20;".format(const_epsilon, const_freq_sum)
+            constrains_list.append("global {0}:=20-({1});".format(const_epsilon, const_freq_sum))
 
         for epsilon in epsilon_set:
-            vars_dict[epsilon] = "global {0}=1; {0}:>0; {0}:<20;".format(epsilon)
+            vars_list.append("global {0}=1;".format(epsilon))
 
     print("{0} beta parameters out of {1:.0f} possible".format(len(beta_set), 20 * 19 / 2))
-    z_var = "z_{0}".format(omega_param)
-    vars_dict[z_var] = " global {0}:={1};".format(z_var, "+".join(codon_freqs))
+    constrains_list.append("global z:={0};".format("+".join(codon_freqs)))
 
     for i, codon in enumerate(codon_freqs):
-        codon_freqs[i] = codon + "/" + z_var
+        codon_freqs[i] = codon + "/z"
     # And save to file.
     return matrix, array_to_hyphy_freq(codon_freqs)
 
 
 def build_hyphy_batchfile(raw_batch_path, batch_outfile, fasta_infile, tree_infile,
-                          rates=list([0, 1, 5]), freqs=list([0, 1, 3]), omega=list([1, 4])):
+                          rate_param=0, freq_param=3, omega_param=1):
     # Parse input arguments and set up input/outfile files accordingly
     name = batch_outfile.split('/')[-1]
     raw_batchfile = raw_batch_path + "/projected_mut_sel.bf"
@@ -178,39 +173,20 @@ def build_hyphy_batchfile(raw_batch_path, batch_outfile, fasta_infile, tree_infi
     # Calculate frequency parameterizations
     print("Calculating frequency parametrization.")
     nuc_freqs_dict = dict()
-    nuc_freqs_dict[1] = {'A': 'p_AT', 'C': 'p_CG', 'G': 'p_CG', 'T': 'p_AT'}
-    nuc_freqs_dict[3] = {'A': 'p_A', 'C': 'p_C', 'G': 'p_G', 'T': 'p_T'}
+    nuc_freqs_dict[1] = {'A': 'pnAT', 'C': 'pnCG', 'G': 'pnCG', 'T': 'pnAT'}
+    nuc_freqs_dict[3] = {'A': 'pnA', 'C': 'pnC', 'G': 'pnG', 'T': 'pnT'}
 
-    matrices_nested_dict = nested_dict_init()
-    freqs_nested_dict = nested_dict_init()
-    vars_nested_dict = nested_dict_init()
-    vars_all = dict()
+    vars_list = list()
+    constrains_list = list()
 
-    for rate_param in rates:
-        for freq_param in freqs:
-            for omega_param in omega:
-                vars_nested_dict[rate_param][freq_param][omega_param] = dict()
-                vars_dict = vars_nested_dict[rate_param][freq_param][omega_param]
-                vars_dict["mu"] = "global mu=1; mu:>0;"
+    vars_list.append("global mu=1;")
 
-                nuc_freqs = nuc_freqs_dict[freq_param]
-                build_nuc_vars(nuc_freqs_dict[freq_param], vars_dict)
+    nuc_freqs = nuc_freqs_dict[freq_param]
+    build_nuc_vars(nuc_freqs_dict[freq_param], vars_list, constrains_list)
 
-                exchan_vars = build_rates(rate_param, vars_dict)
+    exchan_vars = build_rates(rate_param, vars_list, constrains_list)
 
-                matrix, codon_freqs = build_matrices(nuc_freqs, exchan_vars, omega_param, vars_dict)
-                matrices_nested_dict[rate_param][freq_param][omega_param] = matrix
-
-                if omega_param in freqs_nested_dict[freq_param]:
-                    assert freqs_nested_dict[freq_param][omega_param] == codon_freqs
-                else:
-                    freqs_nested_dict[freq_param][omega_param] = codon_freqs
-
-                for var in vars_dict.keys():
-                    if var in vars_all:
-                        assert vars_all[var] == vars_dict[var]
-                    else:
-                        vars_all[var] = vars_dict[var]
+    matrix, codon_freqs = build_matrices(nuc_freqs, exchan_vars, omega_param, vars_list, constrains_list)
 
     # Create the hyphy batchfile to include the frequencies calculated here. Note that we need to do this since no
     # actual alignment exists which includes all protein positions, so cannot be read in by hyphy file.
@@ -219,10 +195,11 @@ def build_hyphy_batchfile(raw_batch_path, batch_outfile, fasta_infile, tree_infi
 
     env = jinja2.Environment(loader=jinja2.FileSystemLoader("/"))
     template = env.get_template(raw_batchfile)
-    template.stream(matrices_nested_dict=matrices_nested_dict,
-                    freqs_nested_dict=freqs_nested_dict,
-                    vars_nested_dict=vars_nested_dict,
-                    vars_all=vars_all,
+    template.stream(matrix=matrix,
+                    codon_freqs=codon_freqs,
+                    param="r{0}_f{1}_w{2}".format(rate_param, freq_param, omega_param),
+                    vars_list=vars_list,
+                    constrains_list=constrains_list,
                     tree=tree, name=name,
                     fasta_infile=fasta_infile).dump(batch_outfile)
 
@@ -249,9 +226,9 @@ if __name__ == '__main__':
                         dest="t", metavar="<.newick>",
                         help="The path to the newick tree file")
     parser.add_argument('-p', '--parameters', required=False, type=str,
-                        default="0-3-1_20_95",
+                        default="0-3-1",
                         dest="p", metavar="<parameters>",
                         help="The parameters of the GTR-Matrix")
     args = parser.parse_args()
-    params = [list(map(int, p.split("_"))) for p in args.p.split("-")]
+    params = [int(p) for p in args.p.split("-")]
     build_hyphy_batchfile(args.d, args.b, args.f, args.t, params[0], params[1], params[2])
