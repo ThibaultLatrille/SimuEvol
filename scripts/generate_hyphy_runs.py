@@ -14,8 +14,8 @@ else:
 nbr_sites = 2000
 protein = "np"
 mixture = True
-alpha = 0.3
-chain = 1
+alpha = 0.1
+chain = 7.5
 id_prefix = "{0}_{1}_{2}_{3}_{4}".format(nbr_sites, protein, mixture, alpha, chain)
 
 nbr_cpu = 4
@@ -56,7 +56,7 @@ for qsub_id, mut_bias in enumerate(np.logspace(-1, 1, nbr_points)):
     # Run SimuEvol with the given mutional bias, and amino-acid preferences file and the tree
     ali_path = "{0}/data_alignment/{1}".format(current_dir, qsub_name)
     simu_evol_result = "{0}.txt".format(ali_path)
-    mu = 15.0
+    mu = 7.5
     simu_evol_cmd = current_dir + "/SimuEvol --preferences={0} --newick={1} --output={2} --mu={3} --lambda={4}"
     simu_evol_cmd = simu_evol_cmd.format(prefs_path, newick_path, ali_path, mu, mut_bias)
     simu_evol_cmd += " --w={0} --a={1} --p={2}\n".format(False, False, 0.0)

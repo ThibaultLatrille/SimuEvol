@@ -100,7 +100,7 @@ def build_rates(param, vars_list, constrains_list):
 def epsilon_name(codon, omega_param):
     epsilon = "eps" + codon_dict[codon]
     if codon_dict[codon] == codon_dict["ATG"] and omega_param == 95:
-        epsilon += "epsCST"
+        epsilon += "CST"
     return epsilon
 
 
