@@ -87,4 +87,4 @@ def run_inference(nbr_sites, mu):
 nbr_steps = 14
 for nbr_sites in 1000 * np.logspace(-1, 1, nbr_steps):
     for mu in np.logspace(-1.5, 1.5, nbr_steps):
-        run_inference(nbr_sites, mu)
+        run_inference(int(nbr_sites), mu)
