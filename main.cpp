@@ -20,8 +20,8 @@ struct Substitution {
     char codon_to{0};
     char nuc_from{0};
     char nuc_to{0};
-    double dn{0.};
-    double ds{0.};
+    Matrix4x4 non_syn_opp_matrix;
+    Matrix4x4 syn_opp_matrix;
 };
 
 //Function for average
@@ -129,7 +129,7 @@ public:
     // size: the size of the DNA sequence.
     explicit Sequence_dna(unsigned const size) : nbr_sites{size}, codon_seq(size, 0),
                                                  aa_fitness_profiles{0}, proba_permutation{0.}, wave{true}, all_sites{false} {
-        mutation_rate_matrix.Zero();
+        mutation_rate_matrix = Matrix4x4::Zero();
     }
 
     // Method translating the codon sequence to amino-acid sequence.
@@ -161,7 +161,8 @@ public:
         // Sum of substitution rates.
         double total_substitution_rates{0.};
 
-        double mutation_rate_non_syn{.0}, mutation_rate_syn{.0};
+        Matrix4x4 non_syn_opp_matrix = Matrix4x4::Zero();
+        Matrix4x4 syn_opp_matrix = Matrix4x4::Zero();
 
         // For all site of the sequence.
         for (unsigned site{0}; site < nbr_sites; site++) {
@@ -201,10 +202,11 @@ public:
                         // The substitution rate is the mutation rate multiplied by the rate of fixation.
                         rate_substitution = mutation_rate_matrix(n_from, n_to) * s / (1 - exp(-s));
                     }
-                    mutation_rate_non_syn += mutation_rate_matrix(n_from, n_to);
+                    non_syn_opp_matrix(n_from, n_to) += mutation_rate_matrix(n_from, n_to);
+
                 } else {
                     rate_substitution = mutation_rate_matrix(n_from, n_to);
-                    mutation_rate_syn += mutation_rate_matrix(n_from, n_to);
+                    syn_opp_matrix(n_from, n_to) += mutation_rate_matrix(n_from, n_to);
                 }
 
                 substitution_rates[9 * site + neighbor] = rate_substitution;
@@ -245,8 +247,12 @@ public:
 
             tie(codon_to, n_from, n_to) = neighbors[index % 9];
 
-            Substitution sub = {site, codom_from, codon_to, n_from, n_to,
-                                1. / mutation_rate_non_syn, 1. / mutation_rate_syn};
+            Substitution sub = {site, codom_from, codon_to, n_from, n_to, non_syn_opp_matrix, syn_opp_matrix};
+
+            if (non_syn_opp_matrix.sum() > 10e10 or syn_opp_matrix.sum() > 10e10 ){
+                printf("Shit !!!!");
+            }
+
             substitutions_vec.push_back(sub);
 
             if (proba_permutation != 0.0) {
@@ -640,10 +646,24 @@ public:
         double dn{0}, ds{0};
 
         for (auto &substitution: substitutions) {
+            double non_syn_opp{0}, syn_opp{0};
+            for (auto &dna_source : source) {
+                char nuc_source{Codon::nuc_to_index.at(dna_source)};
+                for (auto &dna_target : target) {
+                    char nuc_target{Codon::nuc_to_index.at(dna_target)};
+                    non_syn_opp += substitution.non_syn_opp_matrix(nuc_source, nuc_target);
+                    syn_opp += substitution.syn_opp_matrix(nuc_source, nuc_target);
+                }
+            }
+
             size_t source_find = source.find(Codon::nucleotides[substitution.nuc_from]);
             size_t target_find = target.find(Codon::nucleotides[substitution.nuc_to]);
             if (source_find != string::npos and target_find != string::npos ) {
-                is_synonymous(substitution) ? (ds += substitution.ds) : (dn += substitution.dn);
+                if (is_synonymous(substitution)) {
+                    ds += 1. / syn_opp;
+                } else {
+                    dn += 1. / non_syn_opp;
+                }
             }
         }
 
@@ -809,7 +829,7 @@ int main(int argc, char *argv[]) {
 
     auto args = docopt::docopt(USAGE,
                                {argv + 1, argv + argc},
-                               true,               // show help if requested
+                               true,              // show help if requested
                                "SimuEvol 0.1a");  // version string
 
     string preferences_path{"../data_prefs/np.txt"};
@@ -908,11 +928,11 @@ int main(int argc, char *argv[]) {
 
     string weak_strong = "WS";
     map<char, string> const WS_map{{'W', "AT"}, {'S', "GC"}};
-    for (auto nuc_from : weak_strong){
-        for (auto nuc_to : weak_strong){
-            txt_file << "w0_" << nuc_from << nuc_to << "=" << root.predicted_omega(WS_map.at(nuc_from), WS_map.at(nuc_to), false) << endl;
-            txt_file << "<w0>_" << nuc_from << nuc_to << "=" << root.predicted_omega(WS_map.at(nuc_from), WS_map.at(nuc_to), true) << endl;
-            txt_file << "w_" << nuc_from << nuc_to << "=" << root.simulated_omega(WS_map.at(nuc_from), WS_map.at(nuc_to)) << endl;
+    for (auto subset_from : weak_strong){
+        for (auto subset_to : weak_strong){
+            txt_file << "w0_" << subset_from << subset_to << "=" << root.predicted_omega(WS_map.at(subset_from), WS_map.at(subset_to), false) << endl;
+            txt_file << "<w0>_" << subset_from << subset_to << "=" << root.predicted_omega(WS_map.at(subset_from), WS_map.at(subset_to), true) << endl;
+            txt_file << "w_" << subset_from << subset_to << "=" << root.simulated_omega(WS_map.at(subset_from), WS_map.at(subset_to)) << endl;
         }
     }
 
