@@ -69,6 +69,13 @@ def build_nuc_vars(nuc_freqs, vars_list, constrains_list):
     return 1
 
 
+def weak_strong(nuc):
+    if nuc == "A" or nuc == "T":
+        return "W"
+    else:
+        return "S"
+
+
 def is_TI(source, target):
     purines = ["A", "G"]
     pyrims = ["C", "T"]
@@ -81,6 +88,7 @@ def is_TI(source, target):
 
 
 def build_rates(param, vars_list, constrains_list):
+    vars_set = set()
     assert param in [0, 1, 5]
     gtr_vars = {}
     for n_1 in nucindex.keys():
@@ -93,7 +101,8 @@ def build_rates(param, vars_list, constrains_list):
                     value = "exch" + "".join(sorted(n_1 + n_2))
                     if value != 'exchAC':
                         gtr_vars[key] = value
-                        vars_list.append("global {0}=1.0;".format(value))
+                        vars_set.add(value)
+    vars_list.extend(["global {0}=1.0;".format(v) for v in vars_set])
     return gtr_vars
 
 
@@ -108,8 +117,8 @@ def build_matrices(nuc_freqs, exchan_vars, omega_param, vars_list, constrains_li
     ''' Create MG94-style matrices (use target nucleotide frequencies).  '''
     matrix = '{61, 61, \n'  # MG94
     codon_freqs = [""] * 61
-    beta_set = set()
     epsilon_set = set()
+    omega_set = set()
 
     for i, source in enumerate(codons):
         codon_freqs[i] = "*".join([nuc_freqs[source[j]] for j in range(3)])
@@ -130,16 +139,18 @@ def build_matrices(nuc_freqs, exchan_vars, omega_param, vars_list, constrains_li
                     element += '*' + exchan_vars[diff]
                 if codon_dict[source] != codon_dict[target]:
                     if omega_param == 1:
-                        element += '*w'
-                        vars_list.append("global w=1.0;")
+                        omega = 'w'
+                    elif omega_param == 4:
+                        omega = "w_"
+                        for nuc in diff:
+                            omega += weak_strong(nuc)
                     elif omega_param == 95 or omega_param == 20:
                         if omega_param == 95:
-                            beta = 'b_' + "".join(sorted(codon_dict[source] + codon_dict[target]))
-                            vars_list.append("global {0}=1.0;".format(beta))
-                            beta_set.add(beta)
-                            element += '*' + beta
+                            omega = 'b_' + "".join(sorted(codon_dict[source] + codon_dict[target]))
                         epsilon = epsilon_name(target, omega_param)
                         element += '*' + epsilon
+                    omega_set.add(omega)
+                    element += '*' + omega
 
                 matrix += element + '*' + freq + '} '
     matrix += '}\n'
@@ -152,10 +163,11 @@ def build_matrices(nuc_freqs, exchan_vars, omega_param, vars_list, constrains_li
             const_freq_sum = "+".join([var for var in epsilon_set])
             constrains_list.append("global {0}:=20-({1});".format(const_epsilon, const_freq_sum))
 
-        for epsilon in epsilon_set:
-            vars_list.append("global {0}=1;".format(epsilon))
+        vars_list.extend(["global {0}=1.0;".format(v) for v in epsilon_set])
 
-    print("{0} beta parameters out of {1:.0f} possible".format(len(beta_set), 20 * 19 / 2))
+    vars_list.extend(["global {0}=1.0;".format(v) for v in omega_set])
+
+    print("{0} omega parameters out of {1:.0f} possible".format(len(omega_set), 20 * 19 / 2))
     constrains_list.append("global z:={0};".format("+".join(codon_freqs)))
 
     for i, codon in enumerate(codon_freqs):
@@ -212,7 +224,7 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--directory', required=False, type=str,
                         default='/home/thibault/SimuEvol/scripts',
                         dest="d", metavar="<dir_raw_batch>",
-                        help="The path to the directory containing the raw batch (globalDNDS_raw_jinja.bf)")
+                        help="The path to the directory containing the raw batch (projected_mut_sel.bf)")
     parser.add_argument('-b', '--batch', required=False, type=str,
                         default='/home/thibault/SimuEvol/data_hyphy/npcst.bf',
                         dest="b", metavar="<batch_output_path.bf>",

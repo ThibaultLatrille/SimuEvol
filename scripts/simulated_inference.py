@@ -11,23 +11,28 @@ else:
     current_dir = "/home/thibault/SimuEvol"
     cmd = "sh"
 
+folder_path = "{0}/simulated".format(current_dir)
+os.makedirs(folder_path, exist_ok=True)
+os.makedirs(folder_path + "/data_hyphy", exist_ok=True)
+os.makedirs(folder_path + "/data_prefs", exist_ok=True)
+os.makedirs(folder_path + "/data_alignment", exist_ok=True)
 
-def run_inference(nbr_sites, mu):
-    protein = "np"
+
+def run_inference(nbr_sites, mu, protein):
     mixture = True
     alpha = 0.1
     id_prefix = "{0}_{1}_{2}_{3}_{4}".format(nbr_sites, protein, mixture, alpha, mu)
 
     nbr_cpu = 4
-    nbr_points = 5
+    nbr_points = 30
 
-    data_path = "{0}/data_hyphy/{1}".format(current_dir, id_prefix)
+    data_path = "{0}/data_hyphy/{1}".format(folder_path, id_prefix)
     os.makedirs(data_path, exist_ok=True)
     os.makedirs("{0}/qsub".format(current_dir), exist_ok=True)
 
     newick_path = "{0}/data_trees/{1}.newick".format(current_dir, protein)
 
-    prefs_path = "{0}/data_prefs/{1}.txt".format(current_dir, id_prefix)
+    prefs_path = "{0}/data_prefs/{1}.txt".format(folder_path, id_prefix)
     preferences = np.random.dirichlet(alpha*np.ones(20))
     prefs_file = open(prefs_path, 'w')
     prefs_file.write("# POSITION WT SITE_ENTROPY PI_A PI_C PI_D PI_E PI_F PI_G PI_H PI_I PI_K PI_L PI_M PI_N PI_P PI_Q PI_R PI_S PI_T PI_V PI_W PI_Y\n")
@@ -54,7 +59,7 @@ def run_inference(nbr_sites, mu):
         qsub_str += "#PBS -r n\n"
 
         # Run SimuEvol with the given mutional bias, and amino-acid preferences file and the tree
-        ali_path = "{0}/data_alignment/{1}".format(current_dir, qsub_name)
+        ali_path = "{0}/data_alignment/{1}".format(folder_path, qsub_name)
         simu_evol_result = "{0}.txt".format(ali_path)
 
         simu_evol_cmd = current_dir + "/SimuEvol --preferences={0} --newick={1} --output={2} --mu={3} --lambda={4}"
@@ -66,7 +71,7 @@ def run_inference(nbr_sites, mu):
         scripts_dir = "{0}/scripts".format(current_dir)
         rate = 0  # can be 0, 1, or 5
         freq = 3  # can be 1 or 3
-        for omega in [1, 20, 95]:
+        for omega in [1, 4, 95]:
             param = "{0}-{1}-{2}".format(rate, freq, omega)
             hyphy_batch_path = "{0}/{1}_{2}.bf".format(data_path, id_sufix, param)
             batchfile_cmd = "python3 {0}/projected_mut_sel.py -d {0} -b {1} -f {2} -t {3} -p '{4}' \n"
@@ -84,7 +89,5 @@ def run_inference(nbr_sites, mu):
         print("Finished running")
 
 
-nbr_steps = 14
-for nbr_sites in 1000 * np.logspace(-1, 1, nbr_steps):
-    for mu in np.logspace(-1.5, 1.5, nbr_steps):
-        run_inference(int(nbr_sites), mu)
+for p in ["np", "lactamase", "ha"]:
+    run_inference(2000, 2.0, p)
