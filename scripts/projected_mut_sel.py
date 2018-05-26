@@ -12,22 +12,10 @@ First, we find the F61, F1x4, F3x4 frequencies. We use the global alignment freq
 Second, we set up the hyphy batch file which makes use of these frequencies.
 Third, we generate the MG1 and MG3 matrix files.
 '''
-
+from analysis import codon_table, codons, nucindex
 import jinja2
 import argparse
 from ete3 import Tree
-
-codon_dict = {"AAA": "K", "AAC": "N", "AAG": "K", "AAT": "N", "ACA": "T", "ACC": "T", "ACG": "T", "ACT": "T",
-              "AGA": "R", "AGC": "S", "AGG": "R", "AGT": "S", "ATA": "I", "ATC": "I", "ATG": "M", "ATT": "I",
-              "CAA": "Q", "CAC": "H", "CAG": "Q", "CAT": "H", "CCA": "P", "CCC": "P", "CCG": "P", "CCT": "P",
-              "CGA": "R", "CGC": "R", "CGG": "R", "CGT": "R", "CTA": "L", "CTC": "L", "CTG": "L", "CTT": "L",
-              "GAA": "E", "GAC": "D", "GAG": "E", "GAT": "D", "GCA": "A", "GCC": "A", "GCG": "A", "GCT": "A",
-              "GGA": "G", "GGC": "G", "GGG": "G", "GGT": "G", "GTA": "V", "GTC": "V", "GTG": "V", "GTT": "V",
-              "TAC": "Y", "TAT": "Y", "TCA": "S", "TCC": "S", "TCG": "S", "TCT": "S", "TGC": "C", "TGG": "W",
-              "TGT": "C", "TTA": "L", "TTC": "F", "TTG": "L", "TTT": "F"}
-
-codons = sorted(codon_dict.keys())
-nucindex = {'A': 0, 'C': 1, 'G': 2, 'T': 3}
 
 
 def get_nuc_diff(source, target, grab_position=False):
@@ -107,8 +95,8 @@ def build_rates(param, vars_list, constrains_list):
 
 
 def epsilon_name(codon, omega_param):
-    epsilon = "eps" + codon_dict[codon]
-    if codon_dict[codon] == codon_dict["ATG"] and omega_param == 95:
+    epsilon = "eps" + codon_table[codon]
+    if codon_table[codon] == codon_table["ATG"] and omega_param == 95:
         epsilon += "CST"
     return epsilon
 
@@ -137,7 +125,7 @@ def build_matrices(nuc_freqs, exchan_vars, omega_param, vars_list, constrains_li
                 element = '{' + str(i) + ',' + str(j) + ',mu*t'
                 if diff in exchan_vars:
                     element += '*' + exchan_vars[diff]
-                if codon_dict[source] != codon_dict[target]:
+                if codon_table[source] != codon_table[target]:
                     if omega_param == 1:
                         omega = 'w'
                     elif omega_param == 4:
@@ -146,7 +134,7 @@ def build_matrices(nuc_freqs, exchan_vars, omega_param, vars_list, constrains_li
                             omega += weak_strong(nuc)
                     elif omega_param == 95 or omega_param == 20:
                         if omega_param == 95:
-                            omega = 'b_' + "".join(sorted(codon_dict[source] + codon_dict[target]))
+                            omega = 'b_' + "".join(sorted(codon_table[source] + codon_table[target]))
                         epsilon = epsilon_name(target, omega_param)
                         element += '*' + epsilon
                     omega_set.add(omega)

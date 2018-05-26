@@ -1,5 +1,7 @@
 # GLOBAL IMPORTS
 from analysis import *
+import os
+import glob
 
 cluster = False
 
@@ -10,7 +12,8 @@ else:
     current_dir = "/home/thibault/SimuEvol"
     cmd = "sh"
 
-folder = "data_empirical"
+# folder = "data_empirical"
+folder = "data_primates"
 folder_path = "{0}/{1}".format(current_dir, folder)
 fasta_files = [f for f in os.listdir(folder_path) if ".fasta" == f.strip()[-6:]]
 print("Found {0} fasta files".format(len(fasta_files)))
@@ -21,11 +24,13 @@ for fasta_file in sorted(fasta_files):
     print("\nAnalysis for {0}".format(prefix))
 
     nuc_freqs, nbr_sites, nbr_species = extract_nuc_pct(fasta_path)
+    print("Number of sites: {0}".format(nbr_sites))
+    print("Number of species: {0}".format(nbr_species))
     print("\t%AT of the alignment: {0:.2f}".format(nuc_freqs['A'] + nuc_freqs['T']))
     at_gc_pct_obs = (nuc_freqs['A'] + nuc_freqs['T']) / (nuc_freqs['G'] + nuc_freqs['C'])
     print("\t%AT/%GC of the alignment: {0:.2f}".format(at_gc_pct_obs))
 
-    for hyphy_result in glob.glob("{0}/{1}*_hyout.txt".format(folder_path, prefix)):
+    for hyphy_result in sorted(glob.glob("{0}/{1}*_hyout.txt".format(folder_path, prefix))):
         experiment = hyphy_result.replace(".bf_hyout.txt", "").split("_")[-1]
         hyphy_dico = dico_from_file(hyphy_result)
         hyphy_dico["n"] = nbr_sites

@@ -51,6 +51,7 @@ namespace Codon {
         return codon_to_triplet_vec;
     }
 
+
     // Function to build an array which maps each of the 64 codons to the set of their 9 respective neighbors.
     // The set of neighbors contains the 9 codons which differ by only 1 nucleotide (3 positions * 3 possible mutations).
     // codon_to_triplet: array mapping each of the 64 codons to their respective triplet (see build_codon_to_triplet_array)

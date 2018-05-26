@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.7)
 project(SimuEvol)
 
 set(CMAKE_CXX_STANDARD 14)
-set(SOURCE_FILES Eigen/Dense docopt.cpp/docopt.h codon.hpp main.cpp )
+set(SOURCE_FILES_EVOL src/Eigen/Dense src/docopt.cpp/docopt.h src/codon.hpp src/simu_evol.cpp )
 
-add_executable(SimuEvol ${SOURCE_FILES})
+add_executable(SimuEvol ${SOURCE_FILES_EVOL})
+
+set(SOURCE_FILES_POLY src/Eigen/Dense src/docopt.cpp/docopt.h src/codon.hpp src/simu_poly.cpp )
+add_executable(SimuPoly ${SOURCE_FILES_POLY})

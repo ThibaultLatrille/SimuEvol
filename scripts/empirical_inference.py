@@ -1,4 +1,3 @@
-import numpy as np
 import os
 from subprocess import run
 
@@ -11,7 +10,8 @@ else:
     current_dir = "/home/thibault/SimuEvol"
     cmd = "sh"
 
-folder = "data_empirical"
+# folder = "data_empirical"
+folder = "data_primates"
 folder_path = "{0}/{1}".format(current_dir, folder)
 fasta_files = [f for f in os.listdir(folder_path) if ".fasta" == f.strip()[-6:]]
 print("Found {0} fasta files".format(len(fasta_files)))
@@ -23,7 +23,7 @@ for fasta_file in sorted(fasta_files):
     if not os.path.isfile(tree_path):
         print("Can't find the newick file {0}".format(tree_path))
     else:
-        nbr_cpu = 8
+        nbr_cpu = 4
 
         qsub_path = "{0}/{1}.pbs".format(folder_path, prefix)
 
