@@ -36,14 +36,14 @@ double mean(vector<unsigned> &v) {
     }
 
     return return_value / sum(v);
-}
+};
 
 string join(vector<unsigned> &v, char sep) {
     return accumulate(v.begin() + 1, v.end(), to_string(v[0]),
                       [sep](const string &a, int b) {
                           return a + sep + to_string(b);
                       });
-}
+};
 
 // Compute the kernel of the mutation-rate matrix.
 // This kernel is a vector of the nucleotides frequencies (not normalized to 1) at equilibrium.
@@ -74,6 +74,26 @@ Matrix4x4 normalize_mutmatrix(Matrix4x4 mutation_matrix) {
     return mutation_matrix;
 }
 
+vector<tuple<char, char>> fixations_vector;
+vector<tuple<char, char>> mutations_vector;
+
+bool is_non_synonymous(tuple<char, char> &pair){
+    return Codon::codon_to_aa_array[get<0>(pair)] == Codon::codon_to_aa_array[get<1>(pair)];
+};
+
+double non_syn_fixation_bias() {
+    long nbr_syn_fixations = count_if(fixations_vector.begin(), fixations_vector.end(), is_non_synonymous);
+    long nbr_non_syn_fixation = fixations_vector.size() - nbr_syn_fixations;
+    long nbr_syn_mutations = count_if(mutations_vector.begin(), mutations_vector.end(), is_non_synonymous);
+    long nbr_non_syn_mutations = mutations_vector.size() - nbr_syn_mutations;
+
+    if (nbr_non_syn_mutations > 0 and nbr_syn_fixations > 0){
+        return static_cast<double>(nbr_non_syn_fixation * nbr_syn_mutations) / static_cast<double>(nbr_syn_fixations * nbr_non_syn_mutations);
+    } else {
+        return 0.0;
+    }
+};
+
 // Class representing DNA sequence.
 class Reference {
 private:
@@ -92,7 +112,7 @@ private:
             double codon_freq{1.};
 
             // For all nucleotides in the codon
-            for (auto &nuc: Codon::codon_to_triplet_array[codon]) {
+            for (auto const &nuc: Codon::codon_to_triplet_array[codon]) {
                 codon_freq *= nuc_frequencies(nuc);
             }
 
@@ -229,15 +249,6 @@ struct Draw {
     char nuc_to{0};
 };
 
-struct Mutation {
-    char codon_from{0};
-    char codon_to{0};
-};
-
-bool is_synonymous(Mutation const &s) {
-    return (Codon::codon_to_aa_array[s.codon_from] == Codon::codon_to_aa_array[s.codon_to]);
-}
-
 class Haplotype {
 private:
 
@@ -245,21 +256,24 @@ public:
     // The nbr_copies of sites in the sequence (each position is a codon, thus the DNA sequence is 3 times greater).
     unsigned nbr_copies;
     double fitness;
-    map<unsigned, Mutation> mutations;
+    vector<char> codon_from_vector;
+    vector<char> codon_to_vector;
     array<unsigned, 4> nucleotides_count;
     array<vector<unsigned>, 4> nuc_rank_to_site;
 
     // Constructor of Reference_seq.
     // size: the size of the DNA sequence.
     explicit Haplotype(unsigned const nbr_copies, double const fitness, Reference const &reference) :
-            nbr_copies{nbr_copies}, fitness{fitness}, mutations{},
+            nbr_copies{nbr_copies}, fitness{fitness},
+            codon_from_vector{reference.codon_seq},
+            codon_to_vector{reference.codon_seq},
             nucleotides_count{}, nuc_rank_to_site{} {
         cout << "I should be called only once ! Remember that " << endl;
         nucleotides_count = reference.nucleotides_count;
         nuc_rank_to_site = reference.nuc_rank_to_site;
     }
 
-    char mutate_codon(char codon_from, char nuc_position, char nuc_to){
+    char mutate_codon(char codon_from, char nuc_position, char nuc_to) {
         array<char, 3> triplet_nuc = Codon::codon_to_triplet_array[codon_from];
         triplet_nuc[nuc_position] = nuc_to;
         return Codon::triplet_to_codon(triplet_nuc[0], triplet_nuc[1], triplet_nuc[2]);
@@ -269,23 +283,15 @@ public:
         for (auto &kv_nuc_site_to_draw: nuc_site_to_draw) {
             char nuc_from = kv_nuc_site_to_draw.second.nuc_from;
             char nuc_to = kv_nuc_site_to_draw.second.nuc_to;
-
             unsigned site = kv_nuc_site_to_draw.first;
             unsigned codon_site = site / 3;
             auto nuc_position = static_cast<char>(site % 3);
 
-            char codon_from{-1}, codon_to{-1};
-            if (mutations.count(codon_site) == 1) {
-                codon_from = mutations[codon_site].codon_to;
-                codon_to = mutate_codon(codon_from, nuc_position, nuc_to);
-                mutations[codon_site].codon_from = codon_from;
-                mutations[codon_site].codon_to = codon_to;
-            } else {
-                // Not found
-                codon_from = reference.codon_seq[codon_site];
-                codon_to = mutate_codon(codon_from, nuc_position, nuc_to);
-                mutations[codon_site] = Mutation{codon_from, codon_to};
-            }
+            char codon_from = codon_to_vector[codon_site];
+            char codon_to = mutate_codon(codon_from, nuc_position, nuc_to);
+            mutations_vector.emplace_back(make_tuple(codon_from, codon_to));
+            codon_from_vector[codon_site] = codon_from;
+            codon_to_vector[codon_site] = codon_to;
 
             nuc_rank_to_site[nuc_from].erase(
                     lower_bound(nuc_rank_to_site[nuc_from].begin(), nuc_rank_to_site[nuc_from].end(), site));
@@ -398,7 +404,7 @@ public:
                 while (nbr_draws < binomial_draw) {
                     char nuc_draw = nuc_distr(Codon::re);
                     unsigned haplotype_draw = haplotype_freq_distr(Codon::re);
-                    unsigned haplotype_nucleotide_copies{nucleotide_copies_array[haplotype_draw]};
+                    unsigned haplotype_nucleotide_copies = nucleotide_copies_array[haplotype_draw];
 
                     uniform_int_distribution<unsigned> copy_and_site_distr(0, haplotype_nucleotide_copies - 1);
                     unsigned copy_and_site_draw = copy_and_site_distr(Codon::re);
@@ -474,6 +480,11 @@ public:
 
     void run_forward(unsigned t_max) {
         check_consistency();
+        for (unsigned time{0}; time < population_size * 2; time++) {
+            forward();
+        }
+        mutations_vector.clear();
+        fixations_vector.clear();
         for (unsigned time{0}; time < t_max; time++) {
             forward();
             if (time % population_size == 0) {
@@ -485,17 +496,21 @@ public:
 
     void compute_sfs(unsigned time) {
         vector<unsigned> sfs_non_syn(population_size, 0), sfs_syn(population_size, 0);
-        unsigned non_syn{0}, syn{0};
-        map<char, map<char, unsigned>> codon_from_to_copy{};
+        unsigned non_syn_nbr = 0, syn_nbr = 0;
         unsigned complex_sites{0};
+        assert(sfs_non_syn.size() == population_size);
+        assert(sum(sfs_non_syn) == 0);
+        assert(sfs_syn.size() == population_size);
+        assert(sum(sfs_syn) == 0);
         for (unsigned site{0}; site < reference_seq.nbr_sites; site++) {
+            map<char, map<char, unsigned>> codon_from_to_copy;
             codon_from_to_copy.clear();
-            for (auto haplotype: haplotype_vector) {
-                if (haplotype.mutations.count(site) == 1) {
-                    char codon_from{haplotype.mutations[site].codon_from};
-                    char codon_to{haplotype.mutations[site].codon_to};
+            for (auto const &haplotype: haplotype_vector) {
+                char codon_from = haplotype.codon_from_vector[site];
+                char codon_to = haplotype.codon_to_vector[site];
+                if (codon_to != codon_from) {
                     if (codon_from_to_copy.count(codon_from) == 1) {
-                        if (codon_from_to_copy.count(codon_to) == 1) {
+                        if (codon_from_to_copy[codon_from].count(codon_to) == 1) {
                             codon_from_to_copy[codon_from][codon_to] += haplotype.nbr_copies;
                         } else {
                             codon_from_to_copy[codon_from][codon_to] = haplotype.nbr_copies;
@@ -507,18 +522,26 @@ public:
             }
 
             if (codon_from_to_copy.size() == 1) {
-                for (auto &kv_codon_from_to_copy: codon_from_to_copy) {
+                for (auto const &kv_codon_from_to_copy: codon_from_to_copy) {
                     char codon_from{kv_codon_from_to_copy.first};
                     if (kv_codon_from_to_copy.second.size() == 1) {
-                        for (auto &kv_codon_to_copy: kv_codon_from_to_copy.second) {
+                        for (auto const &kv_codon_to_copy: kv_codon_from_to_copy.second) {
                             char codon_to{kv_codon_to_copy.first};
                             if (codon_to != codon_from) {
-                                if (Codon::codon_to_aa_array[codon_from] == Codon::codon_to_aa_array[codon_to]) {
-                                    sfs_syn[kv_codon_to_copy.second]++;
-                                    syn++;
+                                if (kv_codon_to_copy.second == population_size) {
+                                    for (auto &haplotype: haplotype_vector) {
+                                        haplotype.codon_from_vector[site] = codon_to;
+                                    }
+                                    fixations_vector.emplace_back(make_tuple(codon_from, codon_to));
                                 } else {
-                                    sfs_non_syn[kv_codon_to_copy.second]++;
-                                    non_syn++;
+                                    assert(kv_codon_to_copy.second < population_size);
+                                    if (Codon::codon_to_aa_array[codon_from] == Codon::codon_to_aa_array[codon_to]) {
+                                        sfs_syn[kv_codon_to_copy.second]++;
+                                        syn_nbr++;
+                                    } else {
+                                        sfs_non_syn[kv_codon_to_copy.second]++;
+                                        non_syn_nbr++;
+                                    }
                                 }
                             }
                         }
@@ -530,24 +553,32 @@ public:
                 complex_sites++;
             }
         }
+        assert(sfs_non_syn.size() == population_size);
+        assert(sfs_syn.size() == population_size);
+        assert(sum(sfs_non_syn) == non_syn_nbr);
+        assert(sum(sfs_syn) == syn_nbr);
         // .ali format
         ofstream output_file;
         output_file.open(output_filename, ios_base::app);
+        output_file << time << "\tNonSynFixBias\t" << non_syn_fixation_bias() << endl;
         output_file << time << "\tHapNbr\t" << haplotype_vector.size() << endl;
         output_file << time << "\tCpxSites\t" << complex_sites << endl;
-        output_file << time << "\tPn\t" << non_syn << endl;
+        output_file << time << "\tPn\t" << non_syn_nbr << endl;
         output_file << time << "\tSFSn\t" << join(sfs_non_syn, ' ') << endl;
-        output_file << time << "\tPs\t" << syn << endl;
+        output_file << time << "\tE[SFSn]\t" << mean(sfs_non_syn) << endl;
+        output_file << time << "\tPs\t" << syn_nbr << endl;
         output_file << time << "\tSFSs\t" << join(sfs_syn, ' ') << endl;
+        output_file << time << "\tE[SFSs]\t" << mean(sfs_syn) << endl;
         output_file.close();
 
         cout << endl << "Time: " << time << endl;
+        cout << "Non-synonymous fixation bias: " << non_syn_fixation_bias() << endl;
         cout << "Number of complex sites: " << complex_sites << endl;
         cout << "Number of haplotypes: " << haplotype_vector.size() << endl;
-        cout << "Non-synonymous sites: " << non_syn << endl;
+        cout << "Non-synonymous sites: " << non_syn_nbr << endl;
         cout << "Non-synonymous SFS: " << join(sfs_non_syn, ' ') << endl;
         cout << "Non-synonymous SFS mean: " << mean(sfs_non_syn) << endl;
-        cout << "Synonymous sites: " << syn << endl;
+        cout << "Synonymous sites: " << syn_nbr << endl;
         cout << "Synonymous SFS: " << join(sfs_syn, ' ') << endl;
         cout << "Synonymous SFS mean: " << mean(sfs_syn) << endl;
     }
@@ -659,7 +690,7 @@ int main(int argc, char *argv[]) {
     cout << reference.get_dna_str() << endl;
 
     Population pop = Population(population_size, reference, output_path);
-    pop.run_forward(100 * population_size);
+    pop.run_forward(200 * population_size);
     cout << reference.get_dna_str() << endl;
     double total_time = pop.time_mutation + pop.time_selection + pop.time_extinction;
     cout << setprecision(3) << total_time / 1e9 << "s total time" << endl;

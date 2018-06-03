@@ -9,14 +9,16 @@ folder_path = "/home/thibault/SimuEvol/{0}".format(folder)
 for tsv_path in sorted(glob.glob("{0}/np*.tsv".format(folder_path))):
     with open(tsv_path, 'r') as tsvfile:
         tsvin = csv.reader(tsvfile, delimiter='\t')
-        y_axis = ["Ps", "Pn", "HapNbr", "CpxSites"]
+        data = [row for row in tsvin if (len(row) > 2 and row[2].count(" ") == 0)]
+        y_axis = list(set([row[1] for row in data]) - set(["FixedNbr"]))
+        print(y_axis)
         y_values = [list() for _ in y_axis]
         x_values = [list() for _ in y_axis]
-        for row in tsvin:
-            if len(row) >= 2 and (row[1] in y_axis):
+        for row in data:
+            if row[1] in y_axis:
                 index = y_axis.index(row[1])
                 x_values[index].append(int(row[0]))
-                y_values[index].append(int(row[2]))
+                y_values[index].append(float(row[2]))
 
         my_dpi = 196
         plt.figure(figsize=(1920 / my_dpi, 1080 / my_dpi), dpi=my_dpi)
