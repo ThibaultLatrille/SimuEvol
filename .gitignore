@@ -8,14 +8,8 @@
 /docopt.cpp/examples
 /cmake-build-debug
 .idea/
-/data_bayescode
-/data_alignment
-/data_hyphy
-/data_prefs
-/data_empirical
-/data_primates
+/data_*
 /simulated
-/data_figures
 /figures
 /qsub
 /Omega_MutSel

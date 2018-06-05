@@ -1,7 +1,7 @@
 # GLOBAL IMPORTS
 from analysis import *
 import matplotlib.pyplot as plt
-
+import os
 
 current_dir = "/home/thibault/SimuEvol/"
 nbr_steps = 14
