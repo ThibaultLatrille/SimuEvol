@@ -18,7 +18,10 @@ namespace Codon {
 
     // String of all nucleotides.
     std::string const nucleotides{"ACGT"};
-    std::map<char, char> const nuc_to_index{{'A', 0}, {'C', 1}, {'G', 2}, {'T', 3}};
+    std::map<char, char> const nuc_to_index{{'A', 0},
+                                            {'C', 1},
+                                            {'G', 2},
+                                            {'T', 3}};
 
     // Function to map a triplet of 3 nucleotides (1st, 2nd and 3rd positions) to the corresponding codon.
     // n_1 : the nucleotide in 1st position
@@ -209,6 +212,23 @@ namespace Codon {
     // Array mapping each of the 64 codons to their respective amino-acid.
     std::array<char, 64> const codon_to_aa_array = build_codon_to_aa_array(triplet_str_to_aa_char, amino_acids,
                                                                            codon_to_triplet_array);
+
+    char codon_to_nuc(char codon, char position) {
+        return nucleotides[codon_to_triplet_array[codon][position]];
+    }
+
+    std::string codon_string(char codon) {
+        auto triplet = codon_to_triplet_array[codon];
+        std::string s;
+        for (char nuc{0}; nuc < 3; nuc++) {
+            s += nucleotides[triplet[nuc]];
+        }
+        return s;
+    }
+
+    char codon_aa_string(char codon) {
+        return amino_acids[codon_to_aa_array[codon]];
+    }
 
     // Random generator engine with seed 0.
     double seed{0};
