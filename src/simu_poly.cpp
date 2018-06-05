@@ -21,6 +21,10 @@ typedef Eigen::Matrix<double, 4, 1> Vector4x1;
 typedef chrono::high_resolution_clock::time_point TimeVar;
 #define duration(a) chrono::duration_cast<std::chrono::nanoseconds>(a).count()
 #define timeNow() chrono::high_resolution_clock::now()
+double time_mutation = 0.0;
+double time_selection = 0.0;
+double time_extinction = 0.0;
+double time_sfs = 0.0;
 
 //Function for sum
 double sum(vector<unsigned> &v) {
@@ -40,8 +44,8 @@ double mean(vector<unsigned> &v) {
 
 string join(vector<unsigned> &v, char sep) {
     return accumulate(v.begin() + 1, v.end(), to_string(v[0]),
-                      [sep](const string &a, int b) {
-                          return a + sep + to_string(b);
+                      [sep](const string &acc, int b) {
+                          return acc + sep + to_string(b);
                       });
 };
 
@@ -77,18 +81,22 @@ Matrix4x4 normalize_mutmatrix(Matrix4x4 mutation_matrix) {
 vector<tuple<char, char>> fixations_vector;
 vector<tuple<char, char>> mutations_vector;
 
-bool is_non_synonymous(tuple<char, char> &pair){
+bool is_synonymous(tuple<char, char> &pair) {
     return Codon::codon_to_aa_array[get<0>(pair)] == Codon::codon_to_aa_array[get<1>(pair)];
 };
 
 double non_syn_fixation_bias() {
-    long nbr_syn_fixations = count_if(fixations_vector.begin(), fixations_vector.end(), is_non_synonymous);
-    long nbr_non_syn_fixation = fixations_vector.size() - nbr_syn_fixations;
-    long nbr_syn_mutations = count_if(mutations_vector.begin(), mutations_vector.end(), is_non_synonymous);
-    long nbr_non_syn_mutations = mutations_vector.size() - nbr_syn_mutations;
+    unsigned min_last = 500;
+    unsigned last = min(static_cast<unsigned>(fixations_vector.size()), min_last);
+    long nbr_syn_fixations = count_if(fixations_vector.end() - last, fixations_vector.end(), is_synonymous);
+    long nbr_non_syn_fixation = last - nbr_syn_fixations;
+    long nbr_syn_mutations = count_if(mutations_vector.end() - last, mutations_vector.end(), is_synonymous);
+    long nbr_non_syn_mutations = last - nbr_syn_mutations;
 
-    if (nbr_non_syn_mutations > 0 and nbr_syn_fixations > 0){
-        return static_cast<double>(nbr_non_syn_fixation * nbr_syn_mutations) / static_cast<double>(nbr_syn_fixations * nbr_non_syn_mutations);
+    if (nbr_non_syn_mutations > 0 and nbr_syn_fixations > 0) {
+        double bias = nbr_non_syn_fixation * nbr_syn_mutations;
+        bias /= (nbr_syn_fixations * nbr_non_syn_mutations);
+        return bias;
     } else {
         return 0.0;
     }
@@ -125,11 +133,6 @@ private:
 
             // Increment the total sum of equilibrium frequencies.
             total_frequencies += codon_frequencies[codon];
-        }
-
-        // Normalize the vector of equilibrium frequencies.
-        for (char codon{0}; codon < 64; codon++) {
-            codon_frequencies[codon] /= total_frequencies;
         }
 
         return codon_frequencies;
@@ -175,25 +178,9 @@ public:
         for (unsigned site{0}; site < nbr_sites; site++) {
 
             array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profiles[site]);
+            discrete_distribution<char> freq_codon_distr(codon_freqs.begin(), codon_freqs.end());
+            codon_seq[site] = freq_codon_distr(Codon::re);
 
-            // Uniform random generator between 0 and the total sum of equilibrium frequencies.
-            uniform_real_distribution<double> unif(0., 1.);
-            double random_cumulative_frequencies = unif(Codon::re);
-            double cumulative_frequencies{0.};
-
-            char index{0};
-            for (char m{0}; m < 64; m++) {
-                // Iterate through the cumulative frequencies and break the loop when it is greater than the random cumulative frequencies.
-                cumulative_frequencies += codon_freqs[m];
-                if (random_cumulative_frequencies < cumulative_frequencies) {
-                    index = m;
-                    break;
-                }
-            }
-
-            // Substitute the site with the mutation given by the loop break.
-            codon_seq[site] = index;
-            // For all nucleotides in the codon
         }
         refresh_count();
     }
@@ -244,11 +231,6 @@ public:
     }
 };
 
-struct Draw {
-    char nuc_from{0};
-    char nuc_to{0};
-};
-
 class Haplotype {
 private:
 
@@ -268,7 +250,6 @@ public:
             codon_from_vector{reference.codon_seq},
             codon_to_vector{reference.codon_seq},
             nucleotides_count{}, nuc_rank_to_site{} {
-        cout << "I should be called only once ! Remember that " << endl;
         nucleotides_count = reference.nucleotides_count;
         nuc_rank_to_site = reference.nuc_rank_to_site;
     }
@@ -279,28 +260,30 @@ public:
         return Codon::triplet_to_codon(triplet_nuc[0], triplet_nuc[1], triplet_nuc[2]);
     }
 
-    void add_mutations(map<unsigned, Draw> &nuc_site_to_draw, Reference const &reference) {
+    void add_mutations(map<unsigned, tuple<char, char>> &nuc_site_to_draw, Reference const &reference) {
         for (auto &kv_nuc_site_to_draw: nuc_site_to_draw) {
-            char nuc_from = kv_nuc_site_to_draw.second.nuc_from;
-            char nuc_to = kv_nuc_site_to_draw.second.nuc_to;
+            char nuc_from = get<0>(kv_nuc_site_to_draw.second);
+            char nuc_to = get<1>(kv_nuc_site_to_draw.second);
             unsigned site = kv_nuc_site_to_draw.first;
             unsigned codon_site = site / 3;
             auto nuc_position = static_cast<char>(site % 3);
 
             char codon_from = codon_to_vector[codon_site];
             char codon_to = mutate_codon(codon_from, nuc_position, nuc_to);
-            mutations_vector.emplace_back(make_tuple(codon_from, codon_to));
-            codon_from_vector[codon_site] = codon_from;
-            codon_to_vector[codon_site] = codon_to;
+            if (Codon::codon_to_aa_array[codon_to] != 20){
+                mutations_vector.emplace_back(make_tuple(codon_from, codon_to));
+                codon_from_vector[codon_site] = codon_from;
+                codon_to_vector[codon_site] = codon_to;
 
-            nuc_rank_to_site[nuc_from].erase(
-                    lower_bound(nuc_rank_to_site[nuc_from].begin(), nuc_rank_to_site[nuc_from].end(), site));
-            nuc_rank_to_site[nuc_to].insert(
-                    lower_bound(nuc_rank_to_site[nuc_to].begin(), nuc_rank_to_site[nuc_to].end(), site), site);
-            nucleotides_count[nuc_from]--;
-            nucleotides_count[nuc_to]++;
-            fitness -= reference.aa_fitness_profiles[codon_site][Codon::codon_to_aa_array[codon_from]];
-            fitness += reference.aa_fitness_profiles[codon_site][Codon::codon_to_aa_array[codon_to]];
+                nuc_rank_to_site[nuc_from].erase(
+                        lower_bound(nuc_rank_to_site[nuc_from].begin(), nuc_rank_to_site[nuc_from].end(), site));
+                nuc_rank_to_site[nuc_to].insert(
+                        lower_bound(nuc_rank_to_site[nuc_to].begin(), nuc_rank_to_site[nuc_to].end(), site), site);
+                nucleotides_count[nuc_from]--;
+                nucleotides_count[nuc_to]++;
+                fitness -= reference.aa_fitness_profiles[codon_site][Codon::codon_to_aa_array[codon_from]];
+                fitness += reference.aa_fitness_profiles[codon_site][Codon::codon_to_aa_array[codon_to]];
+            }
         }
     }
 
@@ -311,6 +294,10 @@ public:
             nbr_nuc += nucleotides_count[nuc];
             copy(nuc_rank_to_site[nuc].begin(), nuc_rank_to_site[nuc].end(), inserter(site_set, site_set.end()));
             assert(nuc_rank_to_site[nuc].size() == nucleotides_count[nuc]);
+        }
+        for (unsigned site{0}; site < reference.nbr_sites; site++) {
+            assert(Codon::codon_to_aa_array[codon_to_vector[site]] != 20);
+            assert(Codon::codon_to_aa_array[codon_from_vector[site]] != 20);
         }
         assert(site_set.size() == nbr_nuc);
         assert(nbr_nuc == reference.nbr_sites * 3);
@@ -332,26 +319,32 @@ public:
 
 };
 
-// Class representing nodes of a tree.
+// Class representing a population
 class Population {
 private:
     unsigned population_size;
+    double beta;
     vector<Haplotype> haplotype_vector;
     Reference reference_seq;
     string output_filename;
+
 public:
 
-    double time_mutation;
-    double time_selection;
-    double time_extinction;
-
     // Constructor
-    Population(unsigned population_size, Reference &ref_seq, string &output_path) :
-            population_size{population_size}, haplotype_vector{}, reference_seq{ref_seq},
-            output_filename{move(output_path)},
-            time_mutation{0}, time_selection{0}, time_extinction{0} {
+    Population(Matrix4x4 const &mutation_rate, vector<array<double, 20>> const &fitness_profiles,
+               unsigned population_size, double beta, string &output_path) :
+            population_size{population_size}, beta{beta}, haplotype_vector{}, reference_seq(mutation_rate, fitness_profiles),
+            output_filename{move(output_path)} {
+        reference_seq.at_equilibrium();
         haplotype_vector.emplace_back(Haplotype(population_size, 0.0, reference_seq));
+        check_consistency();
+        for (unsigned time{0}; time < population_size * 2; time++) {
+            forward();
+        }
+        mutations_vector.clear();
+        fixations_vector.clear();
     }
+
 
     void check_consistency() {
         assert(haplotype_vector.size() <= population_size);
@@ -366,9 +359,25 @@ public:
         assert(nbr_copies == population_size);
     }
 
+    void forward() {
+        mutation();
+        selection_and_drift();
+        extinction();
+    }
+
+    void run_forward(unsigned t_max) {
+        for (unsigned time{0}; time <= t_max; time++) {
+            forward();
+            if (time % population_size == 0) {
+                compute_sfs(time);
+            }
+        }
+        check_consistency();
+    }
+
     void mutation() {
         TimeVar t_start = timeNow();
-        map<unsigned, map<unsigned, map<unsigned, Draw>>> hap_to_copy_to_nuc_site_to_draw{};
+        map<unsigned, map<unsigned, map<unsigned, tuple<char, char>>>> hap_to_copy_to_nuc_site_to_draw{};
 
         for (char nuc_from{0}; nuc_from < 4; nuc_from++) {
             vector<unsigned> nucleotide_copies_array(haplotype_vector.size(), 0);
@@ -402,14 +411,13 @@ public:
                 unsigned nbr_draws{0};
 
                 while (nbr_draws < binomial_draw) {
-                    char nuc_draw = nuc_distr(Codon::re);
                     unsigned haplotype_draw = haplotype_freq_distr(Codon::re);
                     unsigned haplotype_nucleotide_copies = nucleotide_copies_array[haplotype_draw];
 
                     uniform_int_distribution<unsigned> copy_and_site_distr(0, haplotype_nucleotide_copies - 1);
                     unsigned copy_and_site_draw = copy_and_site_distr(Codon::re);
 
-                    unsigned haplotype_nucleotide_count{haplotype_vector[haplotype_draw].nucleotides_count[nuc_from]};
+                    unsigned haplotype_nucleotide_count = haplotype_vector[haplotype_draw].nucleotides_count[nuc_from];
                     unsigned nuc_rank = copy_and_site_draw % (haplotype_nucleotide_count);
                     unsigned nuc_site = haplotype_vector[haplotype_draw].nuc_rank_to_site[nuc_from][nuc_rank];
                     unsigned copy = copy_and_site_draw / haplotype_nucleotide_count;
@@ -423,7 +431,9 @@ public:
                         }
                     }
                     if (flag) {
-                        hap_to_copy_to_nuc_site_to_draw[haplotype_draw][copy][nuc_site] = Draw{nuc_from, nuc_draw};
+                        hap_to_copy_to_nuc_site_to_draw[haplotype_draw][copy][nuc_site] = make_tuple(nuc_from,
+                                                                                                     nuc_distr(
+                                                                                                             Codon::re));
                         nbr_draws++;
                     }
                 }
@@ -447,8 +457,8 @@ public:
 
         vector<double> haplotypes_fitness_array(haplotype_vector.size(), 0);
         for (unsigned hap_id{0}; hap_id < haplotype_vector.size(); hap_id++) {
-            haplotypes_fitness_array[hap_id] =
-                    haplotype_vector[hap_id].nbr_copies * abs(1 + haplotype_vector[hap_id].fitness / population_size);
+            haplotypes_fitness_array[hap_id] = max(0.0, haplotype_vector[hap_id].nbr_copies *
+                                                        (1.0 + beta * haplotype_vector[hap_id].fitness / population_size));
             haplotype_vector[hap_id].nbr_copies = 0;
         }
         discrete_distribution<unsigned> haplotype_freq_distr(haplotypes_fitness_array.begin(),
@@ -461,7 +471,7 @@ public:
         time_selection += duration(timeNow() - t_start);
     }
 
-    void extinction(bool force = false) {
+    void extinction() {
         TimeVar t_start = timeNow();
 
         // remove haplotypes with 0 copies
@@ -472,29 +482,8 @@ public:
         time_extinction += duration(timeNow() - t_start);
     }
 
-    void forward() {
-        mutation();
-        selection_and_drift();
-        extinction();
-    }
-
-    void run_forward(unsigned t_max) {
-        check_consistency();
-        for (unsigned time{0}; time < population_size * 2; time++) {
-            forward();
-        }
-        mutations_vector.clear();
-        fixations_vector.clear();
-        for (unsigned time{0}; time < t_max; time++) {
-            forward();
-            if (time % population_size == 0) {
-                compute_sfs(time);
-            }
-        }
-        check_consistency();
-    }
-
     void compute_sfs(unsigned time) {
+        TimeVar t_start = timeNow();
         vector<unsigned> sfs_non_syn(population_size, 0), sfs_syn(population_size, 0);
         unsigned non_syn_nbr = 0, syn_nbr = 0;
         unsigned complex_sites{0};
@@ -502,6 +491,10 @@ public:
         assert(sum(sfs_non_syn) == 0);
         assert(sfs_syn.size() == population_size);
         assert(sum(sfs_syn) == 0);
+        double mean_fitness = accumulate(haplotype_vector.begin(), haplotype_vector.end(), 0.0,
+                                         [](double acc, Haplotype &h) { return acc + h.fitness; }) /
+                              haplotype_vector.size();
+
         for (unsigned site{0}; site < reference_seq.nbr_sites; site++) {
             map<char, map<char, unsigned>> codon_from_to_copy;
             codon_from_to_copy.clear();
@@ -533,6 +526,7 @@ public:
                                         haplotype.codon_from_vector[site] = codon_to;
                                     }
                                     fixations_vector.emplace_back(make_tuple(codon_from, codon_to));
+                                    reference_seq.codon_seq[site] = codon_to;
                                 } else {
                                     assert(kv_codon_to_copy.second < population_size);
                                     if (Codon::codon_to_aa_array[codon_from] == Codon::codon_to_aa_array[codon_to]) {
@@ -557,10 +551,13 @@ public:
         assert(sfs_syn.size() == population_size);
         assert(sum(sfs_non_syn) == non_syn_nbr);
         assert(sum(sfs_syn) == syn_nbr);
+        double fixation_bias = non_syn_fixation_bias();
         // .ali format
         ofstream output_file;
         output_file.open(output_filename, ios_base::app);
-        output_file << time << "\tNonSynFixBias\t" << non_syn_fixation_bias() << endl;
+        cout << "Number of fixations: " << fixations_vector.size() << endl;
+        output_file << time << "\tNonSynFixBias\t" << fixation_bias << endl;
+        output_file << time << "\tMeanFitness\t" << mean_fitness << endl;
         output_file << time << "\tHapNbr\t" << haplotype_vector.size() << endl;
         output_file << time << "\tCpxSites\t" << complex_sites << endl;
         output_file << time << "\tPn\t" << non_syn_nbr << endl;
@@ -572,15 +569,16 @@ public:
         output_file.close();
 
         cout << endl << "Time: " << time << endl;
-        cout << "Non-synonymous fixation bias: " << non_syn_fixation_bias() << endl;
+        cout << "Number of fixations: " << fixations_vector.size() << endl;
+        cout << "Non-synonymous fixation bias: " << fixation_bias << endl;
         cout << "Number of complex sites: " << complex_sites << endl;
         cout << "Number of haplotypes: " << haplotype_vector.size() << endl;
         cout << "Non-synonymous sites: " << non_syn_nbr << endl;
-        cout << "Non-synonymous SFS: " << join(sfs_non_syn, ' ') << endl;
         cout << "Non-synonymous SFS mean: " << mean(sfs_non_syn) << endl;
         cout << "Synonymous sites: " << syn_nbr << endl;
-        cout << "Synonymous SFS: " << join(sfs_syn, ' ') << endl;
         cout << "Synonymous SFS mean: " << mean(sfs_syn) << endl;
+
+        time_sfs += duration(timeNow() - t_start);
     }
 };
 
@@ -617,7 +615,7 @@ vector<array<double, 20>> open_preferences(string const &file_name) {
 static char const USAGE[] =
         R"(
 Usage:
-      SimuPoly [--preferences=<file_path>] [--mu=<1e-4>] [--lambda=<5.0>] [--pop_size=<2000>]
+      SimuPoly [--preferences=<file_path>] [--mu=<1e-7>] [--lambda=<5.0>] [--pop_size=<1000>] [--beta=<1.0>]
       SimuPoly --help
       SimuPoly --version
 
@@ -625,9 +623,10 @@ Options:
 -h --help                    show this help message and exit
 --version                    show version and exit
 --preferences=<file_path>    specify input site-specific preferences file [default: ../data_prefs/np.txt]
---mu=<1e-4>                   specify the mutation rate [default: 1e-4]
---lambda=<5.0>                 specify the strong to weak mutation bias [default: 5.0]
---pop_size=<2000>                 specify the strong to weak mutation bias [default: 2000]
+--mu=<1e-7>                  specify the mutation rate [default: 1e-7]
+--lambda=<5.0>               specify the strong to weak mutation bias [default: 5.0]
+--pop_size=<1000>            specify the population size [default: 1000]
+--beta=<1.0>                 specify the strength of selection [default: 1.0]
 )";
 
 int main(int argc, char *argv[]) {
@@ -641,15 +640,14 @@ int main(int argc, char *argv[]) {
     if (args["--preferences"]) {
         preferences_path = args["--preferences"].asString();
     }
-
-    vector<array<double, 20>> fitness_profiles = open_preferences(preferences_path);
+    vector<array<double, 20>> fitness_profiles = move(open_preferences(preferences_path));
 
     double mu = 1e-6;
     if (args["--mu"]) {
         mu = stod(args["--mu"].asString());
     }
 
-    double lambda = 1.0;
+    double lambda = 5.0;
     if (args["--lambda"]) {
         lambda = stod(args["--lambda"].asString());
     }
@@ -657,6 +655,11 @@ int main(int argc, char *argv[]) {
     unsigned population_size = 1000;
     if (args["--pop_size"]) {
         population_size = static_cast<unsigned>(stoi(args["--pop_size"].asString()));
+    }
+
+    double beta = 1.0;
+    if (args["--beta"]) {
+        mu = stod(args["--beta"].asString());
     }
 
     Matrix4x4 mutation_rate;
@@ -676,7 +679,7 @@ int main(int argc, char *argv[]) {
     if (args["--output"]) {
         output_path = args["--output"].asString();
     }
-    output_path += to_string(mu) + "_" + to_string(population_size) + "_" + to_string(lambda) + ".tsv";
+    output_path += to_string(mu) + "_" + to_string(population_size) + "_" + to_string(lambda)  + "_" + to_string(beta) + ".tsv";
     ofstream txt_file;
     txt_file.open(output_path);
     txt_file << "mu\t" << mu << endl;
@@ -685,21 +688,17 @@ int main(int argc, char *argv[]) {
     txt_file << "n\t" << fitness_profiles.size() * 3 << endl;
     txt_file.close();
 
-    Reference reference = Reference(mutation_rate, fitness_profiles);
-    reference.at_equilibrium();
-    cout << reference.get_dna_str() << endl;
-
-    Population pop = Population(population_size, reference, output_path);
+    Population pop = Population(mutation_rate, fitness_profiles, population_size, beta, output_path);
     pop.run_forward(200 * population_size);
-    cout << reference.get_dna_str() << endl;
-    double total_time = pop.time_mutation + pop.time_selection + pop.time_extinction;
+    double total_time = time_mutation + time_selection + time_extinction + time_sfs;
     cout << setprecision(3) << total_time / 1e9 << "s total time" << endl;
-    cout << 100 * pop.time_mutation / total_time << "% of time spent in calculating mutation ("
-         << pop.time_mutation / 1e9 << "s)" << endl;
-    cout << 100 * pop.time_selection / total_time << "% of time spent in calculating selection ("
-         << pop.time_selection / 1e9 << "s)" << endl;
-    cout << 100 * pop.time_extinction / total_time << "% of time spent in calculating extinction ("
-         << pop.time_extinction / 1e9 << "s)" << endl;
-
+    cout << 100 * time_mutation / total_time << "% of time spent in calculating mutation ("
+         << time_mutation / 1e9 << "s)" << endl;
+    cout << 100 * time_selection / total_time << "% of time spent in calculating selection ("
+         << time_selection / 1e9 << "s)" << endl;
+    cout << 100 * time_extinction / total_time << "% of time spent in calculating extinction ("
+         << time_extinction / 1e9 << "s)" << endl;
+    cout << 100 * time_sfs / total_time << "% of time spent in calculating SFS ("
+         << time_sfs / 1e9 << "s)" << endl;
     return 0;
 }

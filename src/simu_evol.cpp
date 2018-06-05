@@ -26,38 +26,18 @@ struct Substitution {
 
 //Function for sum
 double sum(vector<double> &v) {
-    double return_value = 0.0;
-    size_t n = v.size();
-
-    for (int i = 0; i < n; i++) {
-        return_value += v[i];
-    }
-
-    return return_value;
+    return accumulate(v.begin(), v.end(), 0.0);
 }
 
 //Function for average
 double avg(vector<double> &v) {
-    double return_value = 0.0;
-    size_t n = v.size();
-
-    for (int i = 0; i < n; i++) {
-        return_value += v[i];
-    }
-
-    return return_value / n;
+    return sum(v) / v.size();
 }
 
 //Function for variance
 double variance(vector<double> &v) {
-    double v_squarred = 0.0;
-    size_t n = v.size();
-
-    for (int i = 0; i < n; i++) {
-        v_squarred += pow(v[i], 2);
-    }
-
-    return (v_squarred / n) - pow(avg(v), 2);
+    double v_squarred = accumulate(v.begin(), v.end(), 0.0, [](double a, double b){return a + pow(b, 2);});
+    return (v_squarred / v.size()) - pow(avg(v), 2);
 }
 
 bool is_synonymous(Substitution const &s) {
@@ -833,7 +813,7 @@ int main(int argc, char *argv[]) {
     auto args = docopt::docopt(USAGE,
                                {argv + 1, argv + argc},
                                true,              // show help if requested
-                               "SimuEvol 0.1a");  // version string
+                               "SimuEvol 0.1");  // version string
 
     string preferences_path{"../data_prefs/np.txt"};
     if (args["--preferences"]) {
