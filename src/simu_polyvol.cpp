@@ -68,82 +68,34 @@ double non_syn_fixation_bias() {
     }
 };
 
-typedef map<tuple<unsigned, unsigned, unsigned>, tuple<char, char>>::iterator IterMap;
+typedef set<tuple<unsigned, unsigned, unsigned>>::iterator IterMap;
 
 class Haplotype {
 public:
     // The nbr_copies of sites in the sequence (each position is a codon, thus the DNA sequence is 3 times greater).
-    unsigned nbr_copies;
-    double fitness;
+    unsigned nbr_copies{0};
+    double fitness{0.0};
     vector<char> codon_from_vector;
     vector<char> codon_to_vector;
-    array<unsigned, 4> nucleotides_count;
-    array<vector<unsigned>, 4> nuc_rank_to_site;
 
     // Constructor of Reference_seq.
     // size: the size of the DNA sequence.
-    explicit Haplotype(unsigned const nbr_copies,
-                       double const fitness,
-                       vector<char> const &codon_seq,
-                       array<unsigned, 4> const &nucleotides_count,
-                       array<vector<unsigned>, 4> const &nuc_rank_to_site) :
+    Haplotype(unsigned const nbr_copies,
+              double const fitness,
+              vector<char> const &codon_seq) :
             nbr_copies{nbr_copies}, fitness{fitness},
             codon_from_vector{codon_seq},
-            codon_to_vector{codon_seq},
-            nucleotides_count{nucleotides_count},
-            nuc_rank_to_site{nuc_rank_to_site} {
+            codon_to_vector{codon_seq} {
 
     };
 
-    char mutate_codon(char codon_from, char nuc_position, char nuc_to) {
-        array<char, 3> triplet_nuc = Codon::codon_to_triplet_array[codon_from];
-        triplet_nuc[nuc_position] = nuc_to;
-        return Codon::triplet_to_codon(triplet_nuc[0], triplet_nuc[1], triplet_nuc[2]);
-    }
-
-    void add_mutations(IterMap iter, IterMap end, vector<array<double, 20>> const &aa_fitness_profiles) {
-        while (iter != end) {
-            char nuc_from = get<0>(iter->second);
-            char nuc_to = get<1>(iter->second);
-            assert(nuc_from != nuc_to);
-            unsigned site = get<2>(iter->first);
-            unsigned codon_site = site / 3;
-            auto nuc_position = static_cast<char>(site % 3);
-
-            char codon_from = codon_to_vector[codon_site];
-            char codon_to = mutate_codon(codon_from, nuc_position, nuc_to);
-            if (Codon::codon_to_aa_array[codon_to] != 20) {
-                mutations_vector.emplace_back(make_tuple(codon_from, codon_to));
-                codon_from_vector[codon_site] = codon_from;
-                codon_to_vector[codon_site] = codon_to;
-
-                nuc_rank_to_site[nuc_from].erase(
-                        lower_bound(nuc_rank_to_site[nuc_from].begin(), nuc_rank_to_site[nuc_from].end(), site));
-                nuc_rank_to_site[nuc_to].insert(
-                        lower_bound(nuc_rank_to_site[nuc_to].begin(), nuc_rank_to_site[nuc_to].end(), site), site);
-                nucleotides_count[nuc_from]--;
-                nucleotides_count[nuc_to]++;
-                fitness -= aa_fitness_profiles[codon_site][Codon::codon_to_aa_array[codon_from]];
-                fitness += aa_fitness_profiles[codon_site][Codon::codon_to_aa_array[codon_to]];
-            }
-            iter++;
-        }
-    }
+    Haplotype() = default;
 
     void check_consistency(unsigned nbr_sites) {
-        unsigned nbr_nuc{0};
-        set<unsigned> site_set{};
-        for (char nuc{0}; nuc < 4; nuc++) {
-            nbr_nuc += nucleotides_count[nuc];
-            copy(nuc_rank_to_site[nuc].begin(), nuc_rank_to_site[nuc].end(), inserter(site_set, site_set.end()));
-            assert(nuc_rank_to_site[nuc].size() == nucleotides_count[nuc]);
-        }
         for (unsigned site{0}; site < nbr_sites; site++) {
             assert(Codon::codon_to_aa_array[codon_to_vector[site]] != 20);
             assert(Codon::codon_to_aa_array[codon_from_vector[site]] != 20);
         }
-        assert(site_set.size() == nbr_nuc);
-        assert(nbr_nuc == nbr_sites * 3);
     }
 
     static struct {
@@ -166,7 +118,7 @@ public:
 class Population {
 public:
     // Time
-    unsigned elapsed;
+    unsigned elapsed{0};
 
     // Population
     unsigned population_size;
@@ -185,25 +137,19 @@ public:
     unsigned const nbr_nucleotides;
     vector<char> codon_seq;
 
-    // Nucleotide composition of the reference sequence
-    array<unsigned, 4> nucleotides_count;
-    array<vector<unsigned>, 4> nuc_rank_to_site;
-
     // Haplotypes
     vector<Haplotype> haplotype_vector;
 
     // Constructor
     Population(double mutation_bias, double mu, vector<array<double, 20>> const &fitness_profiles,
                unsigned population_size, double beta, string &output_path) :
-            elapsed{0},
             population_size{population_size}, beta{beta},
             lambda{mutation_bias}, mutation_rate_matrix{}, nuc_frequencies{{mutation_bias, 1, 1, mutation_bias}},
             aa_fitness_profiles{fitness_profiles},
             nbr_sites{unsigned(fitness_profiles.size())}, nbr_nucleotides{unsigned(3 * fitness_profiles.size())},
             codon_seq(fitness_profiles.size(), 0),
-            nuc_rank_to_site{}, nucleotides_count{},
             haplotype_vector{} {
-        
+
         mutation_rate_matrix[0] = {0, 1, 1, lambda};
         mutation_rate_matrix[1] = {lambda, 0, 1, lambda};
         mutation_rate_matrix[2] = {lambda, 1, 0, lambda};
@@ -216,9 +162,16 @@ public:
                 mutation_rate_matrix[nuc_from][nuc_to] *= mu;
             }
         }
-        
-        at_equilibrium();
-        haplotype_vector.emplace_back(Haplotype(population_size, 0.0, codon_seq, nucleotides_count, nuc_rank_to_site));
+
+        // Draw codon from codon frequencies
+        for (unsigned site{0}; site < nbr_sites; site++) {
+            array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profiles[site]);
+            discrete_distribution<char> freq_codon_distr(codon_freqs.begin(), codon_freqs.end());
+            codon_seq[site] = freq_codon_distr(Codon::re);
+
+        }
+
+        haplotype_vector.emplace_back(Haplotype(population_size, 0.0, codon_seq));
         check_consistency();
         for (unsigned time{0}; time < population_size * 2; time++) {
             forward();
@@ -254,10 +207,6 @@ public:
             } else {
                 codon_frequencies[codon] = 0.;
             }
-
-
-            // Increment the total sum of equilibrium frequencies.
-            total_frequencies += codon_frequencies[codon];
         }
 
         return codon_frequencies;
@@ -270,53 +219,45 @@ public:
                 total += nuc_frequencies[nuc_from] * mutation_rate_matrix[nuc_from][nuc_to];
             }
         }
+        return total;
     };
 
-    // Set the the DNA sequence to the mutation-selection equilibrium.
-    void at_equilibrium() {
-        nucleotides_count.fill(0);
-        for (char nuc{0}; nuc < 4; nuc++) {
-            nuc_rank_to_site[nuc].clear();
-        }
-        // For all site of the sequence.
-        for (unsigned site{0}; site < nbr_sites; site++) {
-
-            array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profiles[site]);
-            discrete_distribution<char> freq_codon_distr(codon_freqs.begin(), codon_freqs.end());
-            codon_seq[site] = freq_codon_distr(Codon::re);
-
-        }
-        refresh_count();
-    }
-
-    void refresh_count() {
-        nucleotides_count.fill(0);
-        for (char nuc{0}; nuc < 4; nuc++) {
-            nuc_rank_to_site[nuc].clear();
-        }
-        // For all site of the sequence.
-        for (unsigned site{0}; site < nbr_sites; site++) {
-            // For all nucleotides in the codon
-            auto triplet = Codon::codon_to_triplet_array[codon_seq[site]];
-            for (char position{0}; position < 3; position++) {
-                char nuc = triplet[position];
-                nucleotides_count[nuc]++;
-                nuc_rank_to_site[nuc].push_back(3 * site + position);
+    array<double, 4> sum_mutation_rates() {
+        array<double, 4> sum_rates{0};
+        for (char nuc_from{0}; nuc_from < 4; nuc_from++) {
+            for (char nuc_to{0}; nuc_to < 4; nuc_to++) {
+                sum_rates[nuc_from] += mutation_rate_matrix[nuc_from][nuc_to];
             }
         }
-        unsigned nbr_nuc{0}, nbr_positions{0};
+        return sum_rates;
+    };
+
+    double max_mutation_rate() {
+        double maximum = 0.0;
+        array<double, 4> sum_rates = sum_mutation_rates();
         for (char nuc{0}; nuc < 4; nuc++) {
-            nbr_nuc += nucleotides_count[nuc];
-            nbr_positions += nuc_rank_to_site[nuc].size();
+            maximum = max(maximum, sum_rates[nuc]);
         }
-        assert(nbr_positions == nbr_sites * 3);
-        assert(nbr_nuc == nbr_sites * 3);
-    }
+        return maximum;
+    };
+
+    char draw_nuc_to(char nuc_from) {
+        double maximum = max_mutation_rate();
+        double sum_from = sum_mutation_rates()[nuc_from];
+        if (maximum != sum_from) {
+            uniform_real_distribution<double> uni_distr(maximum);
+            if (uni_distr(Codon::re) > sum_from) {
+                return nuc_from;
+            }
+        }
+
+        discrete_distribution<char> mutation_distr(mutation_rate_matrix[nuc_from].begin(),
+                                                   mutation_rate_matrix[nuc_from].end());
+        return mutation_distr(Codon::re);
+    };
 
     void set_parameters(Population const &pop) {
         codon_seq = pop.codon_seq;
-        nucleotides_count = pop.nucleotides_count;
-        nuc_rank_to_site = pop.nuc_rank_to_site;
         haplotype_vector = pop.haplotype_vector;
         elapsed = pop.elapsed;
     };
@@ -337,6 +278,7 @@ public:
         mutation();
         selection_and_drift();
         extinction();
+        elapsed++;
     }
 
     void run_forward(unsigned t_max) {
@@ -351,78 +293,83 @@ public:
             fixation();
         }
         check_consistency();
-        elapsed += t_max;
     }
 
     void mutation() {
         TimeVar t_start = timeNow();
-        map<tuple<unsigned, unsigned, unsigned>, tuple<char, char>> cood_to_mutation{};
+        set<tuple<unsigned, unsigned, unsigned>> coordinates_set{};
 
-        for (char nuc_from{0}; nuc_from < 4; nuc_from++) {
+        binomial_distribution<unsigned> binomial_distr(population_size * nbr_nucleotides, max_mutation_rate());
+        unsigned binomial_draw = binomial_distr(Codon::re);
+
+        if (binomial_draw > 0) {
             vector<unsigned> nucleotide_copies_array(haplotype_vector.size(), 0);
-
             for (unsigned hap_id{0}; hap_id < haplotype_vector.size(); hap_id++) {
-                nucleotide_copies_array[hap_id] =
-                        haplotype_vector[hap_id].nucleotides_count[nuc_from] * haplotype_vector[hap_id].nbr_copies;
+                nucleotide_copies_array[hap_id] = haplotype_vector[hap_id].nbr_copies;
             }
-            unsigned nucleotide_copies = accumulate(nucleotide_copies_array.begin(), nucleotide_copies_array.end(),
-                                                    static_cast<unsigned>(0));
-            assert(nucleotide_copies <= (population_size * nbr_nucleotides));
+            discrete_distribution<unsigned> haplotype_freq_distr(nucleotide_copies_array.begin(),
+                                                                 nucleotide_copies_array.end());
+            unsigned nbr_draws{0};
+            while (nbr_draws < binomial_draw) {
+                unsigned haplotype_draw = haplotype_freq_distr(Codon::re);
 
-            double mutation_rate = accumulate(mutation_rate_matrix[nuc_from].begin(),
-                                              mutation_rate_matrix[nuc_from].end(), 0.0);
-            assert(mutation_rate < 1.0);
-            binomial_distribution<unsigned> binomial_distr(nucleotide_copies, mutation_rate);
-            unsigned binomial_draw = binomial_distr(Codon::re);
+                uniform_int_distribution<unsigned> copy_and_site_distr(0, haplotype_vector[haplotype_draw].nbr_copies *
+                                                                          nbr_nucleotides - 1);
+                unsigned copy_and_site_draw = copy_and_site_distr(Codon::re);
+                unsigned nuc_site = copy_and_site_draw % nbr_nucleotides;
+                unsigned copy = copy_and_site_draw / nbr_nucleotides;
 
-            if (binomial_draw > 0) {
-                discrete_distribution<char> nuc_distr(mutation_rate_matrix[nuc_from].begin(),
-                                                      mutation_rate_matrix[nuc_from].end());
-                discrete_distribution<unsigned> haplotype_freq_distr(nucleotide_copies_array.begin(),
-                                                                     nucleotide_copies_array.end());
-                unsigned nbr_draws{0};
-
-                while (nbr_draws < binomial_draw) {
-                    unsigned haplotype_draw = haplotype_freq_distr(Codon::re);
-                    unsigned haplotype_nucleotide_copies = nucleotide_copies_array[haplotype_draw];
-
-                    uniform_int_distribution<unsigned> copy_and_site_distr(0, haplotype_nucleotide_copies - 1);
-                    unsigned copy_and_site_draw = copy_and_site_distr(Codon::re);
-
-                    unsigned haplotype_nucleotide_count = haplotype_vector[haplotype_draw].nucleotides_count[nuc_from];
-                    unsigned nuc_rank = copy_and_site_draw % (haplotype_nucleotide_count);
-                    unsigned nuc_site = haplotype_vector[haplotype_draw].nuc_rank_to_site[nuc_from][nuc_rank];
-                    unsigned copy = copy_and_site_draw / haplotype_nucleotide_count;
-
-                    auto cood = make_tuple(haplotype_draw, copy, nuc_site);
-                    if (cood_to_mutation.count(cood) == 0) {
-                        cood_to_mutation[cood] = make_tuple(nuc_from, nuc_distr(Codon::re));
-                        nbr_draws++;
-                    }
+                auto coordinate = make_tuple(haplotype_draw, copy, nuc_site);
+                if (coordinates_set.count(coordinate) == 0) {
+                    coordinates_set.insert(coordinate);
+                    nbr_draws++;
                 }
             }
         }
 
-        auto begin = cood_to_mutation.begin();
-        auto next = cood_to_mutation.begin();
-        while (begin != cood_to_mutation.end()) {
-            unsigned hap_id = get<0>(begin->first);
+        auto iter = coordinates_set.begin();
+        while (iter != coordinates_set.end()) {
+            unsigned hap_id = get<0>(*iter);
+            unsigned copy_id = get<1>(*iter);
+            bool mutation{false};
+            Haplotype haplotype{};
             while (true) {
-                next++;
-                if (next == cood_to_mutation.end()) {
-                    break;
-                } else {
-                    if ((get<0>(next->first) != hap_id) or (get<1>(next->first) != get<1>(begin->first))) {
-                        break;
+                unsigned site = get<2>(*iter);
+                unsigned codon_site = site / 3;
+                auto nuc_position = static_cast<char>(site % 3);
+
+                char codon_from = haplotype_vector[hap_id].codon_to_vector[codon_site];
+                array<char, 3> triplet_nuc = Codon::codon_to_triplet_array[codon_from];
+                char nuc_from = triplet_nuc[nuc_position];
+                char nuc_to = draw_nuc_to(nuc_from);
+
+                if (nuc_from != nuc_to) {
+                    triplet_nuc[nuc_position] = nuc_to;
+                    char codon_to = Codon::triplet_to_codon(triplet_nuc[0], triplet_nuc[1], triplet_nuc[2]);
+                    if (Codon::codon_to_aa_array[codon_to] != 20) {
+                        if (not mutation) {
+                            haplotype = haplotype_vector[hap_id];
+                        }
+                        haplotype.codon_from_vector[codon_site] = codon_from;
+                        haplotype.codon_to_vector[codon_site] = codon_to;
+                        haplotype.fitness -= aa_fitness_profiles[codon_site][Codon::codon_to_aa_array[codon_from]];
+                        haplotype.fitness += aa_fitness_profiles[codon_site][Codon::codon_to_aa_array[codon_to]];
+                        mutations_vector.emplace_back(make_tuple(codon_from, codon_to));
+                        mutation = true;
                     }
                 }
+
+                iter++;
+                if (iter == coordinates_set.end() or (get<0>(*iter) != hap_id) or (get<1>(*iter) != copy_id)) {
+                    if (mutation) {
+                        haplotype_vector[hap_id].nbr_copies--;
+                        haplotype.nbr_copies = 1;
+                        haplotype_vector.emplace_back(haplotype);
+                    }
+                    break;
+                }
             }
-            Haplotype new_haplotype = haplotype_vector[hap_id];
-            haplotype_vector[hap_id].nbr_copies--;
-            new_haplotype.nbr_copies = 1;
-            new_haplotype.add_mutations(begin, next, aa_fitness_profiles);
-            haplotype_vector.emplace_back(new_haplotype);
-            begin = next;
+
         }
         time_mutation += duration(timeNow() - t_start);
     }
@@ -743,7 +690,7 @@ public:
     // Recursively iterate through the subtree.
     void traverse(string &output_filename) {
         // Substitutions of the DNA sequence is generated.
-        auto time = static_cast<unsigned>(0.001 * length / (population.mutation_rate()));
+        auto time = static_cast<unsigned>(0.01 * length / (population.mutation_rate()));
         population.run_forward(time);
 
         length_computed += length;
