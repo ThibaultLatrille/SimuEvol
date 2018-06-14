@@ -700,39 +700,9 @@ public:
         return stats;
     };
 
-    Change_table compute_change_table(bool rmv_mutations = false) {
-        long syn_mut{0}, non_syn_mut{0};
-        if (rmv_mutations) {
-            vector<Change> mutation_absorbed(mutations_vector.size());
-
-            set<Change> polymorphic_set;
-            for (auto const &haplotype: haplotype_vector) {
-                for (auto const &kv_change: haplotype.change_map) {
-                    polymorphic_set.insert(kv_change.second);
-                }
-            }
-
-            assert(is_sorted(polymorphic_set.begin(), polymorphic_set.end()));
-            if (!mutations_vector.empty()) {
-                assert(is_sorted(mutations_vector.begin(), mutations_vector.end()));
-                for (auto &change: polymorphic_set) {
-                    assert(lower_bound(mutations_vector.begin(), mutations_vector.end(), change) !=
-                           mutations_vector.end());
-                }
-            }
-
-            auto diff_it = set_difference(mutations_vector.begin(), mutations_vector.end(),
-                                          polymorphic_set.begin(), polymorphic_set.end(),
-                                          mutation_absorbed.begin());
-            mutation_absorbed.resize(diff_it - mutation_absorbed.begin());
-            assert(mutation_absorbed.size() <= mutations_vector.size());
-            assert(mutation_absorbed.size() >= fixations_vector.size());
-            syn_mut = count_if(mutation_absorbed.begin(), mutation_absorbed.end(), is_synonymous);
-            non_syn_mut = mutation_absorbed.size() - syn_mut;
-        } else {
-            syn_mut = count_if(mutations_vector.begin(), mutations_vector.end(), is_synonymous);
-            non_syn_mut = mutations_vector.size() - syn_mut;
-        }
+    Change_table compute_change_table() {
+        long syn_mut = count_if(mutations_vector.begin(), mutations_vector.end(), is_synonymous);
+        long   non_syn_mut = mutations_vector.size() - syn_mut;
         long syn_fix = count_if(fixations_vector.begin(), fixations_vector.end(), is_synonymous);
         long non_syn_fix = fixations_vector.size() - syn_fix;
 
