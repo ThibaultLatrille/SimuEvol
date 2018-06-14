@@ -8,6 +8,3 @@ add_executable(SimuEvol ${SOURCE_FILES_EVOL})
 
 set(SOURCE_FILES_POLY src/Eigen/Dense src/docopt.cpp/docopt.h src/codon.hpp src/simu_poly.cpp )
 add_executable(SimuPoly ${SOURCE_FILES_POLY})
-
-set(SOURCE_FILES_POLYVOl src/Eigen/Dense src/docopt.cpp/docopt.h src/codon.hpp src/simu_polyvol.cpp )
-add_executable(SimuPolyVol ${SOURCE_FILES_POLYVOl})
