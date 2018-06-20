@@ -1179,6 +1179,7 @@ int main(int argc, char *argv[]) {
         sample_size = static_cast<unsigned>(stoi(args["--sample_size"].asString()));
     }
 
+    assert(sample_size <= pop_size);
     // output
     cout << "The DNA sequence is " << fitness_profiles.size() * 3 << " base pairs." << endl;
 
