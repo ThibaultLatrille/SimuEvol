@@ -94,6 +94,7 @@ struct SummaryStatistics {
     double dn_sample{0}, ds_sample{0}, omega_sample{0};
     double pn_sample{0}, ps_sample{0}, pnps_sample{0};
     double pin_sample{0}, pis_sample{0}, pinpis_sample{0};
+    double at_pct_predicted{0}, at_pct{0};;
 };
 
 //Function for avg of a vector ignoring NaN
@@ -110,22 +111,14 @@ double average(vector<SummaryStatistics> const &vector_stats, function<double(Su
     return total / elements_non_nan;
 }
 
-SummaryStatistics average(vector<SummaryStatistics> const &vector_stats) {
-    SummaryStatistics avg_stats;
-    avg_stats.dn = average(vector_stats, [](SummaryStatistics stat) { return stat.dn; });
-    avg_stats.ds = average(vector_stats, [](SummaryStatistics stat) { return stat.ds; });
-    avg_stats.omega = average(vector_stats, [](SummaryStatistics stat) { return stat.omega; });
-    avg_stats.dn_sample = average(vector_stats, [](SummaryStatistics stat) { return stat.dn_sample; });
-    avg_stats.ds_sample = average(vector_stats, [](SummaryStatistics stat) { return stat.ds_sample; });
-    avg_stats.omega_sample = average(vector_stats, [](SummaryStatistics stat) { return stat.omega_sample; });
-    avg_stats.omega_predicted = average(vector_stats, [](SummaryStatistics stat) { return stat.omega_predicted; });
-    avg_stats.pn_sample = average(vector_stats, [](SummaryStatistics stat) { return stat.pn_sample; });
-    avg_stats.ps_sample = average(vector_stats, [](SummaryStatistics stat) { return stat.ps_sample; });
-    avg_stats.pnps_sample = average(vector_stats, [](SummaryStatistics stat) { return stat.pnps_sample; });
-    avg_stats.pin_sample = average(vector_stats, [](SummaryStatistics stat) { return stat.pin_sample; });
-    avg_stats.pis_sample = average(vector_stats, [](SummaryStatistics stat) { return stat.pis_sample; });
-    avg_stats.pinpis_sample = average(vector_stats, [](SummaryStatistics stat) { return stat.pinpis_sample; });
-    return avg_stats;
+void average(vector<SummaryStatistics> const &vector_stats) {
+    cout << "Pred omega=" << average(vector_stats, [](SummaryStatistics stat) { return stat.omega_predicted; }) << endl;
+    cout << "omega=" << average(vector_stats, [](SummaryStatistics stat) { return stat.omega; }) << endl;
+    cout << "Sample omega=" << average(vector_stats, [](SummaryStatistics stat) { return stat.omega_sample; }) << endl;
+    cout << "Sample piN/piS=" << average(vector_stats, [](SummaryStatistics stat) { return stat.pnps_sample; }) << endl;
+    cout << "Sample pN/pS=" << average(vector_stats, [](SummaryStatistics stat) { return stat.pinpis_sample; }) << endl;
+    cout << "Pred %AT=" << average(vector_stats, [](SummaryStatistics stat) { return stat.at_pct_predicted; }) << endl;
+    cout << "%AT=" << average(vector_stats, [](SummaryStatistics stat) { return stat.at_pct; }) << endl;
 }
 
 class Haplotype {
@@ -176,6 +169,7 @@ public:
 
     // Population
     unsigned population_size;
+    unsigned sample_size{0};
 
     // Mutation
     double lambda;
@@ -205,8 +199,8 @@ public:
 
     // Constructor
     Population(double mutation_bias, double mu, vector<array<double, 20>> const &fitness_profiles,
-               unsigned population_size, string &output_path) :
-            population_size{population_size},
+               unsigned population_size, unsigned sample_size, string &output_path) :
+            population_size{population_size}, sample_size{sample_size},
             lambda{mutation_bias}, mutation_rate_matrix{}, nuc_frequencies{{mutation_bias, 1, 1, mutation_bias}},
             aa_fitness_profiles{fitness_profiles},
             nbr_sites{unsigned(fitness_profiles.size())}, nbr_nucleotides{unsigned(3 * fitness_profiles.size())},
@@ -234,7 +228,7 @@ public:
             codon_seq[site] = freq_codon_distr(Codon::re);
         }
 
-        haplotype_vector.emplace_back(Haplotype(population_size, 0.0));
+        haplotype_vector.emplace_back(Haplotype(2 * population_size, 0.0));
         check_consistency();
         cout << "Population created " << endl;
         assert(!haplotype_vector.empty());
@@ -288,7 +282,7 @@ public:
 
 
     void check_consistency() {
-        assert(haplotype_vector.size() <= population_size);
+        assert(haplotype_vector.size() <= 2 * population_size);
         assert(!haplotype_vector.empty());
 
         unsigned nbr_copies{0};
@@ -296,7 +290,7 @@ public:
             haplotype.check_consistency(nbr_sites);
             nbr_copies += haplotype.nbr_copies;
         }
-        assert(nbr_copies == population_size);
+        assert(nbr_copies == 2 * population_size);
     }
 
     void forward() {
@@ -330,10 +324,20 @@ public:
             mutations_vector.clear();
             fixations_vector.clear();
             run_forward(population_size * interval);
-            output_vcf(output_filename, name, sample);
+            output_vcf(output_filename, name);
             cout << static_cast<double>(100 * sample) / sample_max << "% of simulation computed ("
                  << population_size * interval * sample << " generations)" << endl;
         }
+    }
+
+    discrete_distribution<unsigned> haplotype_freq_distr() {
+        vector<unsigned> nucleotide_copies_array(haplotype_vector.size(), 0);
+        for (unsigned hap_id{0}; hap_id < haplotype_vector.size(); hap_id++) {
+            nucleotide_copies_array[hap_id] = haplotype_vector[hap_id].nbr_copies;
+        }
+        discrete_distribution<unsigned> haplotype_distr(nucleotide_copies_array.begin(),
+                                                        nucleotide_copies_array.end());
+        return haplotype_distr;
     }
 
     void mutation() {
@@ -349,19 +353,14 @@ public:
         }
         double max_sum_mutation_rates = *max_element(sum_mutation_rates.begin(), sum_mutation_rates.end());
 
-        binomial_distribution<unsigned> binomial_distr(population_size * nbr_nucleotides, max_sum_mutation_rates);
+        binomial_distribution<unsigned> binomial_distr(2 * population_size * nbr_nucleotides, max_sum_mutation_rates);
         unsigned binomial_draw = binomial_distr(Codon::re);
 
         if (binomial_draw > 0) {
-            vector<unsigned> nucleotide_copies_array(haplotype_vector.size(), 0);
-            for (unsigned hap_id{0}; hap_id < haplotype_vector.size(); hap_id++) {
-                nucleotide_copies_array[hap_id] = haplotype_vector[hap_id].nbr_copies;
-            }
-            discrete_distribution<unsigned> haplotype_freq_distr(nucleotide_copies_array.begin(),
-                                                                 nucleotide_copies_array.end());
             unsigned nbr_draws{0};
+            auto haplotype_distr = haplotype_freq_distr();
             while (nbr_draws < binomial_draw) {
-                unsigned haplotype_draw = haplotype_freq_distr(Codon::re);
+                unsigned haplotype_draw = haplotype_distr(Codon::re);
 
                 uniform_int_distribution<unsigned> copy_and_site_distr(0, haplotype_vector[haplotype_draw].nbr_copies *
                                                                           nbr_nucleotides - 1);
@@ -451,13 +450,13 @@ public:
 
         vector<double> hap_fit_array(haplotype_vector.size(), 0);
         for (unsigned hap_id{0}; hap_id < haplotype_vector.size(); hap_id++) {
-            double s = 2.0 * haplotype_vector[hap_id].fitness / population_size;
+            double s = haplotype_vector[hap_id].fitness / population_size;
             double x = haplotype_vector[hap_id].nbr_copies;
             hap_fit_array[hap_id] = max(0.0, x * (1 + s));
             haplotype_vector[hap_id].nbr_copies = 0;
         }
         discrete_distribution<unsigned> haplotype_freq_distr(hap_fit_array.begin(), hap_fit_array.end());
-        for (unsigned indiv{0}; indiv < population_size; indiv++) {
+        for (unsigned indiv{0}; indiv < 2 * population_size; indiv++) {
             haplotype_vector[haplotype_freq_distr(Codon::re)].nbr_copies++;
         }
 
@@ -509,67 +508,171 @@ public:
         time.fixation += duration(timeNow() - t_start);
     }
 
-    void output_vcf(string &output_filename, string &node_name, unsigned gen) {
+    void output_vcf(string &output_filename, string &node_name) {
         TimeVar t_start = timeNow();
 
-        vector<unsigned> sfs_non_syn(population_size, 0), sfs_syn(population_size, 0);
-        unsigned non_syn_nbr = 0, syn_nbr = 0;
-        unsigned complex_sites{0};
-        assert(sfs_non_syn.size() == population_size);
-        assert(sum(sfs_non_syn) == 0);
-        assert(sfs_syn.size() == population_size);
-        assert(sum(sfs_syn) == 0);
+        SummaryStatistics stats;
 
-        ofstream vcf_file;
-        vcf_file.open(output_filename + node_name + ".vcf");
-        vcf_file << "##fileformat=VCFv4.0" << endl;
-        vcf_file << "##source=" << version_string << endl;
-        vcf_file << "##nodeName=" << node_name << endl;
-        vcf_file << "##sequenceSize=" << nbr_nucleotides << endl;
-        vcf_file << "##populationSize=" << population_size << endl;
-        vcf_file << "##numberHaplotypes=" << haplotype_vector.size() << endl;
-        vcf_file << "##reference=" << get_dna_str() << endl;
-        vcf_file << "##FILTER=<ID=s50,Description=\"The alternative is the major allele\">" << endl;
-        vcf_file << "##INFO=<ID=REFCODON,Number=1,Type=String,Description=\"Codon of the reference\">" << endl;
-        vcf_file << "##INFO=<ID=ALTCODON,Number=1,Type=String,Description=\"Codon of the alternative\">" << endl;
-        vcf_file << "##INFO=<ID=REFAA,Number=1,Type=Character,Description=\"Amino-acid of the reference\">" << endl;
-        vcf_file << "##INFO=<ID=ALTAA,Number=1,Type=Character,Description=\"Amino-acid of the alternative\">" << endl;
-        vcf_file << "##INFO=<ID=POSITION,Number=1,Type=Integer,Description=\"Mutated codon position\">" << endl;
-        vcf_file << "##INFO=<ID=ALTCOUNT,Number=1,Type=Integer,Description=\"Number of alternative copy\">" << endl;
-        vcf_file << "##INFO=<ID=SYN,Number=1,Type=boolean,Description=\"Is a synonymous mutation\">" << endl;
-        vcf_file << "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">" << endl;
-        string header{"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT"};
-        unsigned indiv{1};
-        for (unsigned hap_id{0}; hap_id < haplotype_vector.size(); hap_id++) {
-            for (unsigned copy{0}; copy < haplotype_vector[hap_id].nbr_copies; copy++) {
-                header += "\tId";
-                header += to_string(indiv);
-                header += "Hap";
-                header += to_string(hap_id);
-                indiv++;
-            }
-        }
-        vcf_file << header << endl;
+        // Predicted dN/dS and %AT
+        {
+            double at_sites{0};
+            vector<double> sub_flow_per_site(nbr_sites, 0.);
+            vector<double> mut_flow_per_site(nbr_sites, 0.);
 
-        for (unsigned site{0}; site < nbr_sites; site++) {
-            map<tuple<char, char>, unsigned> codon_from_to_copy{};
-            for (auto &haplotype: haplotype_vector) {
-                auto it = haplotype.set_change.find(Change{site});
-                if (it != haplotype.set_change.end()) {
-                    assert((*it).site == site);
-                    char codon_from = (*it).codon_from;
-                    char codon_to = (*it).codon_to;
-                    if (codon_to != codon_from) {
-                        codon_from_to_copy[make_tuple(codon_from, codon_to)] += haplotype.nbr_copies;
+            for (unsigned site{0}; site < nbr_sites; site++) {
+
+                array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profiles[site]);
+
+                double sub_flow{0.}, mut_flow{0.};
+                for (char codon_from{0}; codon_from < 64; codon_from++) {
+
+                    if (Codon::codon_to_aa_array[codon_from] != 20) {
+
+                        for (auto &neighbor: Codon::codon_to_neighbors_array[codon_from]) {
+
+                            char codon_to{0}, n_from{0}, n_to{0};
+                            tie(codon_to, n_from, n_to) = neighbor;
+                            assert(n_from != n_to);
+
+                            if (Codon::codon_to_aa_array[codon_to] != 20 and
+                                Codon::codon_to_aa_array[codon_from] != Codon::codon_to_aa_array[codon_to]) {
+
+                                double p_fix{1.};
+
+                                double delta_f = aa_fitness_profiles[site][Codon::codon_to_aa_array[codon_to]];
+                                delta_f -= aa_fitness_profiles[site][Codon::codon_to_aa_array[codon_from]];
+                                if (fabs(delta_f) <= Codon::epsilon) {
+                                    p_fix = 1.0;
+                                } else {
+                                    p_fix = delta_f / (1 - exp(-delta_f));
+                                }
+
+                                sub_flow += codon_freqs[codon_from] * mutation_rate_matrix[n_from][n_to] * p_fix;
+                                mut_flow += codon_freqs[codon_from] * mutation_rate_matrix[n_from][n_to];
+                            }
+                        }
                     }
+                    array<char, 3> triplet = Codon::codon_to_triplet_array[codon_from];
+                    for (char position{0}; position < 3; position++) {
+                        if (triplet[position] == 0 or triplet[position] == 3) {
+                            at_sites += codon_freqs[codon_from];
+                        }
+                    }
+
+                }
+                sub_flow_per_site[site] = sub_flow;
+                mut_flow_per_site[site] = mut_flow;
+            }
+            stats.at_pct_predicted = at_sites / nbr_nucleotides;
+            stats.omega_predicted = accumulate(sub_flow_per_site.begin(), sub_flow_per_site.end(), 0.0) /
+                                    accumulate(mut_flow_per_site.begin(), mut_flow_per_site.end(), 0.0);
+        }
+
+        // dN/dS computed with the table of changes
+        Change_table table = compute_change_table();
+        stats.dn = 2 * population_size * dn_from_table(table);
+        stats.ds = 2 * population_size * ds_from_table(table);
+        stats.omega = stats.dn / stats.ds;
+
+        // Draw the sample of individuals
+        vector<unsigned> hap_id_shuffle(2 * population_size, 0);
+        {
+            unsigned sum_copies = 0;
+            for (unsigned hap_id{0}; hap_id < haplotype_vector.size(); hap_id++) {
+                for (unsigned copy_id{0}; copy_id < haplotype_vector[hap_id].nbr_copies; copy_id++) {
+                    assert(sum_copies + copy_id < 2 * population_size);
+                    hap_id_shuffle[sum_copies + copy_id] = hap_id;
+                }
+                sum_copies += haplotype_vector[hap_id].nbr_copies;
+            }
+            shuffle(hap_id_shuffle.begin(), hap_id_shuffle.end(), Codon::re);
+            hap_id_shuffle.resize(2 * sample_size);
+        }
+
+        // dN/dS computed using one individual of the sample
+        {
+            uniform_int_distribution<unsigned> dis(0, 2 * sample_size - 1);
+            auto hap_table = table;
+            for (auto const &change: haplotype_vector[hap_id_shuffle[dis(Codon::re)]].set_change) {
+                if (is_synonymous(change)) {
+                    hap_table.syn_fix++;
+                } else {
+                    hap_table.non_syn_fix++;
                 }
             }
+            stats.dn_sample = 2 * population_size * dn_from_table(hap_table);
+            stats.ds_sample = 2 * population_size * ds_from_table(hap_table);
+            stats.omega_sample = stats.dn_sample / stats.ds_sample;
+        }
 
-            if (codon_from_to_copy.size() == 1) {
-                for (auto const &kv_tuple_copy: codon_from_to_copy) {
-                    char codon_from = get<0>(kv_tuple_copy.first);
-                    char codon_to = get<1>(kv_tuple_copy.first);
+
+        // VCF file on the sample
+        vector<unsigned> sfs_non_syn(2 * sample_size + 1, 0), sfs_syn(2 * sample_size + 1, 0);
+        unsigned non_syn_nbr = 0, syn_nbr = 0;
+        unsigned complex_sites{0};
+        {
+            double at_sites{0};
+            assert(sfs_non_syn.size() == 2 * sample_size + 1);
+            assert(sum(sfs_non_syn) == 0);
+            assert(sfs_syn.size() == 2 * sample_size + 1);
+            assert(sum(sfs_syn) == 0);
+            ofstream vcf;
+            vcf.open(output_filename + node_name + ".vcf");
+            vcf << "##fileformat=VCFv4.0" << endl;
+            vcf << "##source=" << version_string << endl;
+            vcf << "##nodeName=" << node_name << endl;
+            vcf << "##sequenceSize=" << nbr_nucleotides << endl;
+            vcf << "##ploidyLevel=diploid" << endl;
+            vcf << "##numberIndividuals=" << sample_size << endl;
+            vcf << "##numberGenotypes=" << 2 * sample_size << endl;
+            vcf << "##reference=" << get_dna_str() << endl;
+            vcf << "##FILTER=<ID=s50,Description=\"The alternative is the major allele\">" << endl;
+            vcf << "##FILTER=<ID=s100,Description=\"The reference has not been sampled\">" << endl;
+            vcf << "##INFO=<ID=REFCODON,Number=1,Type=String,Description=\"Codon of the reference\">" << endl;
+            vcf << "##INFO=<ID=ALTCODON,Number=1,Type=String,Description=\"Codon of the alternative\">" << endl;
+            vcf << "##INFO=<ID=REFAA,Number=1,Type=Character,Description=\"Amino-acid of the reference\">" << endl;
+            vcf << "##INFO=<ID=ALTAA,Number=1,Type=Character,Description=\"Amino-acid of the alternative\">" << endl;
+            vcf << "##INFO=<ID=POSITION,Number=1,Type=Integer,Description=\"Mutated codon position\">" << endl;
+            vcf << "##INFO=<ID=ALTCOUNT,Number=1,Type=Integer,Description=\"Number of alternative copy\">" << endl;
+            vcf << "##INFO=<ID=SYN,Number=1,Type=boolean,Description=\"Is a synonymous mutation\">" << endl;
+            vcf << "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">" << endl;
+            string header{"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT"};
+
+            for (unsigned indiv{1}; indiv <= sample_size; indiv++) {
+                header += "\tId";
+                header += to_string(indiv);
+                indiv++;
+            }
+            vcf << header << endl;
+
+            for (unsigned site{0}; site < nbr_sites; site++) {
+                map<tuple<char, char>, unsigned> codon_from_to_copy{};
+                for (auto const &hap_id: hap_id_shuffle) {
+                    char codon_to = codon_seq[site];
+
+                    auto it = haplotype_vector[hap_id].set_change.find(Change{site});
+                    if (it != haplotype_vector[hap_id].set_change.end()) {
+                        assert((*it).site == site);
+                        char codon_from = (*it).codon_from;
+                        codon_to = (*it).codon_to;
+                        if (codon_to != codon_from) {
+                            codon_from_to_copy[make_tuple(codon_from, codon_to)]++;
+                        }
+                    }
+
+                    array<char, 3> triplet = Codon::codon_to_triplet_array[codon_to];
+                    for (char position{0}; position < 3; position++) {
+                        if (triplet[position] == 0 or triplet[position] == 3) {
+                            at_sites++;
+                        }
+                    }
+                }
+
+                if (codon_from_to_copy.size() == 1) {
+                    char codon_from = get<0>((*codon_from_to_copy.begin()).first);
+                    char codon_to = get<1>((*codon_from_to_copy.begin()).first);
                     if (codon_to != codon_from) {
+                        unsigned alt_freq = (*codon_from_to_copy.begin()).second;
                         char position{0};
                         while (position < 3) {
                             if (Codon::codon_to_nuc(codon_from, position) != Codon::codon_to_nuc(codon_to, position)) {
@@ -587,7 +690,9 @@ public:
                         line += "\t";
                         line += Codon::codon_to_nuc(codon_to, position);
                         line += "\t100\t";
-                        if (kv_tuple_copy.second > population_size / 2) {
+                        if (alt_freq == 2 * sample_size) {
+                            line += "s100";
+                        } else if (alt_freq > sample_size) {
                             line += "s50";
                         } else {
                             line += "PASS";
@@ -603,57 +708,107 @@ public:
                         line += ";POSITION=";
                         line += to_string(position);
                         line += ";ALTCOUNT=";
-                        line += to_string(kv_tuple_copy.second);
+                        line += to_string(alt_freq);
                         line += ";SYN=";
 
-                        assert(kv_tuple_copy.second < population_size);
                         if (Codon::codon_to_aa_array[codon_from] == Codon::codon_to_aa_array[codon_to]) {
-                            sfs_syn[kv_tuple_copy.second]++;
+                            sfs_syn[alt_freq]++;
                             syn_nbr++;
                             line += "TRUE";
                         } else {
-                            sfs_non_syn[kv_tuple_copy.second]++;
+                            sfs_non_syn[alt_freq]++;
                             non_syn_nbr++;
                             line += "FALSE";
                         }
 
                         line += "\tGT";
-                        for (auto &haplotype: haplotype_vector) {
-                            auto it = haplotype.set_change.find(Change{site});
-                            char nuc;
-                            if (it != haplotype.set_change.end()) {
-                                assert((*it).site == site);
-                                nuc = Codon::codon_to_nuc((*it).codon_to, position);
-                            } else {
-                                nuc = Codon::codon_to_nuc(codon_seq[site], position);
-                            }
-                            for (unsigned copy{0}; copy < haplotype.nbr_copies; copy++) {
-                                line += "\t";
+                        for (unsigned indiv{0}; indiv < sample_size; indiv++) {
+                            line += "\t";
+                            for (unsigned ploidy{0}; ploidy < 2; ploidy++) {
+                                unsigned hap_id = hap_id_shuffle[indiv * 2 + ploidy];
+                                auto it = haplotype_vector[hap_id].set_change.find(Change{site});
+                                char nuc{0};
+                                if (it != haplotype_vector[hap_id].set_change.end()) {
+                                    assert((*it).site == site);
+                                    nuc = Codon::codon_to_nuc((*it).codon_to, position);
+                                } else {
+                                    nuc = Codon::codon_to_nuc(codon_seq[site], position);
+                                }
                                 line += nuc;
+                                if (ploidy == 0) { line += "|"; }
                             }
                         }
-                        vcf_file << line << endl;
+                        vcf << line << endl;
                     }
+                } else if (codon_from_to_copy.size() > 1) {
+                    complex_sites++;
                 }
-            } else if (codon_from_to_copy.size() > 1) {
-                complex_sites++;
             }
+            vcf.close();
+
+            stats.at_pct = at_sites / (nbr_nucleotides * 2 * sample_size);
+            assert(sfs_non_syn.size() == 2 * sample_size + 1);
+            assert(sfs_syn.size() == 2 * sample_size + 1);
+            assert(sum(sfs_non_syn) == non_syn_nbr);
+            assert(sum(sfs_syn) == syn_nbr);
+            assert(mutations_vector.size() == table.non_syn_mut + table.syn_mut);
+            assert(fixations_vector.size() == table.non_syn_fix + table.syn_fix);
         }
 
-        vcf_file.close();
+        // pN/pS computed on the sample
+        {
+            stats.pn_sample = static_cast<double>(non_syn_nbr);
+            stats.ps_sample = static_cast<double>(syn_nbr);
+            stats.pnps_sample = stats.pn_sample / stats.ps_sample;
+        }
 
-        assert(sfs_non_syn.size() == population_size);
-        assert(sfs_syn.size() == population_size);
-        assert(sum(sfs_non_syn) == non_syn_nbr);
-        assert(sum(sfs_syn) == syn_nbr);
+        // piN/piS computed on the sample
+        {
+            for (unsigned i{0}; i < 2 * sample_size; i++) {
+                for (unsigned j{i + 1}; j < 2 * sample_size; j++) {
+                    if (i != j) {
+                        unsigned hap_i = hap_id_shuffle[i];
+                        unsigned hap_j = hap_id_shuffle[j];
+                        auto it_first = haplotype_vector[hap_i].set_change.begin();
+                        auto end_first = haplotype_vector[hap_i].set_change.end();
+                        auto it_second = haplotype_vector[hap_j].set_change.begin();
+                        auto end_second = haplotype_vector[hap_j].set_change.end();
+                        while (it_first != end_first and it_second != end_second) {
+                            Change diff{};
+                            if (it_second == end_second or (*it_first) < (*it_second)) {
+                                diff = *it_first;
+                                it_first++;
+                            } else if (it_first == end_first or (*it_second) < (*it_first)) {
+                                diff = *it_second;
+                                it_second++;
+                            } else if ((*it_first) == (*it_second)) {
+                                diff.codon_to = (*it_first).codon_to;
+                                diff.codon_from = (*it_second).codon_from;
+                                it_first++;
+                                it_second++;
+                            }
+                            if (is_synonymous(diff)) {
+                                stats.pis_sample++;
+                            } else {
+                                stats.pin_sample++;
+                            }
+                        }
+                    }
+                }
+            }
+            stats.pin_sample *= 2.0 / (2 * sample_size * (2 * sample_size - 1));
+            stats.pis_sample *= 2.0 / (2 * sample_size * (2 * sample_size - 1));
+            stats.pinpis_sample = stats.pin_sample / stats.pis_sample;
+        }
+
+        stats_vector.push_back(stats);
+
         double mean_fitness = accumulate(haplotype_vector.begin(), haplotype_vector.end(), 0.0,
                                          [](double acc, Haplotype &h) { return acc + h.fitness; }) /
                               haplotype_vector.size();
         // .ali format
         ofstream tsv_file;
         tsv_file.open(output_filename + ".tsv", ios_base::app);
-        SummaryStatistics stats = compute_summary_stats(non_syn_nbr, syn_nbr);
-        stats_vector.push_back(stats);
         tsv_file << node_name << "\t" << elapsed << "\t" << 2 << "\tdN\t" << stats.dn << endl;
         tsv_file << node_name << "\t" << elapsed << "\t" << 2 << "\tdS\t" << stats.ds << endl;
         tsv_file << node_name << "\t" << elapsed << "\t" << 2 << "\tdN_sample\t" << stats.dn_sample << endl;
@@ -670,97 +825,22 @@ public:
         tsv_file << node_name << "\t" << elapsed << "\t" << 4 << "\tHapNbr\t" << haplotype_vector.size() << endl;
         tsv_file << node_name << "\t" << elapsed << "\t" << 5 << "\tNbrMutations\t" << mutations_vector.size() << endl;
         tsv_file << node_name << "\t" << elapsed << "\t" << 6 << "\tNbrFixations\t" << fixations_vector.size() << endl;
-        Change_table table = compute_change_table();
-        assert(mutations_vector.size() == table.non_syn_mut + table.syn_mut);
-        assert(fixations_vector.size() == table.non_syn_fix + table.syn_fix);
-        tsv_file << node_name << "\t" << elapsed << "\t" << 5 << "\tNbrNonSynonymousMutations\t" << table.non_syn_mut
-                 << endl;
-        tsv_file << node_name << "\t" << elapsed << "\t" << 5 << "\tNbrSynonymousMutations\t" << table.syn_mut << endl;
-        tsv_file << node_name << "\t" << elapsed << "\t" << 6 << "\tNbrNonSynonymousFixation\t" << table.non_syn_fix
-                 << endl;
-        tsv_file << node_name << "\t" << elapsed << "\t" << 6 << "\tNbrSynonymousFixation\t" << table.syn_fix << endl;
-        tsv_file << node_name << "\t" << elapsed << "\t" << 0 << "\tMeanFitness\t" << mean_fitness << endl;
+        tsv_file << node_name << "\t" << elapsed << "\t" << 5 << "\tNbrNonSynMutations\t" << table.non_syn_mut << endl;
+        tsv_file << node_name << "\t" << elapsed << "\t" << 5 << "\tNbrSynMutations\t" << table.syn_mut << endl;
+        tsv_file << node_name << "\t" << elapsed << "\t" << 6 << "\tNbrNonSynFixation\t" << table.non_syn_fix << endl;
+        tsv_file << node_name << "\t" << elapsed << "\t" << 6 << "\tNbrSynFixation\t" << table.syn_fix << endl;
+        tsv_file << node_name << "\t" << elapsed << "\t" << 8 << "\tMeanFitness\t" << mean_fitness << endl;
         tsv_file << node_name << "\t" << elapsed << "\t" << 4 << "\tCpxSites\t" << complex_sites << endl;
         tsv_file << node_name << "\t" << elapsed << "\t" << 0 << "\tSFSn\t" << join(sfs_non_syn, ' ') << endl;
         tsv_file << node_name << "\t" << elapsed << "\t" << 4 << "\tE[SFSn]\t" << mean(sfs_non_syn) << endl;
         tsv_file << node_name << "\t" << elapsed << "\t" << 0 << "\tSFSs\t" << join(sfs_syn, ' ') << endl;
         tsv_file << node_name << "\t" << elapsed << "\t" << 4 << "\tE[SFSs]\t" << mean(sfs_syn) << endl;
-        tsv_file << node_name << "\t" << elapsed << "\t" << 7 << "\t%AT\t" << at_pct() << endl;
-        tsv_file << node_name << "\t" << elapsed << "\t" << 7 << "\t%AT_predicted\t" << predicted_at_pct() << endl;
+        tsv_file << node_name << "\t" << elapsed << "\t" << 7 << "\t%AT\t" << stats.at_pct << endl;
+        tsv_file << node_name << "\t" << elapsed << "\t" << 7 << "\t%AT_predicted\t" << stats.at_pct_predicted << endl;
         tsv_file.close();
 
         time.exportation += duration(timeNow() - t_start);
     }
-
-    SummaryStatistics compute_summary_stats(unsigned const &non_syn_nbr, unsigned const &syn_nbr) {
-        SummaryStatistics stats;
-        Change_table table = compute_change_table();
-        stats.pn_sample = static_cast<double>(non_syn_nbr);
-        stats.ps_sample = static_cast<double>(syn_nbr);
-        stats.pnps_sample = stats.pn_sample / stats.ps_sample;
-
-        stats.dn = population_size * dn_from_table(table);
-        stats.ds = population_size * ds_from_table(table);
-        stats.omega = stats.dn / stats.ds;
-
-        double copies = 0.0;
-        for (auto const &hap: haplotype_vector) {
-            auto hap_table = table;
-            for (auto const &change: hap.set_change) {
-                if (is_synonymous(change)) {
-                    hap_table.syn_fix++;
-                } else {
-                    hap_table.non_syn_fix++;
-                }
-            }
-            auto hap_dn = dn_from_table(hap_table);
-            auto hap_ds = ds_from_table(hap_table);
-            double hap_omega = hap_dn / hap_ds;
-            if (isfinite(hap_omega)) {
-                copies += hap.nbr_copies;
-                stats.dn_sample += hap_dn * hap.nbr_copies;
-                stats.ds_sample += hap_ds * hap.nbr_copies;
-                stats.omega_sample += hap.nbr_copies * hap_omega;
-            }
-        }
-        stats.dn_sample *= population_size / copies;
-        stats.ds_sample *= population_size / copies;
-        stats.omega_sample /= copies;
-        stats.omega_predicted = predicted_omega();
-
-        for (unsigned i{0}; i < haplotype_vector.size(); i++) {
-            for (unsigned j{i + 1}; j < haplotype_vector.size(); j++) {
-                auto it_first = haplotype_vector[i].set_change.begin();
-                auto end_first = haplotype_vector[i].set_change.end();
-                auto it_second = haplotype_vector[j].set_change.begin();
-                auto end_second = haplotype_vector[j].set_change.end();
-                while (it_first != end_first and it_second != end_second) {
-                    Change diff{};
-                    if (it_second == end_second or (*it_first) < (*it_second)) {
-                        diff = *it_first;
-                        it_first++;
-                    } else if (it_first == end_first or (*it_second) < (*it_first)) {
-                        diff = *it_second;
-                        it_second++;
-                    } else if ((*it_first) == (*it_second)) {
-                        diff.codon_to = (*it_first).codon_to;
-                        diff.codon_from = (*it_second).codon_from;
-                        it_first++;
-                        it_second++;
-                    }
-                    if (is_synonymous(diff)) {
-                        stats.pis_sample += haplotype_vector[i].nbr_copies * haplotype_vector[j].nbr_copies;
-                    } else {
-                        stats.pin_sample += haplotype_vector[i].nbr_copies * haplotype_vector[j].nbr_copies;
-                    }
-                }
-            }
-        }
-        stats.pin_sample *= 2.0 / (population_size * (population_size - 1));
-        stats.pis_sample *= 2.0 / (population_size * (population_size - 1));
-        stats.pinpis_sample = stats.pin_sample / stats.pis_sample;
-        return stats;
-    };
 
     Change_table compute_change_table() {
         long syn_mut = count_if(mutations_vector.begin(), mutations_vector.end(), is_synonymous);
@@ -769,63 +849,6 @@ public:
         long non_syn_fix = fixations_vector.size() - syn_fix;
 
         return Change_table{non_syn_mut, syn_mut, non_syn_fix, syn_fix};
-    }
-
-    // Theoretical computation of the predicted omega
-    double predicted_omega() {
-        vector<double> dn_per_site(nbr_sites, 0.);
-        vector<double> ds_per_site(nbr_sites, 0.);
-
-        // For all site of the sequence.
-        for (unsigned site{0}; site < nbr_sites; site++) {
-            // Codon original before substitution.
-
-            array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profiles[site]);
-
-
-            double dn{0.}, d0{0.};
-            for (char codon_from{0}; codon_from < 64; codon_from++) {
-                if (Codon::codon_to_aa_array[codon_from] != 20) {
-
-                    // For all possible neighbors.
-                    for (auto &neighbor: Codon::codon_to_neighbors_array[codon_from]) {
-
-                        // Codon after mutation, Nucleotide original and Nucleotide after mutation.
-                        char codon_to{0}, n_from{0}, n_to{0};
-                        tie(codon_to, n_from, n_to) = neighbor;
-
-                        // If the mutated amino-acid is a stop codon, the rate of fixation is 0.
-                        // Else, if the mutated and original amino-acids are non-synonymous, we compute the rate of fixation.
-                        // Note that, if the mutated and original amino-acids are synonymous, the rate of fixation is 1.
-                        if (Codon::codon_to_aa_array[codon_to] != 20 and
-                            Codon::codon_to_aa_array[codon_from] != Codon::codon_to_aa_array[codon_to]) {
-
-                            // Rate of fixation initialized to 1 (neutral mutation)
-                            double rate_fixation{1.};
-
-                            double delta_f = aa_fitness_profiles[site][Codon::codon_to_aa_array[codon_to]];
-                            delta_f -= aa_fitness_profiles[site][Codon::codon_to_aa_array[codon_from]];
-                            // If the selective strength is 0, the rate of fixation is neutral.
-                            // Else, the rate of fixation is computed using population genetic formulas (Kimura).
-                            if (fabs(delta_f) <= Codon::epsilon) {
-                                rate_fixation = 1.0;
-                            } else {
-                                rate_fixation = delta_f / (1 - exp(-delta_f));
-                            }
-
-                            dn += codon_freqs[codon_from] * mutation_rate_matrix[n_from][n_to] * rate_fixation;
-                            d0 += codon_freqs[codon_from] * mutation_rate_matrix[n_from][n_to];
-                        }
-                    }
-                }
-
-            }
-            dn_per_site[site] = dn;
-            ds_per_site[site] = d0;
-        }
-        double flow_non_synonymous = accumulate(dn_per_site.begin(), dn_per_site.end(), 0.0);
-        double flow_synonymous = accumulate(ds_per_site.begin(), ds_per_site.end(), 0.0);
-        return flow_non_synonymous / flow_synonymous;
     }
 
     // Method returning the DNA string corresponding to the codon sequence.
@@ -849,62 +872,11 @@ public:
         return dna_str; // return the DNA sequence as a string.
     }
 
-    // Method returning the DNA string corresponding to the codon sequence.
-    double at_pct() const {
-
-        double at_sites = 0.0;
-
-        // For each site of the sequence.
-        for (unsigned site{0}; site < nbr_sites; site++) {
-            // Translate the site to a triplet of DNA nucleotides
-            array<char, 3> triplet = Codon::codon_to_triplet_array[codon_seq[site]];
-            for (char position{0}; position < 3; position++) {
-                if (triplet[position] == 0 or triplet[position] == 3) {
-                    at_sites++;
-                }
-            }
-        }
-        return at_sites / nbr_nucleotides; // return the DNA sequence as a string.
-    }
-
-    // Theoretical computation of the predicted omega
-    double predicted_at_pct() {
-        // For all site of the sequence.
-        double at_sites = 0.0;
-
-        for (unsigned site{0}; site < nbr_sites; site++) {
-            // Codon original before substitution.
-            array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profiles[site]);
-            for (char codon{0}; codon < 64; codon++){
-                array<char, 3> triplet = Codon::codon_to_triplet_array[codon];
-                for (char position{0}; position < 3; position++) {
-                    if (triplet[position] == 0 or triplet[position] == 3) {
-                        at_sites += codon_freqs[codon];
-                    }
-                }
-            }
-        }
-        return at_sites / nbr_nucleotides; // return the DNA sequence as a string.
-    }
-
     static void avg_summary_statistics() {
         cout << total_generation << " generations computed" << endl;
         cout << nbr_fixations << " fixations" << endl;
         cout << nbr_mutations << " mutations" << endl;
-        SummaryStatistics avg_stats = average(stats_vector);
-        cout << "dN=" << avg_stats.dn << endl;
-        cout << "dS=" << avg_stats.ds << endl;
-        cout << "omega=" << avg_stats.omega << endl;
-        cout << "Sample dN=" << avg_stats.dn_sample << endl;
-        cout << "Sample dS=" << avg_stats.ds_sample << endl;
-        cout << "Sample omega=" << avg_stats.omega_sample << endl;
-        cout << "Predicted omega=" << avg_stats.omega_predicted << endl;
-        cout << "Sample piN=" << avg_stats.pin_sample << endl;
-        cout << "Sample PiS=" << avg_stats.pis_sample << endl;
-        cout << "Sample piN/piS=" << avg_stats.pinpis_sample << endl;
-        cout << "Sample pN=" << avg_stats.pn_sample << endl;
-        cout << "Sample PS=" << avg_stats.ps_sample << endl;
-        cout << "Sample pN/pS=" << avg_stats.pnps_sample << endl;
+        average(stats_vector);
         double total_time =
                 time.mutation + time.selection + time.extinction +
                 time.fixation + time.exportation;
@@ -930,9 +902,6 @@ vector<SummaryStatistics> Population::stats_vector{};
 
 // Class representing nodes of a tree.
 class Node {
-public:
-    static double length_computed;
-
 private:
     string name;  // The species name of the node.
     double length;  // The length of the branch attached to the node (ascending).
@@ -940,6 +909,7 @@ private:
     vector<Node> children;  // Vector of direct children (first order, no grand-children).
 
 public:
+    static double length_computed;
     Population population;  // The population attached to the node.
     // Constructor
     Node(string name, string const &len, string newick, Population &pop) :
@@ -1033,7 +1003,7 @@ public:
             fasta_file << ">" << name << endl << dna_str << endl;
             fasta_file.close();
 
-            population.output_vcf(output_filename, name, gen);
+            population.output_vcf(output_filename, name);
 
         } else {
             // If the node is internal, iterate through the direct children.
@@ -1154,7 +1124,7 @@ vector<array<double, 20>> open_preferences(string const &file_name, double const
 static char const USAGE[] =
         R"(
 Usage:
-      SimuPoly [--preferences=<file_path>] [--newick=<file_path>] [--mu=<1e-7>] [--lambda=<5.0>] [--pop_size=<1000>] [--beta=<1.0>]
+      SimuPoly [--preferences=<file_path>] [--newick=<file_path>] [--mu=<1e-7>] [--lambda=<5.0>] [--pop_size=<500>] [--sample_size=<500>] [--beta=<1.0>]
       SimuPoly --help
       SimuPoly --version
 
@@ -1165,7 +1135,8 @@ Options:
 --newick=<file_path>         specify input newick tree [default: ../data/np.newick]
 --mu=<1e-7>                  specify the mutation rate [default: 1e-7]
 --lambda=<5.0>               specify the strong to weak mutation bias [default: 5.0]
---pop_size=<1000>            specify the population size [default: 1000]
+--pop_size=<500>             specify the population size [default: 500]
+--sample_size=<20>           specify the sample size [default: 20]
 --beta=<1.0>                 specify the strength of selection [default: 1.0]
 )";
 
@@ -1182,7 +1153,7 @@ int main(int argc, char *argv[]) {
         preferences_path = args["--preferences"].asString();
     }
 
-    double beta = 0.5;
+    double beta = 2.5;
     if (args["--beta"]) {
         beta = stod(args["--beta"].asString());
     }
@@ -1198,9 +1169,14 @@ int main(int argc, char *argv[]) {
         lambda = stod(args["--lambda"].asString());
     }
 
-    unsigned pop_size = 1000;
+    unsigned pop_size = 500;
     if (args["--pop_size"]) {
         pop_size = static_cast<unsigned>(stoi(args["--pop_size"].asString()));
+    }
+
+    unsigned sample_size = 20;
+    if (args["--sample_size"]) {
+        sample_size = static_cast<unsigned>(stoi(args["--sample_size"].asString()));
     }
 
     // output
@@ -1224,12 +1200,12 @@ int main(int argc, char *argv[]) {
     tsv_file.close();
 
     unsigned interval = 10;
-    unsigned burn_in = 0;
-    Population population(lambda, mu, fitness_profiles, pop_size, output_path);
+    unsigned burn_in = 20;
+    Population population(lambda, mu, fitness_profiles, pop_size, sample_size, output_path);
     population.burn_in(burn_in);
 
     string newick_path{"../data_trees/mammals.newick"};
-    newick_path = "50";
+    newick_path = "200";
     if (args["--newick"]) {
         newick_path = args["--newick"].asString();
     }
