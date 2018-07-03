@@ -73,9 +73,10 @@ public:
     static u_long k;
     static double mu;
     static double r;
+    static u_long n;
+    static u_long m;
     static double a;
     static double q;
-    static u_long n;
 
     explicit Being() {
         genome.reserve(2 * k);
@@ -114,7 +115,11 @@ public:
             uniform_int_distribution<u_long> chr_distr(0, 2 * k - 1);
 
             for (u_long mutation{0}; mutation < poisson_draw; mutation++) {
-                auto mutation_coord = spherical_coord(n, r);
+                auto mutation_coord = spherical_coord(m, r);
+                if (m < n) {
+                    mutation_coord.resize(n, 0.0);
+                    shuffle(mutation_coord.begin(), mutation_coord.end(), generator);
+                }
                 genome[chr_distr(generator)].add_mutation(mutation_coord);
             };
 
@@ -135,9 +140,6 @@ public:
 
     explicit Population(u_long population_size) : population_size{population_size} {
         beings.resize(population_size);
-        for (int i = 0; i < population_size; ++i) {
-            beings[i] = Being();
-        }
     };
 
     void mutation() {
@@ -147,7 +149,7 @@ public:
     };
 
     void selection() {
-        vector<double> fitness_beings(beings.size(), 0);
+        vector<double> fitness_beings(beings.size(), 0.0);
         transform(beings.begin(), beings.end(), fitness_beings.begin(), [](Being &b) {
             return b.fitness;
         });
@@ -205,7 +207,7 @@ public:
         cout << "Running under relaxation" << endl;
 
         // Relax selection
-        for (u_long relax{0}; relax < relax_time; relax++) {
+        for (u_long relax{1}; relax <= relax_time; relax++) {
             mutation();
             random_mating();
             elapsed++;
@@ -236,14 +238,15 @@ public:
 u_long Being::k = 1;
 double Being::mu = 0;
 double Being::r = 0;
+u_long Being::n = 1;
+u_long Being::m = 1;
 double Being::a = 0;
 double Being::q = 0;
-u_long Being::n = 1;
 
 static char const USAGE[] =
         R"(
 Usage:
-      SimuRelax [--pop_size=<100>] [--k=<23>] [--mu=<1e-3>] [--r=<1e-3>] [--n=<10>] [--a=<1.0>] [--q=<2.0>] [--dir=<path>]
+      SimuRelax [--pop_size=<100>] [--k=<23>] [--mu=<1e-3>] [--r=<1e-3>] [--n=<10>] [--m=<10>] [--a=<1.0>] [--q=<2.0>] [--dir=<path>]
       SimuRelax --help
       SimuRelax --version
 
@@ -255,6 +258,7 @@ Options:
 --mu=<10.0>                  specify the mean number of mutations per individual per generation [default: 10.0]
 --r=<0.01>                   specify the effect of a mutation (radius of the move in the phenotypic space) [default: 1e-2]
 --n=<10>                     specify the complexity (dimension) of the phenotypic space [default: 10]
+--m=<10>                     specify the pleiotropy of mutations (m<=n, and m=n if not specified) [default: 10]
 --a=<1.0>                    specify the a parameter (flatness) of the fitness function (exp(-a*(d**q)/2) [default: 1.0]
 --q=<2.0>                    specify the a parameter (epistasis) of fitness function (exp(-a*(d**q)/2) [default: 2.0]
 --dir=<path>                 specify the output data folder [default: ./]
@@ -272,36 +276,50 @@ int main(int argc, char *argv[]) {
     if (args["--pop_size"]) {
         pop_size = static_cast<u_long>(args["--pop_size"].asLong());
     }
+    cout << "Population of " << pop_size << " individuals." << endl;
 
-    Being::k = 21;
+    Being::k = 23;
     if (args["--k"]) {
         Being::k = static_cast<u_long>(args["--k"].asLong());
     }
+    cout << "Each individual has " << Being::k << " pairs of chromosomes." << endl;
 
     Being::mu = 10.0;
     if (args["--mu"]) {
         Being::mu = stod(args["--mu"].asString());
     }
+    cout << "Each individual has on average " << Being::mu << " mutations per generations." << endl;
 
     Being::r = 1e-2;
     if (args["--r"]) {
         Being::r = stod(args["--r"].asString());
     }
+    cout << "Each mutation move the phenotype at a distance " << Being::r << " from the parent." << endl;
 
     Being::n = 10;
     if (args["--n"]) {
         Being::n = static_cast<u_long>(args["--n"].asLong());
     }
+    cout << "The phenotypic space is of dimension " << Being::n << "." << endl;
+
+    Being::m = Being::n;
+    if (args["--m"]) {
+        Being::m = static_cast<u_long>(args["--m"].asLong());
+        assert(Being::m <= Being::n);
+    }
+    cout << "Each mutation has a pleiotropic effect on " << Being::m << " dimensions." << endl;
 
     Being::a = 1.0;
     if (args["--a"]) {
         Being::a = stod(args["--a"].asString());
     }
+    cout << "The flatness of the fitness function is " << Being::a << "." << endl;
 
     Being::q = 3.0;
     if (args["--q"]) {
         Being::q = stod(args["--q"].asString());
     }
+    cout << "The epistasis of the fitness function is " << Being::q << "." << endl;
 
     u_long nbr_intervals = 1000;
     u_long interval_length = 10;
@@ -312,7 +330,9 @@ int main(int argc, char *argv[]) {
         path = args["--dir"].asString();
     }
     path += "/" + to_string(pop_size) + "_" + to_string(Being::k) + "_" + to_string(Being::mu) + "_" +
-            to_string(Being::r) + "_" + to_string(Being::n) + "_" + to_string(Being::a) + "_" + to_string(Being::q);
+            to_string(Being::r) + "_" + to_string(Being::n) + "_" + to_string(Being::m) + "_" + to_string(Being::a) +
+            "_" + to_string(Being::q);
+    cout << "The data will be written in " << path << endl;
 
 
     ofstream tsv;
@@ -322,12 +342,14 @@ int main(int argc, char *argv[]) {
     tsv << "mu\t" << Being::mu << endl;
     tsv << "r\t" << Being::r << endl;
     tsv << "n\t" << Being::n << endl;
+    tsv << "m\t" << Being::m << endl;
     tsv << "a\t" << Being::a << endl;
     tsv << "q\t" << Being::q << endl;
     tsv << "t\t" << nbr_intervals * interval_length << endl;
     tsv.close();
 
     assert(Being::n > 0);
+    assert(Being::m > 0);
     assert(Being::k > 0);
     Population population(pop_size);
     population.run(path, nbr_intervals, interval_length, relax_length);

@@ -17,10 +17,11 @@ for tsv_path in sorted(glob("{0}/*.tsv".format(folder_path))):
         mu = float(params[2])
         r = float(params[3])
         n = int(params[4])
-        a = float(params[5])
-        q = float(params[6])
-        title = "$Ne={0}$, $k={1}$, $\\mu={2}$, $r={3}$, $n={4}$, $a={5}$, $Q={6}$"
-        title = title.format(population_size, k, mu, r, n, a, q)
+        m = int(params[5])
+        a = float(params[6])
+        q = float(params[7])
+        title = "$Ne={0}$, $k={1}$, $\\mu={2}$, $r={3}$, $n={4}$, $m={5}$, $a={6}$, $Q={7}$"
+        title = title.format(population_size, k, mu, r, n, m, a, q)
 
         time = int([row[1] for row in tsvin if row[0] == "t"][0])
 
