@@ -125,6 +125,57 @@ void average(vector<SummaryStatistics> const &vector_stats) {
     cout << "%AT=" << average(vector_stats, [](SummaryStatistics stat) { return stat.at_pct; }) << endl;
 }
 
+class MutationParams {
+public:
+    // Mutation
+    double lambda;
+    array<array<double, 4>, 4> mutation_rate_matrix;
+    array<double, 4> nuc_frequencies;
+    double max_sum_mutation_rates;
+    array<double, 4> sum_mutation_rates;
+
+    MutationParams(
+            double const &mutation_bias,
+            double const &mu) :
+            lambda{mutation_bias},
+            mutation_rate_matrix{},
+            nuc_frequencies{{mutation_bias, 1, 1, mutation_bias}} {
+
+        mutation_rate_matrix[0] = {0, 1, 1, lambda};
+        mutation_rate_matrix[1] = {lambda, 0, 1, lambda};
+        mutation_rate_matrix[2] = {lambda, 1, 0, lambda};
+        mutation_rate_matrix[3] = {lambda, 1, 1, 0};
+
+        double sum_freq = accumulate(nuc_frequencies.begin(), nuc_frequencies.end(), 0.0);
+        for (char nuc_from{0}; nuc_from < 4; nuc_from++) {
+            nuc_frequencies[nuc_from] /= sum_freq;
+            for (char nuc_to{0}; nuc_to < 4; nuc_to++) {
+                mutation_rate_matrix[nuc_from][nuc_to] *= mu;
+            }
+        }
+
+
+        for (char nuc_from{0}; nuc_from < 4; nuc_from++) {
+            sum_mutation_rates[nuc_from] = 0;
+            for (char nuc_to{0}; nuc_to < 4; nuc_to++) {
+                sum_mutation_rates[nuc_from] += mutation_rate_matrix[nuc_from][nuc_to];
+            }
+        }
+        max_sum_mutation_rates = *max_element(sum_mutation_rates.begin(), sum_mutation_rates.end());
+
+    };
+
+    double mutation_rate() const {
+        double total = 0;
+        for (char nuc_from{0}; nuc_from < 4; nuc_from++) {
+            for (char nuc_to{0}; nuc_to < 4; nuc_to++) {
+                total += nuc_frequencies[nuc_from] * mutation_rate_matrix[nuc_from][nuc_to];
+            }
+        }
+        return total;
+    };
+};
+
 class Haplotype {
 public:
     // The nbr_copies of sites in the sequence (each position is a codon, thus the DNA sequence is 3 times greater).
@@ -168,11 +219,6 @@ public:
     unsigned population_size;
     unsigned position;
 
-    // Mutation
-    double lambda;
-    array<array<double, 4>, 4> mutation_rate_matrix;
-    array<double, 4> nuc_frequencies;
-
     // Selection
     vector<array<double, 20>> aa_fitness_profiles;
 
@@ -191,16 +237,13 @@ public:
     static unsigned nbr_mutations, nbr_fixations;
 
     // Constructor
-    explicit Block(double const &mutation_bias,
-                   double const &mu,
-                   vector<array<double, 20>> const &fitness_profiles,
-                   const unsigned &position,
-                   const unsigned &population_size,
-                   const string &output_path) :
+    explicit Block(
+            vector<array<double, 20>> const &fitness_profiles,
+            const unsigned &position,
+            const unsigned &population_size,
+            const string &output_path,
+            MutationParams const &p) :
             population_size{population_size},
-            lambda{mutation_bias},
-            mutation_rate_matrix{},
-            nuc_frequencies{{mutation_bias, 1, 1, mutation_bias}},
             aa_fitness_profiles{fitness_profiles},
             position{position},
             nbr_sites{unsigned(fitness_profiles.size())},
@@ -208,22 +251,9 @@ public:
             codon_seq(fitness_profiles.size(), 0),
             haplotype_vector{} {
 
-        mutation_rate_matrix[0] = {0, 1, 1, lambda};
-        mutation_rate_matrix[1] = {lambda, 0, 1, lambda};
-        mutation_rate_matrix[2] = {lambda, 1, 0, lambda};
-        mutation_rate_matrix[3] = {lambda, 1, 1, 0};
-
-        double sum_freq = accumulate(nuc_frequencies.begin(), nuc_frequencies.end(), 0.0);
-        for (char nuc_from{0}; nuc_from < 4; nuc_from++) {
-            nuc_frequencies[nuc_from] /= sum_freq;
-            for (char nuc_to{0}; nuc_to < 4; nuc_to++) {
-                mutation_rate_matrix[nuc_from][nuc_to] *= mu;
-            }
-        }
-
         // Draw codon from codon frequencies
         for (unsigned site{0}; site < nbr_sites; site++) {
-            array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profiles[site]);
+            array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profiles[site], p);
             discrete_distribution<char> freq_codon_distr(codon_freqs.begin(), codon_freqs.end());
             codon_seq[site] = freq_codon_distr(Codon::re);
         }
@@ -234,7 +264,7 @@ public:
     }
 
     // Method computing the equilibrium frequencies for one site.
-    array<double, 64> codon_frequencies(array<double, 20> const &aa_fitness_profil) const {
+    array<double, 64> codon_frequencies(array<double, 20> const &aa_fitness_profil, MutationParams const &p) const {
 
         array<double, 64> codon_frequencies{0};
         // For each site of the vector of the site frequencies.
@@ -243,7 +273,7 @@ public:
 
             // For all nucleotides in the codon
             for (auto const &nuc: Codon::codon_to_triplet_array[codon]) {
-                codon_freq *= nuc_frequencies[nuc];
+                codon_freq *= p.nuc_frequencies[nuc];
             }
 
             if (Codon::codon_to_aa_array[codon] != 20) {
@@ -261,16 +291,6 @@ public:
         return codon_frequencies;
     };
 
-    double mutation_rate() const {
-        double total = 0;
-        for (char nuc_from{0}; nuc_from < 4; nuc_from++) {
-            for (char nuc_to{0}; nuc_to < 4; nuc_to++) {
-                total += nuc_frequencies[nuc_from] * mutation_rate_matrix[nuc_from][nuc_to];
-            }
-        }
-        return total;
-    };
-
 
     void check_consistency() const {
         assert(haplotype_vector.size() <= 2 * population_size);
@@ -284,8 +304,8 @@ public:
         assert(nbr_copies == 2 * population_size);
     }
 
-    void forward() {
-        mutation();
+    void forward(MutationParams const &p) {
+        mutation(p);
         selection_and_drift();
         extinction();
         fixation();
@@ -297,23 +317,14 @@ public:
             nucleotide_copies_array[i_hap] = haplotype_vector[i_hap].nbr_copies;
         }
         discrete_distribution<unsigned> haplotype_distr(nucleotide_copies_array.begin(),
-                                                      nucleotide_copies_array.end());
+                                                        nucleotide_copies_array.end());
         return haplotype_distr;
     }
 
-    void mutation() {
+    void mutation(MutationParams const &p) {
         TimeVar t_start = timeNow();
 
-        array<double, 4> sum_mutation_rates{0};
-        for (char nuc_from{0}; nuc_from < 4; nuc_from++) {
-            sum_mutation_rates[nuc_from] = 0;
-            for (char nuc_to{0}; nuc_to < 4; nuc_to++) {
-                sum_mutation_rates[nuc_from] += mutation_rate_matrix[nuc_from][nuc_to];
-            }
-        }
-        double max_sum_mutation_rates = *max_element(sum_mutation_rates.begin(), sum_mutation_rates.end());
-
-        binomial_distribution<unsigned> binomial_distr(2 * population_size * nbr_nucleotides, max_sum_mutation_rates);
+        binomial_distribution<unsigned> binomial_distr(2 * population_size * nbr_nucleotides, p.max_sum_mutation_rates);
         unsigned binomial_draw = binomial_distr(Codon::re);
 
         if (binomial_draw > 0) {
@@ -333,7 +344,7 @@ public:
                 }
 
                 uniform_int_distribution<unsigned> copy_and_site_distr(0, haplotype_vector[haplotype_draw].nbr_copies *
-                                                                        nbr_nucleotides - 1);
+                                                                          nbr_nucleotides - 1);
                 unsigned copy_and_site_draw = copy_and_site_distr(Codon::re);
                 unsigned nuc_site = copy_and_site_draw % nbr_nucleotides;
                 unsigned copy = copy_and_site_draw / nbr_nucleotides;
@@ -370,18 +381,18 @@ public:
 
                     bool draw_mutation = true;
 
-                    if (max_sum_mutation_rates != sum_mutation_rates[nuc_from]) {
-                        uniform_real_distribution<double> uni_distr(0.0, max_sum_mutation_rates);
+                    if (p.max_sum_mutation_rates != p.sum_mutation_rates[nuc_from]) {
+                        uniform_real_distribution<double> uni_distr(0.0, p.max_sum_mutation_rates);
                         double sum_unif = uni_distr(Codon::re);
 
-                        if (sum_unif > sum_mutation_rates[nuc_from]) {
+                        if (sum_unif > p.sum_mutation_rates[nuc_from]) {
                             draw_mutation = false;
                         }
                     }
 
                     if (draw_mutation) {
-                        discrete_distribution<char> mutation_distr(mutation_rate_matrix[nuc_from].begin(),
-                                                                   mutation_rate_matrix[nuc_from].end());
+                        discrete_distribution<char> mutation_distr(p.mutation_rate_matrix[nuc_from].begin(),
+                                                                   p.mutation_rate_matrix[nuc_from].end());
 
                         triplet_nuc[nuc_position] = mutation_distr(Codon::re);
                         char codon_to = Codon::triplet_to_codon(triplet_nuc[0], triplet_nuc[1], triplet_nuc[2]);
@@ -533,8 +544,7 @@ public:
 
     explicit Population() = default;
 
-    Population(double &mutation_bias,
-               double &mu,
+    Population(MutationParams const &p,
                vector<array<double, 20>> const &fitness_profiles,
                unsigned &population_size,
                unsigned &sample_size,
@@ -542,12 +552,12 @@ public:
                bool linked_sites)
             : blocks{}, sample_size{sample_size} {
         if (linked_sites) {
-            blocks.emplace_back(Block(mutation_bias, mu, fitness_profiles, 0, population_size, output_path));
+            blocks.emplace_back(Block(fitness_profiles, 0, population_size, output_path, p));
         } else {
             blocks.reserve(fitness_profiles.size());
             for (unsigned site{0}; site < fitness_profiles.size(); site++) {
                 vector<array<double, 20>> site_fitness_profile = {fitness_profiles[site]};
-                blocks.emplace_back(Block(mutation_bias, mu, site_fitness_profile, site, population_size, output_path));
+                blocks.emplace_back(Block(site_fitness_profile, site, population_size, output_path, p));
             }
         }
         cout << blocks.size() << " blocks created" << endl;
@@ -562,11 +572,11 @@ public:
         }
     };
 
-    void run_forward(unsigned t_max) {
+    void run_forward(unsigned t_max, MutationParams const &p) {
         for (unsigned gen{1}; gen <= t_max; gen++) {
             for (auto &block: blocks) {
                 assert(!block.haplotype_vector.empty());
-                block.forward();
+                block.forward(p);
             }
             check_consistency();
             elapsed++;
@@ -574,23 +584,24 @@ public:
         check_consistency();
     }
 
-    void burn_in(unsigned burn_in_length) {
+    void burn_in(unsigned burn_in_length, MutationParams const &p) {
         cout << "Burn-in (" << burn_in_length * max_population_size << " generations)" << endl;
-        run_forward(max_population_size * burn_in_length);
+        run_forward(max_population_size * burn_in_length, p);
         cout << "Burn-in completed" << endl;
     }
 
-    void linear_run(string &output_filename, unsigned nbr_intervals, unsigned interval_length) {
+    void linear_run(string &output_filename, unsigned nbr_intervals,
+                    unsigned interval_length, MutationParams const &p) {
         string name = "linear";
         for (unsigned sample{1}; sample <= nbr_intervals; sample++) {
-            run_forward(max_population_size * interval_length);
-            output_vcf(output_filename, name);
+            run_forward(max_population_size * interval_length, p);
+            output_vcf(output_filename, name, p);
             cout << static_cast<double>(100 * sample) / nbr_intervals << "% of simulation computed ("
                  << max_population_size * interval_length * sample << " generations)" << endl;
         }
     }
 
-    unsigned theoretical_dnds(SummaryStatistics &stats) const {
+    unsigned theoretical_dnds(SummaryStatistics &stats, MutationParams const &p) const {
         unsigned nbr_nucleotides{0};
         double at_sites{0};
         double sub_flow{0.}, mut_flow{0.};
@@ -598,7 +609,7 @@ public:
         for (auto const &block: blocks) {
             for (unsigned site{0}; site < block.nbr_sites; site++) {
 
-                array<double, 64> codon_freqs = block.codon_frequencies(block.aa_fitness_profiles[site]);
+                array<double, 64> codon_freqs = block.codon_frequencies(block.aa_fitness_profiles[site], p);
 
                 for (char codon_from{0}; codon_from < 64; codon_from++) {
                     if (Codon::codon_to_aa_array[codon_from] != 20) {
@@ -622,9 +633,8 @@ public:
                                     p_fix = delta_f / (1 - exp(-delta_f));
                                 }
 
-                                sub_flow +=
-                                        codon_freqs[codon_from] * block.mutation_rate_matrix[n_from][n_to] * p_fix;
-                                mut_flow += codon_freqs[codon_from] * block.mutation_rate_matrix[n_from][n_to];
+                                sub_flow += codon_freqs[codon_from] * p.mutation_rate_matrix[n_from][n_to] * p_fix;
+                                mut_flow += codon_freqs[codon_from] * p.mutation_rate_matrix[n_from][n_to];
                             }
                         }
                     }
@@ -644,14 +654,15 @@ public:
         return nbr_nucleotides;
     };
 
-    void output_vcf(string &output_filename, string &node_name) const {
+    void output_vcf(string &output_filename, string &node_name, MutationParams const &p) const {
         TimeVar t_start = timeNow();
 
         SummaryStatistics stats;
-        double at_sites_obs{0};
-
         // Predicted dN/dS and %AT
-        unsigned nbr_nucleotides = theoretical_dnds(stats);
+        theoretical_dnds(stats, p);
+
+        double at_sites_obs{0};
+        unsigned nbr_nucleotides{0};
 
         Change_table table{0, 0, 0, 0};
         unsigned sum_population_size{0};
@@ -662,6 +673,7 @@ public:
             table.non_syn_fix += block.change_table.non_syn_fix;
             table.syn_fix += block.change_table.syn_fix;
             sum_population_size += block.population_size;
+            nbr_nucleotides += block.nbr_nucleotides;
         }
 
         stats.dn += 2 * sum_population_size * dn_from_table(table) / blocks.size();
@@ -716,7 +728,6 @@ public:
             }
             shuffle(haplotypes_sample.begin(), haplotypes_sample.end(), Codon::re);
             haplotypes_sample.resize(2 * sample_size);
-
 
             // dN/dS computed using one individual of the sample
             uniform_int_distribution<unsigned> chosen_distr(0, 2 * sample_size - 1);
@@ -966,14 +977,6 @@ public:
         return dna_str; // return the DNA sequence as a string.
     }
 
-    double mutation_rate() const {
-        double mut_rate{0};
-        for (auto const &block: blocks) {
-            mut_rate += block.mutation_rate();
-        }
-        return mut_rate / blocks.size();
-    };
-
     static void avg_summary_statistics() {
         cout << Block::nbr_fixations << " fixations" << endl;
         cout << Block::nbr_mutations << " mutations" << endl;
@@ -1075,10 +1078,10 @@ public:
     }
 
     // Recursively iterate through the subtree.
-    void traverse(string &output_filename, double scale) {
+    void traverse(string &output_filename, double scale, MutationParams const &p) {
         // Substitutions of the DNA sequence is generated.
-        auto gen = static_cast<unsigned>(scale * length / (population.mutation_rate()));
-        population.run_forward(gen);
+        auto gen = static_cast<unsigned>(scale * length / (p.mutation_rate()));
+        population.run_forward(gen, p);
 
         length_computed += length;
         cout << length_computed << " length computed" << endl;
@@ -1099,13 +1102,13 @@ public:
             fasta_file << ">" << name << endl << dna_str << endl;
             fasta_file.close();
 
-            population.output_vcf(output_filename, name);
+            population.output_vcf(output_filename, name, p);
 
         } else {
             // If the node is internal, iterate through the direct children.
             for (auto &child : children) {
                 child.population = population;
-                child.traverse(output_filename, scale);
+                child.traverse(output_filename, scale, p);
             }
         }
     }
@@ -1307,8 +1310,9 @@ int main(int argc, char *argv[]) {
 
     unsigned interval = 10;
     unsigned burn_in = 0;
-    Population population(lambda, mu, fitness_profiles, pop_size, sample_size, output_path, linked_sites);
-    population.burn_in(burn_in);
+    MutationParams p(lambda, mu);
+    Population population(p, fitness_profiles, pop_size, sample_size, output_path, linked_sites);
+    population.burn_in(burn_in, p);
 
     string newick_path{"../data_trees/mammals.newick"};
     newick_path = "200";
@@ -1336,7 +1340,7 @@ int main(int argc, char *argv[]) {
         fasta_file.open(output_path + ".fasta");
         fasta_file.close();
 
-        root.traverse(output_path, 0.01);
+        root.traverse(output_path, 0.01, p);
         Population::avg_summary_statistics();
     } else {
         auto generations = static_cast<unsigned>(stoi(newick_path));
@@ -1344,7 +1348,7 @@ int main(int argc, char *argv[]) {
              << generations * pop_size * interval << " and output the summary statistics every "
              << interval * pop_size
              << " generations" << endl;
-        population.linear_run(output_path, generations, interval);
+        population.linear_run(output_path, generations, interval, p);
         Population::avg_summary_statistics();
     }
     return 0;
