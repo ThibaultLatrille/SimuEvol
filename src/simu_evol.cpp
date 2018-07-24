@@ -203,20 +203,9 @@ public:
         // Substitute the sequence if the time is positive, else there is no substitution but the time left is set to 0.
         if (time_left > 0. and total_substitution_rates != 0.) {
 
-            // Uniform random generator between 0 and the total sum of substitution rates.
-            uniform_real_distribution<double> unif_rand_total_substitution_rates(0, total_substitution_rates);
-            double random_cumulative_substitution_rates = unif_rand_total_substitution_rates(Codon::re);
-            double cumulative_substitution_rates{0.};
+            discrete_distribution<unsigned> substitution_distr(substitution_rates.begin(), substitution_rates.end());
 
-            unsigned index = 0;
-            for (unsigned t{0}; t < substitution_rates.size(); t++) {
-                // Iterate through the cumulative substitution rates and break the loop when it is greater than the random cumulative substitution rates
-                cumulative_substitution_rates += substitution_rates[t];
-                if (random_cumulative_substitution_rates < cumulative_substitution_rates) {
-                    index = t;
-                    break;
-                }
-            }
+            unsigned index = substitution_distr(Codon::re);
             unsigned site = index / 9;
             char codom_from = codon_seq[site];
 
@@ -278,7 +267,7 @@ public:
         return time_left;
     }
 
-    // Method computing all substitution event occuring during a given time-frame.
+    // Method computing all substitution event occurring during a given time-frame.
     // t: time during which substitution events occur (typically branch length).
     // This method is o(n²) where n is the number of sites, but can take into account epistatic effects
     void run_substitutions(double t, vector<Substitution> &subs) {
@@ -328,29 +317,11 @@ public:
 
     // Set the the DNA sequence to the mutation-selection equilibrium.
     void at_equilibrium() {
-
         // For all site of the sequence.
         for (unsigned site{0}; site < nbr_sites; site++) {
-
             array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profiles[site]);
-
-            // Uniform random generator between 0 and the total sum of equilibrium frequencies.
-            uniform_real_distribution<double> unif(0., 1.);
-            double random_cumulative_frequencies = unif(Codon::re);
-            double cumulative_frequencies{0.};
-
-            char index{0};
-            for (char m{0}; m < 64; m++) {
-                // Iterate through the cumulative frequencies and break the loop when it is greater than the random cumulative frequencies.
-                cumulative_frequencies += codon_freqs[m];
-                if (random_cumulative_frequencies < cumulative_frequencies) {
-                    index = m;
-                    break;
-                }
-            }
-
-            // Substitute the site with the substitution given by the loop break.
-            codon_seq[site] = index;
+            discrete_distribution<char> freq_codon_distr(codon_freqs.begin(), codon_freqs.end());
+            codon_seq[site] = freq_codon_distr(Codon::re);
         }
     }
 
