@@ -80,9 +80,10 @@ public:
 
     explicit Being() {
         genome.reserve(2 * k);
+        auto chr = Chromosome(Being::n, 1.0 / (2 * k));
         for (int i = 0; i < k; ++i) {
-            genome.emplace_back(Chromosome(Being::n, 1.0 / (2 * k)));
-            genome.emplace_back(Chromosome(Being::n, 1.0 / (2 * k)));
+            genome.push_back(chr);
+            genome.push_back(chr);
         }
         update_fitness();
     };
@@ -98,13 +99,13 @@ public:
 
     void update_fitness() {
         vector<double> p(n, 0.0);
-        for (auto &chr: genome) {
+        for (auto const &chr: genome) {
             for (int i = 0; i < n; ++i) {
                 p[i] += chr.phenotype[i];
             }
         }
         d = distance(p);
-        fitness = exp(-a * pow(d, q) / 2);
+        fitness = exp(-a * pow(d, q));
     };
 
     void mutation() {
@@ -201,11 +202,8 @@ public:
                 cout << pct << "% (" << interval_length * sample << " generations)" << endl;
                 last_pct = pct;
             }
-
         }
-
         cout << "Running under relaxation" << endl;
-
         // Relax selection
         for (u_long relax{1}; relax <= relax_time; relax++) {
             mutation();
@@ -215,20 +213,57 @@ public:
         }
     };
 
-    void output_state(string &output_filename) {
-        vector<double> fitnesses(beings.size(), 0);
-        transform(beings.begin(), beings.end(), fitnesses.begin(), [](Being &b) {
+    void output_state(string &output_filename) const {
+        auto low_bound = static_cast<u_long>(0.05 * (population_size - 1));
+        auto up_bound = static_cast<u_long>(0.95 * (population_size - 1));
+
+        vector<double> fitnesses(population_size, 0);
+        vector<double> distances(population_size, 0);
+
+        transform(beings.begin(), beings.end(), fitnesses.begin(), [](Being const &b) {
             return b.fitness;
         });
-
-        vector<double> distances(beings.size(), 0);
-        transform(beings.begin(), beings.end(), distances.begin(), [](Being &b) {
+        transform(beings.begin(), beings.end(), distances.begin(), [](Being const &b) {
             return b.d;
         });
+
+        sort(fitnesses.begin(), fitnesses.end());
+        sort(distances.begin(), distances.end());
+
+        double f_tot = accumulate(fitnesses.begin(), fitnesses.end(), 0.0);
+        double entropy = 0;
+        for (auto const &f: fitnesses) {
+            entropy += f * log(f / f_tot);
+        }
+        entropy = exp(-entropy / f_tot) / fitnesses.size();
+
+        auto min_over_max = max_element(fitnesses.begin(), fitnesses.end());
+        
+        vector<double> p(Being::n, 0.0);
+        for (auto const &being: beings) {
+            for (auto const &chr: being.genome) {
+                for (int i = 0; i < Being::n; ++i) {
+                    p[i] += chr.phenotype[i];
+                }
+            }
+        }
+        double d = distance(p);
+        double fitness = exp(-Being::a * pow(d, Being::q));
+
         ofstream tsv;
         tsv.open(output_filename + ".tsv", ios_base::app);
+        tsv << elapsed << "\t" << 1 << "\tFitness lower bound\t" << fitnesses[low_bound] << endl;
+        tsv << elapsed << "\t" << 1 << "\tFitness upper bound\t" << fitnesses[up_bound] << endl;
         tsv << elapsed << "\t" << 1 << "\tMean fitness\t" << mean(fitnesses) << endl;
+        tsv << elapsed << "\t" << 1 << "\tFitness of mean phenotype\t" << fitness << endl;
+        tsv << elapsed << "\t" << 1 << "\tFitness entropy\t" << entropy << endl;
+
+        tsv << elapsed << "\t" << 2 << "\tDistance lower bound\t" << distances[low_bound] << endl;
+        tsv << elapsed << "\t" << 2 << "\tDistance upper bound\t" << distances[up_bound] << endl;
         tsv << elapsed << "\t" << 2 << "\tMean distance\t" << mean(distances) << endl;
+
+        tsv << elapsed << "\t" << 3 << "\tDistance of mean phenotype\t" << d << endl;
+
         tsv << elapsed << "\t" << 0 << "\tVar fitness\t" << var(fitnesses) << endl;
         tsv << elapsed << "\t" << 0 << "\tVar distance\t" << var(distances) << endl;
         tsv.close();
@@ -246,7 +281,7 @@ double Being::q = 0;
 static char const USAGE[] =
         R"(
 Usage:
-      SimuRelax [--pop_size=<100>] [--k=<23>] [--mu=<1e-3>] [--r=<1e-3>] [--n=<10>] [--m=<10>] [--a=<1.0>] [--q=<2.0>] [--dir=<path>]
+      SimuRelax [--pop_size=<100>] [--k=<23>] [--mu=<1e-3>] [--r=<1e-3>] [--n=<10>] [--m=<10>] [--a=<0.5>] [--q=<2.0>] [--dir=<path>]
       SimuRelax --help
       SimuRelax --version
 
@@ -259,9 +294,9 @@ Options:
 --r=<0.01>                   specify the effect of a mutation (radius of the move in the phenotypic space) [default: 1e-2]
 --n=<10>                     specify the complexity (dimension) of the phenotypic space [default: 10]
 --m=<10>                     specify the pleiotropy of mutations (m<=n, and m=n if not specified) [default: 10]
---a=<1.0>                    specify the a parameter (flatness) of the fitness function (exp(-a*(d**q)/2) [default: 1.0]
---q=<2.0>                    specify the a parameter (epistasis) of fitness function (exp(-a*(d**q)/2) [default: 2.0]
---dir=<path>                 specify the output data folder [default: ./]
+--a=<1.0>                    specify the a parameter (peakness) of the fitness function (exp(-a*(d^q)) [default: 0.5]
+--q=<2.0>                    specify the q parameter (epistasis) of fitness function (exp(-a*(d^q)) [default: 2.0]
+--dir=<path>                 specify the output data folder [default: ../data_relax]
 
 )";
 
@@ -309,7 +344,7 @@ int main(int argc, char *argv[]) {
     }
     cout << "Each mutation has a pleiotropic effect on " << Being::m << " dimensions." << endl;
 
-    Being::a = 1.0;
+    Being::a = 0.5;
     if (args["--a"]) {
         Being::a = stod(args["--a"].asString());
     }
@@ -348,6 +383,7 @@ int main(int argc, char *argv[]) {
     tsv << "t\t" << nbr_intervals * interval_length << endl;
     tsv.close();
 
+    assert(pop_size > 1);
     assert(Being::n > 0);
     assert(Being::m > 0);
     assert(Being::k > 0);
