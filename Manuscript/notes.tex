@@ -1,0 +1,91 @@
+\documentclass{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{lmodern}
+\usepackage{amssymb,amsfonts,amsmath,amsthm}
+\usepackage{mathtools}
+\usepackage{bm}
+\usepackage{listings}
+\usepackage{enumerate}
+\usepackage{float}
+\usepackage{fullpage}
+
+\newcommand{\e}{\mathrm{e}}
+\newcommand{\der}{\mathrm{d}}
+\newcommand{\Ne}{N_\mathrm{e}}
+\newcommand{\SetCodon}{\Omega_{\mathrm{C}}}
+\newcommand{\SetNuc}{\Omega_{\mathrm{N}}}
+\newcommand{\SetWeak}{\Omega_{\mathrm{W}}}
+\newcommand{\SetStrong}{\Omega_{\mathrm{S}}}
+\newcommand{\SetAa}{\Omega_{\mathrm{A}}}
+\newcommand{\Neighbor}{\mathcal{V}}
+\newcommand{\NonSyn}{\mathcal{N}}
+\newcommand{\Syn}{\mathcal{S}}
+\newcommand{\Nx}{\Neighbor_x}
+\newcommand{\NxAB}{\Neighbor_x^{\mathrm{A} \rightarrow \mathrm{B}}}
+\newcommand{\NyBA}{\Neighbor_x^{\mathrm{B} \rightarrow \mathrm{A}}}
+\newcommand{\NxWS}{\Neighbor_x^{\mathrm{W} \rightarrow \mathrm{S}}}
+\newcommand{\NxSS}{\Neighbor_x^{\mathrm{S} \rightarrow \mathrm{S}}}
+\newcommand{\NxSW}{\Neighbor_x^{\mathrm{S} \rightarrow \mathrm{W}}}
+\newcommand{\NxWW}{\Neighbor_x^{\mathrm{W} \rightarrow \mathrm{W}}}
+\newcommand{\NyWS}{\Neighbor_y^{\mathrm{W} \rightarrow \mathrm{S}}}
+\newcommand{\NySS}{\Neighbor_y^{\mathrm{S} \rightarrow \mathrm{S}}}
+\newcommand{\NySW}{\Neighbor_y^{\mathrm{S} \rightarrow \mathrm{W}}}
+\newcommand{\NyWW}{\Neighbor_y^{\mathrm{W} \rightarrow \mathrm{W}}}
+\newcommand{\NxNonSyn}{\NonSyn_x}
+\newcommand{\NyNonSyn}{\NonSyn_y}
+\newcommand{\NxSyn}{\Syn_x}
+\newcommand{\NySyn}{\Syn_y}
+
+% \renewcommand{\baselinestretch}{2}
+
+\author{Thibault Latrille.}
+\title{Notes }
+
+\begin{document}
+
+    \maketitle
+
+    \section*{Abstract}
+
+
+    \tableofcontents
+    \newpage
+
+    \section{Phylogenetic}
+	Selectively neutral and positively selected mutations contribute to divergence. On the other hand negatively selected mutations (weak and strong) are purged.
+	
+	Assumptions : 
+	\begin{itemize}
+		\item Identically fitness landscape for each site (can be relaxed) 
+		\item Static effective population size (can be relax)
+		\item No epistasis, independence between sites (hard to relax)
+		\item Static fitness landscape (hard to relax)
+	\end{itemize}
+	
+	Sensitive to assumption of no epistasis and static fitness landscape, unfortunately these are hard to relax.
+	\section{Population-genetic}
+	Selectively neutral and weakly selected (positively and negatively). Strongly selected mutations don't contribute to the data.
+	
+	Assumptions : 
+	\begin{itemize}
+		\item Identically fitness landscape for each site (can be relaxed) 
+		\item Static effective population size (can be relax)
+		\item No epistasis, independence between sites (hard to relax)
+		\item Static fitness landscape (hard to relax)
+	\end{itemize}
+	
+	Less sensitive to assumption of no epistasis and static fitness landscape. The first strategy is to augment information about interspecies conservation with information about genetic polymorphism.
+	
+	\section{Population-phylogenetic}
+	
+	The shorter evolutionary time scales associated with intraspecies variation make this approach more robust to changing fitness landscape and less sensitive to errors in alignment and orthology detection. 
+	
+    \section{Epistasis}
+   
+    \section{Changing fitness landscape}
+    
+    
+\end{document}
