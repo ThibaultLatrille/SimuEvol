@@ -1,7 +1,7 @@
 from glob import glob
 from csv import reader
 from math import isfinite
-from numpy import nanmean, nanstd, sqrt
+from numpy import nanmean, nanstd
 import matplotlib.pyplot as plt
 
 folder = "data_relax"
@@ -37,14 +37,12 @@ for tsv_path in sorted(glob("{0}/*.tsv".format(folder_path))):
                 dict_num_label_data[row[1]][row[2]]["x"].append(float(row[0]))
                 dict_num_label_data[row[1]][row[2]]["y"].append(float(row[3]))
 
-        n_plot = 1
         my_dpi = 92
-        plt.figure(figsize=(1920 / my_dpi, 1080 / my_dpi), dpi=my_dpi)
-        rc_size = int(sqrt(len(dict_num_label_data) * 2))
-        for num, dict_label_data in dict_num_label_data.items():
+        rc_size = len(dict_num_label_data)
+        plt.figure(figsize=(1920 / my_dpi, 360 * rc_size / my_dpi), dpi=my_dpi)
+        for i, (num, dict_label_data) in enumerate(dict_num_label_data.items()):
             for index in [False, True]:
-                plt.subplot(rc_size, rc_size, n_plot)
-                n_plot += 1
+                plt.subplot(rc_size, 2, i * 2 + index + 1)
                 maximum = 1.0
                 for label, dict_data in dict_label_data.items():
                     if index:
@@ -60,8 +58,6 @@ for tsv_path in sorted(glob("{0}/*.tsv".format(folder_path))):
                 plt.legend()
 
         plt.suptitle(title)
-        save_dir = folder_path + tsv_path.split("/")[-1].replace("tsv", "png")
+        save_dir = folder_path + "/" + tsv_path.split("/")[-1].replace("tsv", "png")
         plt.savefig(save_dir, format="png")
-        plt.show()
-        plt.clf()
-        plt.close('all')
+        # plt.show()
