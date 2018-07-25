@@ -36,7 +36,7 @@ double avg(vector<double> &v) {
 
 //Function for variance
 double variance(vector<double> &v) {
-    double v_squarred = accumulate(v.begin(), v.end(), 0.0, [](double a, double b){return a + pow(b, 2);});
+    double v_squarred = accumulate(v.begin(), v.end(), 0.0, [](double a, double b) { return a + pow(b, 2); });
     return (v_squarred / v.size()) - pow(avg(v), 2);
 }
 
@@ -96,11 +96,11 @@ private:
     // The fitness profiles of amino-acids.
     vector<array<double, 20>> aa_fitness_profiles;
 
+    // The selection coefficient against the current amino-acid
+    double sel_coef;
+
     // The probability to randomize the fitness landscape.
     double proba_permutation;
-
-    // Is using wave instead of random shuffle
-    bool wave;
 
     // Shuffle all sites or only the current one
     bool all_sites;
@@ -108,7 +108,7 @@ public:
     // Constructor of Sequence_dna.
     // size: the size of the DNA sequence.
     explicit Sequence_dna(unsigned const size) : nbr_sites{size}, codon_seq(size, 0),
-                                                 aa_fitness_profiles{0}, proba_permutation{0.}, wave{true},
+                                                 aa_fitness_profiles{0}, sel_coef{0}, proba_permutation{0.},
                                                  all_sites{false} {
         mutation_rate_matrix = Matrix4x4::Zero();
     }
@@ -225,36 +225,25 @@ public:
 
             substitutions_vec.push_back(sub);
 
+            if (sel_coef != 0.0) {
+                char aa_from = Codon::codon_to_aa_array[codon_to];
+                char aa_to = Codon::codon_to_aa_array[codon_to];
+                aa_fitness_profiles[site][aa_from] += sel_coef;
+                aa_fitness_profiles[site][aa_to] -= sel_coef;
+            }
+
             if (proba_permutation != 0.0) {
-                if (wave) {
-                    uniform_real_distribution<double> unif_rand_fitness_diff(-proba_permutation, proba_permutation);
+                // Random shuffle of the fitness landscape
+                uniform_real_distribution<double> unif_rand_proba(0, 1);
+                double rand_uni = unif_rand_proba(Codon::re);
+                if (rand_uni < proba_permutation) {
                     if (all_sites) {
                         for (unsigned site_shuffle{0}; site_shuffle < nbr_sites; site_shuffle++) {
-                            for (auto &fitness: aa_fitness_profiles[site_shuffle]) {
-                                double fitness_diff = unif_rand_fitness_diff(Codon::re);
-                                fitness += fitness_diff;
-                            }
+                            shuffle(aa_fitness_profiles[site_shuffle].begin(),
+                                    aa_fitness_profiles[site_shuffle].end(), Codon::re);
                         }
                     } else {
-                        for (auto &fitness: aa_fitness_profiles[site]) {
-                            double fitness_diff = unif_rand_fitness_diff(Codon::re);
-                            fitness += fitness_diff;
-                        }
-                    }
-
-                } else {
-                    // Random shuffle of the fitness landscape
-                    uniform_real_distribution<double> unif_rand_proba(0, 1);
-                    double rand_uni = unif_rand_proba(Codon::re);
-                    if (rand_uni < proba_permutation) {
-                        if (all_sites) {
-                            for (unsigned site_shuffle{0}; site_shuffle < nbr_sites; site_shuffle++) {
-                                shuffle(aa_fitness_profiles[site_shuffle].begin(),
-                                        aa_fitness_profiles[site_shuffle].end(), Codon::re);
-                            }
-                        } else {
-                            shuffle(aa_fitness_profiles[site].begin(), aa_fitness_profiles[site].end(), Codon::re);
-                        }
+                        shuffle(aa_fitness_profiles[site].begin(), aa_fitness_profiles[site].end(), Codon::re);
                     }
                 }
             }
@@ -321,7 +310,11 @@ public:
         for (unsigned site{0}; site < nbr_sites; site++) {
             array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profiles[site]);
             discrete_distribution<char> freq_codon_distr(codon_freqs.begin(), codon_freqs.end());
-            codon_seq[site] = freq_codon_distr(Codon::re);
+            char chosen_codon = freq_codon_distr(Codon::re);
+            codon_seq[site] = chosen_codon;
+            if (sel_coef != 0.0) {
+                aa_fitness_profiles[site][Codon::codon_to_aa_array[chosen_codon]] -= sel_coef;
+            }
         }
     }
 
@@ -331,7 +324,7 @@ public:
         mutation_rate_matrix = sequence_dna.mutation_rate_matrix;
         aa_fitness_profiles = sequence_dna.aa_fitness_profiles;
         proba_permutation = sequence_dna.proba_permutation;
-        wave = sequence_dna.wave;
+        sel_coef = sequence_dna.sel_coef;
         all_sites = sequence_dna.all_sites;
     }
 
@@ -352,8 +345,8 @@ public:
     }
 
     // Set attribute method for wave boolean.
-    void set_bool_wave(bool const bool_wave) {
-        wave = bool_wave;
+    void set_sel_coef(double const s) {
+        sel_coef = s;
     }
 
     // Set attribute method for wave boolean.
@@ -580,12 +573,12 @@ public:
     // Set method for the parameters of evolution of the sequence
     void set_evolution_parameters(Matrix4x4 const &mutation_rate,
                                   vector<array<double, 20>> const &fitness_profiles,
-                                  double const proba_permutation,
-                                  bool const wave, bool const all_sites) {
+                                  double const s,
+                                  double const proba_permutation, bool const all_sites) {
         sequence_dna.set_mutation_rate(mutation_rate);
         sequence_dna.set_fitness_profiles(fitness_profiles);
+        sequence_dna.set_sel_coef(s);
         sequence_dna.set_proba_permutation(proba_permutation);
-        sequence_dna.set_bool_wave(wave);
         sequence_dna.set_bool_all_sites(all_sites);
     }
 
@@ -724,7 +717,7 @@ string open_newick(string const &file_name) {
     return line;
 }
 
-vector<array<double, 20>> open_preferences(string const &file_name) {
+vector<array<double, 20>> open_preferences(string const &file_name, double const &beta) {
     vector<array<double, 20>> fitness_profiles{0};
 
     ifstream input_stream(file_name);
@@ -744,7 +737,7 @@ vector<array<double, 20>> open_preferences(string const &file_name) {
 
         while (getline(line_stream, word, ' ')) {
             if (counter > 2) {
-                fitness_profil[counter - 3] = log(stod(word));
+                fitness_profil[counter - 3] = beta * log(stod(word));
             }
             counter++;
         }
@@ -762,7 +755,7 @@ string char_to_str(char const &_char) {
 static char const USAGE[] =
         R"(
 Usage:
-      SimuEvol [--preferences=<file_path>] [--newick=<file_path>] [--output=<file_path>] [--mu=<0.5>] [--lambda=<3>] [--w=<True>] [--a=<False>] [--p=<0.0>]
+      SimuEvol [--preferences=<file_path>] [--newick=<file_path>] [--output=<file_path>] [--mu=<0.5>] [--lambda=<3>] [--beta=<2.5>] [--s=<0.0>] [--p=<0.0>] [--a=<False>]
       SimuEvol --help
       SimuEvol --version
 
@@ -774,9 +767,10 @@ Options:
 --output=<file_path>         specify output protein name [default: ../data/gal4]
 --mu=<0.5>                   specify the mutation rate [default: 0.5]
 --lambda=<3>                 specify the strong to weak mutation bias [default: 3]
---w=<True>                   Using wave mode to generate seascape, otherwise random shuffling [default: true]
---a=<False>                  All sites are affected by the seascape [default: false]
+--beta=<1.0>                 specify the strength of selection [default: 1.0]
+--s=<0.0>                    specify the selection coefficient against the current amino-acid [default: 0.0]
 --p=<0.0>                    specify the probability to randomize the fitness landscape [default: 0.0]
+--a=<False>                  all sites are affected by the random shuffling [default: false]
 )";
 
 int main(int argc, char *argv[]) {
@@ -801,13 +795,17 @@ int main(int argc, char *argv[]) {
         output_path = args["--output"].asString();
     }
 
-    vector<array<double, 20>> fitness_profiles = open_preferences(preferences_path);
+    double beta = 2.5;
+    if (args["--beta"]) {
+        beta = stod(args["--beta"].asString());
+    }
+    vector<array<double, 20>> fitness_profiles = open_preferences(preferences_path, beta);
     auto nbr_sites = static_cast<unsigned>(fitness_profiles.size());
 
     string newick_tree = open_newick(newick_path);
     Node root(newick_tree, nbr_sites);
 
-    double mu = 10.0;
+    double mu = 2.5;
     if (args["--mu"]) {
         mu = stod(args["--mu"].asString());
     }
@@ -844,14 +842,15 @@ int main(int argc, char *argv[]) {
     txt_file << "The mutation transition matrix (" << Codon::nucleotides << ") is: " << endl;
     txt_file << mutation_rate << endl;
 
+
+    double s = 10.0;
+    if (args["--s"]) {
+        s = stod(args["--s"].asString());
+    }
+
     double p = 0.0;
     if (args["--p"]) {
         p = stod(args["--p"].asString());
-    }
-
-    bool wave = true;
-    if (args["--w"]) {
-        wave = (args["--w"].asString() == "True");
     }
 
     bool all_sites = false;
@@ -859,12 +858,16 @@ int main(int argc, char *argv[]) {
         all_sites = (args["--a"].asString() == "True");
     }
 
-    txt_file << "wave=" << wave << endl;
+    txt_file << "s=" << s << endl;
     txt_file << "all_sites=" << all_sites << endl;
     txt_file << "p=" << p << endl;
+
+    root.set_evolution_parameters(mutation_rate, fitness_profiles, s, p, all_sites);
+
+    txt_file << "w0=" << root.predicted_omega(Codon::nucleotides, Codon::nucleotides, false) << endl;
+    txt_file << "<w0>=" << root.predicted_omega(Codon::nucleotides, Codon::nucleotides, true) << endl;
     txt_file.close();
 
-    root.set_evolution_parameters(mutation_rate, fitness_profiles, p, wave, all_sites);
     root.at_equilibrium();
     root.traverse(output_path);
 
@@ -878,11 +881,9 @@ int main(int argc, char *argv[]) {
     txt_file << "On average, this is " << static_cast<double>(nbr_synonymous + nbr_non_synonymous) / nbr_sites
              << " substitutions per site." << endl;
     txt_file << nbr_synonymous << " synonymous and " << nbr_non_synonymous << " non-synonymous substitutions." << endl;
-
-    txt_file << "w0=" << root.predicted_omega(Codon::nucleotides, Codon::nucleotides, false) << endl;
-    txt_file << "<w0>=" << root.predicted_omega(Codon::nucleotides, Codon::nucleotides, true) << endl;
     txt_file << "w=" << root.simulated_omega(Codon::nucleotides, Codon::nucleotides) << endl;
 
+/*
     string weak_strong = "WS";
     map<char, string> const WS_map{{'W', "AT"},
                                    {'S', "GC"}};
@@ -909,6 +910,7 @@ int main(int argc, char *argv[]) {
             }
         }
     }
+*/
 
     txt_file.close();
 
