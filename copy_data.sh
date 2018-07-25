@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 source=/home/thibault/panhome/SimuEvol
 target=/home/thibault/SimuEvol
 cp -r -f ${source}/data_hyphy ${target}
