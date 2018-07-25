@@ -30,7 +30,6 @@ def runs(pop_size, k, mu, r, n, m, a, q):
     qsub_str += "#PBS -j oe\n"
     qsub_str += "#PBS -W umask=022\n"
     qsub_str += "#PBS -r n\n"
-    qsub_str += "#PBS -r n\n"
 
     simu_evol_cmd = current_dir
     simu_evol_cmd += "/SimuRelax --pop_size={0} --k={1} --mu={2} --r={3} --n={4} --m={5} --a={6} --q={7} --dir={8}"
