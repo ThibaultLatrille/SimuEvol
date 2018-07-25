@@ -7,21 +7,27 @@
 ```
 $ git clone https://github.com/ThibaultLatrille/SimuEvol.git
 $ cd ./SimuEvol
-$ git submodule init
-$ git submodule update
 ```
 
-### Compile SimuEvol
+### Compile SimuEvol & SimuPoly
 
 ```
-$ g++ main.cpp -std=c++14 -o SimuEvol
+$ g++ src/simu_evol.cpp -std=c++14 -o SimuEvol
+$ g++ src/simu_poly.cpp -std=c++14 -o SimuPoly
 ```
 
 ### Run SimuEvol
 
 ```
 $ ./SimuEvol --help
-$ ./SimuEvol --protein=lactamase
+$ ./SimuEvol
+```
+
+### Run SimuPoly
+
+```
+$ ./SimuPoly --help
+$ ./SimuPoly
 ```
 
 ### Authors
