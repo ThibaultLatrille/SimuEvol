@@ -1,0 +1,154 @@
+\documentclass{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{lmodern}
+\usepackage{amssymb,amsfonts,amsmath,amsthm}
+\usepackage{mathtools}
+\usepackage{bm}
+\usepackage{listings}
+\usepackage{enumerate}
+\usepackage{float}
+\usepackage{fullpage}
+
+\newcommand{\e}{\mathrm{e}}
+\newcommand{\der}{\mathrm{d}}
+\newcommand{\Ne}{N_\mathrm{e}}
+\newcommand{\SetCodon}{\Omega_{\mathrm{C}}}
+\newcommand{\SetNuc}{\Omega_{\mathrm{N}}}
+\newcommand{\SetWeak}{\Omega_{\mathrm{W}}}
+\newcommand{\SetStrong}{\Omega_{\mathrm{S}}}
+\newcommand{\SetAa}{\Omega_{\mathrm{A}}}
+\newcommand{\Neighbor}{\mathcal{V}}
+\newcommand{\NonSyn}{\mathcal{N}}
+\newcommand{\Syn}{\mathcal{S}}
+\newcommand{\Nx}{\Neighbor_x}
+\newcommand{\NxAB}{\Neighbor_x^{\mathrm{A} \rightarrow \mathrm{B}}}
+\newcommand{\NyBA}{\Neighbor_x^{\mathrm{B} \rightarrow \mathrm{A}}}
+\newcommand{\NxWS}{\Neighbor_x^{\mathrm{W} \rightarrow \mathrm{S}}}
+\newcommand{\NxSS}{\Neighbor_x^{\mathrm{S} \rightarrow \mathrm{S}}}
+\newcommand{\NxSW}{\Neighbor_x^{\mathrm{S} \rightarrow \mathrm{W}}}
+\newcommand{\NxWW}{\Neighbor_x^{\mathrm{W} \rightarrow \mathrm{W}}}
+\newcommand{\NyWS}{\Neighbor_y^{\mathrm{W} \rightarrow \mathrm{S}}}
+\newcommand{\NySS}{\Neighbor_y^{\mathrm{S} \rightarrow \mathrm{S}}}
+\newcommand{\NySW}{\Neighbor_y^{\mathrm{S} \rightarrow \mathrm{W}}}
+\newcommand{\NyWW}{\Neighbor_y^{\mathrm{W} \rightarrow \mathrm{W}}}
+\newcommand{\NxNonSyn}{\NonSyn_x}
+\newcommand{\NyNonSyn}{\NonSyn_y}
+\newcommand{\NxSyn}{\Syn_x}
+\newcommand{\NySyn}{\Syn_y}
+
+% \renewcommand{\baselinestretch}{2}
+
+\author{Thibault Latrille.}
+
+\begin{document}
+	
+\section*{Single polymorphic site under selection}
+The Wright-Fisher model describe the change in frequency of single polymorphic site with two alleles in a population over time. The model makes the following assumptions:
+\begin{itemize}
+	\setlength\itemsep{-0.2em}
+	\item Non-overlapping generations
+	\item Constant population size in each generation
+	\item Random mating
+\end{itemize}
+
+Consider a population of $\Ne$ diploid individuals that has a single polymorphic site with two alleles, one ancestral (fitness = $1$) and one derived (fitness = $1+s$). Assuming no dominance and no recurrent mutation, the probability, $p_{ij}$, that there are $j$ copies of the derived allele present at generation $G+1$ given i copies of the derived allele present at generation $G$ is given by the following binomial calculation:
+\begin{eqnarray*}
+	p_{ij} & = & \binom{2 \Ne}{j} \left( \dfrac{x(1+s)}{x(1+s) + (1-x)} \right)^j \left(1 - \dfrac{x(1+s)}{x(1+s) + (1-x)} \right)^{2 \Ne -j}, 
+\end{eqnarray*}
+where $x = i / 2 \Ne$ is the derived allele frequency in generation $G$.\\
+
+In this discrete framework, it has been shown to be extremely difficult to explicitly derive formulas for several quantities of evolutionary interest. However, as the size of the population approaches infinity (i.e. $ \Ne \rightarrow \infty$), and assuming that the scaled selection pressure ($\Ne s $) remain constant, the discrete Markov process given above can be closely approximated by a continuous-time, continuous-space diffusion process.\\
+
+Under the assumption of no recurrent mutation, the derived allele with initial frequency $x = 1 / 2 \Ne$, goes either extinct ($x=0$) or fixed ($x=1$) after a long time. It is possible to determine the probability of extinction ($p_{\mathrm{ext}}$), the probability of fixation ($p_{\mathrm{fix}}$), and the mean time until absorption (either at $x=0$ or $x=1$) by using the Kolmogorov backward equation. 
+\begin{eqnarray*}
+	p_{\mathrm{fix}} = \dfrac{1 - \e^{-2 s}}{1 - \e^{-4 \Ne s}} \approx  \dfrac{2 s }{1 - \e^{-4 \Ne s}}
+\end{eqnarray*}
+\begin{eqnarray*}
+	p_{\mathrm{ext}} = 1 - p_{\mathrm{fix}} = \dfrac{ \e^{2s(2 \Ne -1) } - 1 }{\e^{4 \Ne s} - 1}
+\end{eqnarray*}
+
+$f(x) \der x $ is the expected time for which the population frequency of derived allele is in the range $(x, x+\der x)$ before eventual absorption:
+\begin{eqnarray*}
+	f(x) & =  & \dfrac{\left( 1 - \e^{- 2 s }\right) \left( 1 - \e^{-4 \Ne s(1-x)}\right)}{ s (1 - \e^{-4 \Ne s})x(1-x)} \\
+	 & \approx  & \dfrac{2 \left[ 1 - \e^{-4 \Ne s(1-x)}\right]}{(1 - \e^{-4 \Ne s})x(1-x)}
+\end{eqnarray*}
+
+In a sample of size $n$, the expected number of copies of the derived allele is defined as a function of $f(x)$:
+\begin{eqnarray*}
+	F(i) & = & \int_{0}^{1} f(x) \binom{n}{i} x^{i} (1-x)^{n-i} \der x \\
+	 & = & \int_{0}^{1} \dfrac{2 \left[ 1 - \e^{-4 \Ne s(1-x)}\right]}{(1 - \e^{-4 \Ne s})x(1-x)} \binom{n}{i} x^{i} (1-x)^{n-i} \der x \\
+	 & = & \binom{n}{i} \dfrac{ 2 }{1 - \e^{-4 \Ne s}} \int_{0}^{1} \left( 1 - \e^{-4 \Ne s(1-x)} \right) x^{i-1} (1-x)^{n-i-1} \der x 
+\end{eqnarray*}
+
+
+\section*{Multiple polymorphic sites under selection}
+S. Sawyer and D. Hartl expanded the modeling of site evolution to multiple sites. The model makes the following assumptions: 
+\begin{itemize}
+	\setlength\itemsep{-0.2em}
+	\item Mutations arise at Poisson times (rate $\mu$ per site per generation)
+	\item Each mutation occurs at a new site (infinite sites, irreversible)
+	\item Each mutant follows an independent Wright-Fisher process (no linkage)
+\end{itemize}
+
+Given the scaled selection pressure $\gamma=2 \Ne s$, and the scaled mutation rate per locus $\theta = 2 \Ne \mu $, the expected density function for derived allele frequencies is:
+\begin{eqnarray*}
+g(x, \theta, \gamma) = \theta \dfrac{2 \left[ 1 - \e^{-2 \gamma(1-x)}\right]}{(1 - \e^{-2 \gamma})x(1-x)}
+\end{eqnarray*}
+
+In a sample of size $n$, the expected number of sites with $i$ (which ranges from $1$ to $n-1$) copies of the derived allele is defined as a function of $g(x)$:
+\begin{eqnarray*}
+	G(i, \theta, \gamma) & = & \int_{0}^{1} g(x) \binom{n}{i} x^{i} (1-x)^{n-i} \der x \\
+	 & = & \int_{0}^{1} 2 \theta \dfrac{1 - \e^{-2\gamma(1-x)}}{(1 - \e^{-2\gamma})x(1-x)} \binom{n}{i} x^{i} (1-x)^{n-i} \der x \\
+ & = & 2 \binom{n}{i} \dfrac{\theta }{1 - \e^{-2\gamma}} \int_{0}^{1} \left( 1 - \e^{-2\gamma(1-x)} \right) x^{i-1} (1-x)^{n-i-1} \der x 
+\end{eqnarray*}
+
+Consider the sample data $X = (X_1, X_2, X_3, \hdots , X_{n-1})$ where $X_i$ is the observed number of sites with $i$ copies of the derived allele out of $n$. Each random variable $X_i$ is assumed to follow an independent Poisson distribution (and therefore, $X$ is referred to as a Poisson
+Random Field) with mean equal to $G(i)$. This framework allows us to define the
+probability of observing $x_i$ sites that have $i$ copies of the derived allele (and $n-i$ copies of the ancestral allele) as the following:
+\begin{eqnarray*}
+	P(X_i = x_i | \theta, \gamma) = \dfrac{\e^{-G(i, \theta, \gamma)} G(i, \theta, \gamma)^{x_i}}{x_i!}
+\end{eqnarray*}
+
+Since the $X_i$‘s are assumed to be independent, the probability of observing $X = (X_1, X_2, X_3, \hdots , X_{n-1})$ is given as:
+\begin{eqnarray*}
+	P(X = x | \theta, \gamma) = \prod_{i=1}^{n-1}P(X_i = x_i | \theta, \gamma)
+\end{eqnarray*}
+
+\newpage
+
+\section*{Multiple polymorphic sites under a Mutation-Selection equilibrium}
+\begin{itemize}
+	\setlength\itemsep{-0.2em}
+	\item $\SetCodon = \left\{ AAA,AAC, \dots, TTT \right\} $ is the set of $61$ non-stop codons in lexicographic order.
+	\item $m \in \mathbb{N}$ is the number of codon sites in the sequence.
+	\item $\pi_x^{(k)} \in \left]0,1\right[ $ is the stationary distribution of codon $x$ at site $k \in [1, \hdots, m] $. $\sum_{x \in \SetCodon} \pi_x^{(k)} = 1$. 
+	\item $u_{x,y} \in \mathbb{R}_{\geq 0} $ is the mutation rate from codon $x$ to $y$. 
+	\item $F_x^{(k)} \in \mathbb{R} $ is the fitness of codon $x$ at site $k$, given by the fitness of the amino-acid encoded by $x$.
+	\item $\Nx \subset \SetCodon $ is the set of neighboring codons to codon $x$, such that the codon $x$ and the codons in $\Nx$ differ by only one nucleotide.
+    \item $\NxNonSyn \subset \Nx $ is the set of non-synonymous neighboring codons of codon $x$.
+	\item $\NxSyn \subset \Nx $ is the set of synonymous neighboring codons of codon $x$.
+\end{itemize}
+
+We are interested in the non-synonymous site-frequency spectrum. The equation is similar as above, with two difference. Firstly $\theta$ which is the scaled mutation rate per locus must take into account that not all mutations are non-synonymous. For the site $k$ we thus have
+\begin{eqnarray*}
+	\theta^{(k)} =  \sum_{x \in \SetCodon} \sum_{y \in \NxNonSyn } \pi_x^{(k)} u_{x,y} 
+\end{eqnarray*}
+
+Secondly we must take into account that the selection pressure depends both on the original and derived codons, so at site $k$, we have
+\begin{eqnarray*}
+	p(\gamma^{(k)} = F_y -F_x)  & = & \dfrac{\pi_x^{(k)} u_{x,y}}{ \sum_{x \in \SetCodon} \sum_{y \in \NxNonSyn } \pi_x^{(k)} u_{x,y} } \\ & =  &\dfrac{\pi_x^{(k)} u_{x,y}}{\theta^{(k)}}
+\end{eqnarray*}
+
+Finally, 
+\begin{eqnarray*}
+	H(i) & = & \sum_{k=1}^{m} \left[ \dfrac{1}{\theta^{(k)}} \sum_{x \in \SetCodon} \sum_{y \in \NxNonSyn} \pi_x^{(k)} u_{x,y} G(i, \theta^{(k)}, F_j -F_i) \right] \\
+	 & = & \sum_{k=1}^{m} \left[ 2 \sum_{x \in \SetCodon} \sum_{y \in \NxNonSyn} \pi_x^{(k)} u_{x,y} \binom{n}{i} \dfrac{1 }{1 - \e^{2(F_x - F_y)}} \int_{0}^{1} \left( 1 - \e^{2(F_x - F_y)(1-x)} \right) x^{i-1} (1-x)^{n-i-1} \der x  \right] \\
+	 & = & 2 \binom{n}{i} \sum_{k=1}^{m} \sum_{x \in \SetCodon} \pi_x^{(k)} \sum_{y \in \NxNonSyn}  u_{x,y}  \dfrac{1 }{1 - \e^{2(F_x - F_y)}} \int_{0}^{1} \left( 1 - \e^{2(F_x - F_y)(1-x)} \right) x^{i-1} (1-x)^{n-i-1} \der x  \\
+\end{eqnarray*}
+
+
+
+\end{document}

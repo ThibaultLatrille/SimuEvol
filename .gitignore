@@ -9,6 +9,7 @@
 /cmake-build-debug
 .idea/
 /data_*
+/poly_pop_*
 /simulated
 /figures
 /qsub
