@@ -20,6 +20,32 @@ string version_string = "SimuPoly 0.1";
 
 typedef chrono::high_resolution_clock::time_point TimeVar;
 
+unsigned long binomial_coefficient(unsigned long n, unsigned long k) {
+    assert(0 <= k);
+    assert(k <= n);
+    unsigned long i;
+    unsigned long b;
+    if (0 == k || n == k) { return 1; }
+    if (k > (n - k)) { k = n - k; }
+    if (1 == k) { return n; }
+    b = 1;
+    for (i = 1; i <= k; ++i) {
+        b *= (n - (k - i));
+        assert (b > 0); /* Overflow */
+        b /= i;
+    }
+    return b;
+}
+
+unsigned pow_int(unsigned x, unsigned p) {
+    if (p == 0) return 1;
+    if (p == 1) return x;
+
+    unsigned tmp = pow_int(x, p / 2);
+    if (p % 2 == 0) return tmp * tmp;
+    else return x * tmp * tmp;
+}
+
 //Function for sum
 double sum(vector<unsigned> const &v) {
     return accumulate(v.begin(), v.end(), static_cast<unsigned>(0));
@@ -134,11 +160,12 @@ public:
     double max_sum_mutation_rates;
     array<double, 4> sum_mutation_rates;
 
-    MutationParams(
-            double const &mutation_bias,
-            double const &mu) :
+    MutationParams(double const &mutation_bias,
+                   double const &mu) :
             lambda{mutation_bias},
             mutation_rate_matrix{},
+            max_sum_mutation_rates{0},
+            sum_mutation_rates{0},
             nuc_frequencies{{mutation_bias, 1, 1, mutation_bias}} {
 
         mutation_rate_matrix[0] = {0, 1, 1, lambda};
@@ -436,7 +463,7 @@ public:
             vector<double> fitness_vector(haplotype_vector.size(), 0);
 
             for (unsigned i_hap{0}; i_hap < haplotype_vector.size(); i_hap++) {
-                fitness_vector[i_hap] = (1 + haplotype_vector[i_hap].fitness / population_size) *
+                fitness_vector[i_hap] = (1 + haplotype_vector[i_hap].fitness / (4 * population_size)) *
                                         haplotype_vector[i_hap].nbr_copies;
                 haplotype_vector[i_hap].nbr_copies = 0;
             }
@@ -544,12 +571,12 @@ public:
 
     explicit Population() = default;
 
-    Population(MutationParams const &p,
-               vector<array<double, 20>> const &fitness_profiles,
+    Population(vector<array<double, 20>> const &fitness_profiles,
                unsigned &population_size,
                unsigned &sample_size,
                string &output_path,
-               bool linked_sites)
+               bool linked_sites,
+               MutationParams const &p)
             : blocks{}, sample_size{sample_size} {
         if (linked_sites) {
             blocks.emplace_back(Block(fitness_profiles, 0, population_size, output_path, p));
@@ -592,9 +619,9 @@ public:
 
     void linear_run(string &output_filename, unsigned nbr_intervals,
                     unsigned interval_length, MutationParams const &p) {
-        string name = "linear";
         for (unsigned sample{1}; sample <= nbr_intervals; sample++) {
             run_forward(max_population_size * interval_length, p);
+            string name = to_string(elapsed);
             output_vcf(output_filename, name, p);
             cout << static_cast<double>(100 * sample) / nbr_intervals << "% of simulation computed ("
                  << max_population_size * interval_length * sample << " generations)" << endl;
@@ -693,7 +720,7 @@ public:
         out += "##fileformat=VCFv4.0";
         out += "\n##source=" + version_string;
         out += "\n##nodeName=" + node_name;
-        out += "\n##sequenceSize=" + nbr_nucleotides;
+        out += "\n##sequenceSize=" + to_string(nbr_nucleotides);
         out += "\n##ploidyLevel=diploid";
         out += "\n##numberIndividuals=" + to_string(sample_size);
         out += "\n##numberGenotypes=" + to_string(2 * sample_size);
@@ -877,12 +904,14 @@ public:
             }
 
             stats.mean_fitness += accumulate(block.haplotype_vector.begin(), block.haplotype_vector.end(), 0.0,
-                                             [](double acc, Haplotype const &h) { return acc + h.fitness; }) /
-                                  block.haplotype_vector.size();
+                                             [](double acc, Haplotype const &h) {
+                                                 return acc + h.nbr_copies * h.fitness;
+                                             }) /
+                                  block.population_size;
         }
 
         ofstream vcf;
-        vcf.open(output_filename + " " + to_string(elapsed) + ".vcf");
+        vcf.open(output_filename + "_" + node_name + ".vcf");
         vcf << out << endl;
         vcf.close();
 
@@ -909,7 +938,6 @@ public:
         assert(sum(sfs_syn) == syn_nbr);
 
         stats_vector.push_back(stats);
-
 
         unsigned nbr_mutations = table.syn_mut + table.non_syn_mut;
         unsigned nbr_fixations = table.syn_fix + table.non_syn_fix;
@@ -949,7 +977,88 @@ public:
         time_elapsed.exportation += duration(timeNow() - t_start);
     }
 
-    // Method returning the DNA string corresponding to the codon sequence.
+    vector<double> theoretial_sfs(MutationParams const &p, unsigned nbr_sample, bool synonymous) {
+        unsigned precision = 8;
+        unsigned nbr_points = pow_int(2, precision) + 1;
+
+        vector<unsigned> sample_range(nbr_sample - 1, 0);
+        iota(sample_range.begin(), sample_range.end(), 1);
+
+        vector<unsigned long> binom_coeff(sample_range.size(), 0);
+        vector<double> sample_sfs(sample_range.size(), 0);
+
+        for (int index{0}; index < sample_range.size(); index++) {
+            binom_coeff[index] = binomial_coefficient(nbr_sample, sample_range[index]);
+        }
+
+        for (auto const &block: blocks) {
+            double theta = 4 * block.population_size * p.mutation_rate();
+
+            for (auto const &aa_fitness_profil: block.aa_fitness_profiles) {
+                array<double, 64> codon_freqs = block.codon_frequencies(aa_fitness_profil, p);
+
+                double x = 0.0;
+                double x_max = 1.0;
+                double h = (x_max - x) / (nbr_points - 1);
+
+                vector<double> x_array(nbr_points, 0);
+                vector<double> y_array(nbr_points, 0);
+
+                for (unsigned point{0}; point < nbr_points; point++) {
+                    x += h;
+                    x_array[point] = x;
+
+                    double res = 0;
+                    for (char codon_from{0}; codon_from < 64; codon_from++) {
+                        if (Codon::codon_to_aa_array[codon_from] != 20) {
+                            double tmp_res = 0;
+
+                            for (auto &neighbor: Codon::codon_to_neighbors_array[codon_from]) {
+
+                                char codon_to{0}, n_from{0}, n_to{0};
+                                tie(codon_to, n_from, n_to) = neighbor;
+                                assert(n_from != n_to);
+
+                                char aa_from = Codon::codon_to_aa_array[codon_from];
+                                char aa_to = Codon::codon_to_aa_array[codon_to];
+
+                                if (((synonymous) and (aa_from == aa_to)) or ((!synonymous) and (aa_from != aa_to))) {
+                                    double pij = theta;
+
+                                    if (synonymous) {
+                                        pij *= 1 - x;
+                                    } else {
+                                        double s = aa_fitness_profil[aa_to];
+                                        s -= aa_fitness_profil[aa_from];
+                                        if (fabs(s) <= Codon::epsilon) {
+                                            pij *= 1 - x;
+                                        } else {
+                                            pij *= (1 - exp(-s * (1 - x))) / (1 - exp(-s));
+                                        }
+                                    }
+                                    pij *= p.mutation_rate_matrix[n_from][n_to];
+                                    tmp_res += pij;
+                                }
+                            }
+                            res += codon_freqs[codon_from] * tmp_res;
+                        }
+                    }
+
+                    y_array[point] = res;
+
+                    for (int index{0}; index < sample_range.size(); index++) {
+                        unsigned a = sample_range[index];
+                        double y = y_array[point] * pow(x, a - 1) * pow(1 - x, nbr_sample - a - 1);
+                        sample_sfs[index] += binom_coeff[index] * h * y;
+                    }
+
+                }
+            }
+        }
+        return sample_sfs;
+    }
+
+// Method returning the DNA string corresponding to the codon sequence.
     string get_dna_str() const {
 
         unsigned nbr_sites = 0;
@@ -1080,6 +1189,7 @@ public:
     // Recursively iterate through the subtree.
     void traverse(string &output_filename, double scale, MutationParams const &p) {
         // Substitutions of the DNA sequence is generated.
+
         auto gen = static_cast<unsigned>(scale * length / (p.mutation_rate()));
         population.run_forward(gen, p);
 
@@ -1103,7 +1213,6 @@ public:
             fasta_file.close();
 
             population.output_vcf(output_filename, name, p);
-
         } else {
             // If the node is internal, iterate through the direct children.
             for (auto &child : children) {
@@ -1223,7 +1332,7 @@ vector<array<double, 20>> open_preferences(string const &file_name, double const
 static char const USAGE[] =
         R"(
 Usage:
-      SimuPoly [--preferences=<file_path>] [--newick=<file_path>] [--mu=<1e-7>] [--lambda=<5.0>] [--pop_size=<500>] [--sample_size=<500>] [--beta=<1.0>] [--linked=<true>]
+      SimuPoly [--preferences=<file_path>] [--newick=<file_path>] [--output=<file_path>] [--gen=<1e-2>] [--mu=<1e-7>] [--lambda=<5.0>] [--pop_size=<500>] [--sample_size=<500>] [--beta=<1.0>] [--linked=<true>]
       SimuPoly --help
       SimuPoly --version
 
@@ -1232,7 +1341,9 @@ Options:
 --version                    show version and exit
 --preferences=<file_path>    specify input site-specific preferences file [default: ../data_prefs/np.txt]
 --newick=<file_path>         specify input newick tree [default: ../data/np.newick]
+--output=<file_path>         specify output path [default: ../data/np.newick]
 --mu=<1e-7>                  specify the mutation rate [default: 1e-7]
+--gen=<0.01>               specify the number of expected substitutions per unit of branch length [default: 0.01]
 --lambda=<5.0>               specify the strong to weak mutation bias [default: 5.0]
 --pop_size=<500>             specify the population size [default: 500]
 --sample_size=<20>           specify the sample size [default: 20]
@@ -1250,9 +1361,14 @@ int main(int argc, char *argv[]) {
                                true,              // show help if requested
                                version_string);  // version string
 
-    string preferences_path{"../data_prefs/np.txt"};
+    string preferences_path{"../data_prefs/gal4.txt"};
     if (args["--preferences"]) {
         preferences_path = args["--preferences"].asString();
+    }
+
+    double gen = 0.01;
+    if (args["--gen"]) {
+        gen = stod(args["--gen"].asString());
     }
 
     double beta = 2.5;
@@ -1261,12 +1377,12 @@ int main(int argc, char *argv[]) {
     }
     vector<array<double, 20>> fitness_profiles = open_preferences(preferences_path, beta);
 
-    double mu = 1e-6;
+    double mu = 1e-8;
     if (args["--mu"]) {
         mu = stod(args["--mu"].asString());
     }
 
-    double lambda = 5.0;
+    double lambda = 2.0;
     if (args["--lambda"]) {
         lambda = stod(args["--lambda"].asString());
     }
@@ -1281,41 +1397,44 @@ int main(int argc, char *argv[]) {
         sample_size = args["--sample_size"].asLong();
     }
 
-    bool linked_sites = false;
+    bool linked_sites = true;
     if (args["--linked"]) {
-        linked_sites = args["--linked"].asBool();
+        string linked_site_str = args["--linked"].asString();
+        transform(linked_site_str.begin(), linked_site_str.end(), linked_site_str.begin(), ::tolower);
+        linked_sites = (linked_site_str == "true");
     }
 
     assert(sample_size <= pop_size);
     // output
     cout << "The DNA sequence is " << fitness_profiles.size() * 3 << " base pairs." << endl;
 
-    string output_path{"../data_sfs/np"};
+    string output_path{"../data_sfs/mammals"};
     if (args["--output"]) {
         output_path = args["--output"].asString();
     }
-    output_path += "_" + to_string(mu) + "_" + to_string(pop_size) +
-                   "_" + to_string(lambda) + "_" + to_string(beta) + "_" + to_string(linked_sites);
+
     ofstream txt_file;
     txt_file.open(output_path + ".tsv");
-    txt_file << "mu\t" << mu << endl;
-    txt_file << "ne\t" << pop_size << endl;
-    txt_file << "lambda\t" << lambda << endl;
-    txt_file << "n\t" << fitness_profiles.size() * 3 << endl;
+    txt_file << "Beta\t" << beta << endl;
+    txt_file << "MutationRate\t" << mu << endl;
+    txt_file << "MutationalBias\t" << lambda << endl;
+    txt_file << "PopulationSize\t" << pop_size << endl;
+    txt_file << "SampleSize\t" << sample_size << endl;
+    txt_file << "ExpectedSubs\t" << lambda << endl;
+    txt_file << "SequenceSize\t" << fitness_profiles.size() * 3 << endl;
     txt_file.close();
 
     ofstream tsv_file;
     tsv_file.open(output_path + ".tsv");
     tsv_file.close();
 
-    unsigned interval = 10;
-    unsigned burn_in = 0;
+    unsigned burn_in = 100;
     MutationParams p(lambda, mu);
-    Population population(p, fitness_profiles, pop_size, sample_size, output_path, linked_sites);
+    Population population(fitness_profiles, pop_size, sample_size, output_path, linked_sites, p);
     population.burn_in(burn_in, p);
 
     string newick_path{"../data_trees/mammals.newick"};
-    newick_path = "200";
+    // newick_path = "300";
     if (args["--newick"]) {
         newick_path = args["--newick"].asString();
     }
@@ -1340,10 +1459,11 @@ int main(int argc, char *argv[]) {
         fasta_file.open(output_path + ".fasta");
         fasta_file.close();
 
-        root.traverse(output_path, 0.01, p);
+        root.traverse(output_path, gen, p);
         Population::avg_summary_statistics();
     } else {
         auto generations = static_cast<unsigned>(stoi(newick_path));
+        unsigned interval = 20;
         cout << "The tree given is a number and not a newick file (a tree), the simulator will run for "
              << generations * pop_size * interval << " and output the summary statistics every "
              << interval * pop_size
