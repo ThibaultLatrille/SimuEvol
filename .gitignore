@@ -13,6 +13,7 @@
 /qsub
 /notebooks
 /_test
+/_build
 /bin
 *.pyc
 *.aux
