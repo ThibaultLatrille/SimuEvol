@@ -3,11 +3,19 @@ project(SimuEvol)
 
 set(CMAKE_CXX_STANDARD 14)
 
-set(SOURCE_FILES_EVOL src/Eigen/Dense src/docopt.cpp/docopt.h src/codon.hpp src/simu_evol.cpp )
-add_executable(SimuEvol ${SOURCE_FILES_EVOL})
+# Compilation options
+option(COVERAGE_MODE "For coverage mode using g++ " OFF) #OFF by default
+if(COVERAGE_MODE)
+    set(CMAKE_CXX_FLAGS "-O0 --std=c++11 -fprofile-arcs -ftest-coverage") # coverage mode
+else()
+    set(CMAKE_CXX_FLAGS "-O3 --std=c++11 -Wall -Wextra -Wno-unused-parameter -Wfatal-errors") # normal mode
+endif(COVERAGE_MODE)
+unset(COVERAGE_MODE CACHE)
 
-set(SOURCE_FILES_POLY src/docopt.cpp/docopt.h src/codon.hpp src/simu_poly.cpp )
-add_executable(SimuPoly ${SOURCE_FILES_POLY})
+include_directories("src")
+include_directories("src/lib")
+include_directories("utils")
 
-set(SOURCE_FILES_RELAX src/docopt.cpp/docopt.h src/simu_relax.cpp )
-add_executable(SimuRelax ${SOURCE_FILES_RELAX})
+add_executable(SimuEvol src/simu_evol.cpp )
+add_executable(SimuPoly src/simu_poly.cpp)
+add_executable(SimuRelax src/simu_relax.cpp)

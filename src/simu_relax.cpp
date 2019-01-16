@@ -281,7 +281,7 @@ double Being::q = 0;
 static char const USAGE[] =
         R"(
 Usage:
-      SimuRelax [--pop_size=<100>] [--k=<23>] [--mu=<1e-3>] [--r=<1e-3>] [--n=<10>] [--m=<10>] [--a=<0.5>] [--q=<2.0>] [--dir=<path>]
+      SimuRelax [--pop_size=<100>] [--k=<23>] [--mu=<1e-3>] [--r=<1e-3>] [--n=<10>] [--m=<10>] [--a=<0.5>] [--q=<2.0>] [--output=<path>]
       SimuRelax --help
       SimuRelax --version
 
@@ -296,7 +296,7 @@ Options:
 --m=<10>                     specify the pleiotropy of mutations (m<=n, and m=n if not specified) [default: 10]
 --a=<1.0>                    specify the a parameter (peakness) of the fitness function (exp(-a*(d^q)) [default: 0.5]
 --q=<2.0>                    specify the q parameter (epistasis) of fitness function (exp(-a*(d^q)) [default: 2.0]
---dir=<path>                 specify the output data folder [default: ../data_relax]
+--output=<path>              specify the output data folder [default: SimuRelaxOutput]
 
 )";
 
@@ -356,13 +356,13 @@ int main(int argc, char *argv[]) {
     }
     cout << "The epistasis of the fitness function is " << Being::q << "." << endl;
 
-    u_long nbr_intervals = 1000;
+    u_long nbr_intervals = 10;
     u_long interval_length = 10;
-    u_long relax_length = 1000;
+    u_long relax_length = 100;
 
-    string path{"../data_relax"};
-    if (args["--dir"]) {
-        path = args["--dir"].asString();
+    string path{"SimuRelaxOutput"};
+    if (args["--output"]) {
+        path = args["--output"].asString();
     }
     path += "/" + to_string(pop_size) + "_" + to_string(Being::k) + "_" + to_string(Being::mu) + "_" +
             to_string(Being::r) + "_" + to_string(Being::n) + "_" + to_string(Being::m) + "_" + to_string(Being::a) +

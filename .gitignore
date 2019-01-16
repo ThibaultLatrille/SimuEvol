@@ -5,16 +5,15 @@
 #   git config --global core.excludesfile '~/.gitignore_global'
 
 *~
-/docopt.cpp/examples
 /cmake-build-debug
 .idea/
-/data_*
-/poly_pop_*
+/data
 /simulated
 /figures
 /qsub
-/Omega_MutSel
 /notebooks
+/_test
+/bin
 *.pyc
 *.aux
 *.log
@@ -33,6 +32,3 @@
 *.blg
 *.contdiff
 .ipynb_checkpoints/
-SimuEvol
-SimuPoly
-SimuRelax

@@ -1343,7 +1343,7 @@ Options:
 --newick=<file_path>         specify input newick tree [default: ../data/np.newick]
 --output=<file_path>         specify output path [default: ../data/np.newick]
 --mu=<1e-7>                  specify the mutation rate [default: 1e-7]
---gen=<0.01>               specify the number of expected substitutions per unit of branch length [default: 0.01]
+--gen=<0.01>                 specify the number of expected substitutions per unit of branch length [default: 0.01]
 --lambda=<5.0>               specify the strong to weak mutation bias [default: 5.0]
 --pop_size=<500>             specify the population size [default: 500]
 --sample_size=<20>           specify the sample size [default: 20]
