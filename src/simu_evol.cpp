@@ -1,6 +1,6 @@
+#include <fstream>
 #include <iostream>
 #include <random>
-#include <fstream>
 #include "codon.hpp"
 
 using namespace std;
@@ -24,19 +24,16 @@ struct Substitution {
     Matrix4x4 syn_opp_matrix;
 };
 
-//Function for sum
-double sum(vector<double> &v) {
-    return accumulate(v.begin(), v.end(), 0.0);
-}
+// Function for sum
+double sum(vector<double> &v) { return accumulate(v.begin(), v.end(), 0.0); }
 
-//Function for average
-double avg(vector<double> &v) {
-    return sum(v) / v.size();
-}
+// Function for average
+double avg(vector<double> &v) { return sum(v) / v.size(); }
 
-//Function for variance
+// Function for variance
 double variance(vector<double> &v) {
-    double v_squarred = accumulate(v.begin(), v.end(), 0.0, [](double a, double b) { return a + pow(b, 2); });
+    double v_squarred =
+        accumulate(v.begin(), v.end(), 0.0, [](double a, double b) { return a + pow(b, 2); });
     return (v_squarred / v.size()) - pow(avg(v), 2);
 }
 
@@ -47,7 +44,8 @@ bool is_synonymous(Substitution const &s) {
 // Compute the kernel of the mutation-rate matrix.
 // This kernel is a vector of the nucleotides frequencies (not normalized to 1) at equilibrium.
 Vector4x1 equilibrium_frequencies(Matrix4x4 const &mutation_matrix) {
-    Eigen::Matrix<double, 4, Eigen::Dynamic> kernel = mutation_matrix.transpose().fullPivLu().kernel();
+    Eigen::Matrix<double, 4, Eigen::Dynamic> kernel =
+        mutation_matrix.transpose().fullPivLu().kernel();
     Vector4x1 nuc_frequencies;
 
     if (kernel.cols() > 1) {
@@ -66,9 +64,7 @@ Vector4x1 equilibrium_frequencies(Matrix4x4 const &mutation_matrix) {
 
 
 Matrix4x4 normalize_submatrix(Matrix4x4 mutation_matrix) {
-    for (int diag{0}; diag < 4; diag++) {
-        mutation_matrix(diag, diag) = 0.0;
-    }
+    for (int diag{0}; diag < 4; diag++) { mutation_matrix(diag, diag) = 0.0; }
     mutation_matrix -= mutation_matrix.rowwise().sum().asDiagonal();
 
 
@@ -83,8 +79,9 @@ Matrix4x4 normalize_submatrix(Matrix4x4 mutation_matrix) {
 
 // Class representing DNA sequence.
 class Sequence_dna {
-private:
-    // The number of sites in the sequence (each position is a codon, thus the DNA sequence is 3 times greater).
+  private:
+    // The number of sites in the sequence (each position is a codon, thus the DNA sequence is 3
+    // times greater).
     unsigned const nbr_sites;
 
     // The sequence of codons.
@@ -104,12 +101,17 @@ private:
 
     // Shuffle all sites or only the current one
     bool all_sites;
-public:
+
+  public:
     // Constructor of Sequence_dna.
     // size: the size of the DNA sequence.
-    explicit Sequence_dna(unsigned const size) : nbr_sites{size}, codon_seq(size, 0),
-                                                 aa_fitness_profiles{0}, sel_coef{0}, proba_permutation{0.},
-                                                 all_sites{false} {
+    explicit Sequence_dna(unsigned const size)
+        : nbr_sites{size},
+          codon_seq(size, 0),
+          aa_fitness_profiles{0},
+          sel_coef{0},
+          proba_permutation{0.},
+          all_sites{false} {
         mutation_rate_matrix = Matrix4x4::Zero();
     }
 
@@ -123,17 +125,18 @@ public:
             protein[site] = Codon::amino_acids[Codon::codon_to_aa_array[codon_seq[site]]];
         }
 
-        return protein; // return the amino-acid sequence as a string.
+        return protein;  // return the amino-acid sequence as a string.
     }
 
     // Method computing the next substitution event to occur, and the time for it to happen.
-    // This method takes a time as input. If there is enough time given, the substitution event is computed.
-    // This method also returns the time (given as input) decremented by the time needed for the substitution event to occur.
-    // If there is not enough time given, no substitution event is computed and the method returns 0.
-    // time_left: The time available for a substitution event to occur.
+    // This method takes a time as input. If there is enough time given, the substitution event is
+    // computed. This method also returns the time (given as input) decremented by the time needed
+    // for the substitution event to occur. If there is not enough time given, no substitution event
+    // is computed and the method returns 0. time_left: The time available for a substitution event
+    // to occur.
     double next_substitution(double &time_left, vector<Substitution> &substitutions_vec) {
-
-        // Number of possible substitutions is 9 times the number of sites (3 substitutions for each 3 possible positions).
+        // Number of possible substitutions is 9 times the number of sites (3 substitutions for each
+        // 3 possible positions).
         unsigned nbr_substitutions{9 * nbr_sites};
 
         // Vector of substitution rates.
@@ -152,11 +155,11 @@ public:
             char codon_from = codon_seq[site];
 
             // Array of neighbors of the original codon (codons differing by only 1 mutation).
-            array<tuple<char, char, char>, 9> neighbors = Codon::codon_to_neighbors_array[codon_from];
+            array<tuple<char, char, char>, 9> neighbors =
+                Codon::codon_to_neighbors_array[codon_from];
 
             // For all possible neighbors.
             for (char neighbor{0}; neighbor < 9; neighbor++) {
-
                 // Codon after mutation, Nucleotide original and Nucleotide after mutation.
                 char codon_to{0}, n_from{0}, n_to{0};
                 tie(codon_to, n_from, n_to) = neighbors[neighbor];
@@ -166,21 +169,25 @@ public:
                 double rate_substitution{0.};
 
                 // If the mutated amino-acid is a stop codon, the rate of fixation is 0.
-                // Else, if the mutated and original amino-acids are non-synonymous, we compute the rate of fixation.
-                // Note that, if the mutated and original amino-acids are synonymous, the rate of fixation is 1.
+                // Else, if the mutated and original amino-acids are non-synonymous, we compute the
+                // rate of fixation. Note that, if the mutated and original amino-acids are
+                // synonymous, the rate of fixation is 1.
                 if (Codon::codon_to_aa_array[codon_to] == 20) {
                     rate_substitution = 0.;
-                } else if (Codon::codon_to_aa_array[codon_from] != Codon::codon_to_aa_array[codon_to]) {
+                } else if (Codon::codon_to_aa_array[codon_from] !=
+                           Codon::codon_to_aa_array[codon_to]) {
                     // Selective strength between the mutated and original amino-acids.
                     double s{0.};
                     s = aa_fitness_profiles[site][Codon::codon_to_aa_array[codon_to]];
                     s -= aa_fitness_profiles[site][Codon::codon_to_aa_array[codon_from]];
                     // If the selective strength is 0, the rate of fixation is neutral.
-                    // Else, the rate of fixation is computed using population genetic formulas (Kimura).
+                    // Else, the rate of fixation is computed using population genetic formulas
+                    // (Kimura).
                     if (fabs(s) <= Codon::epsilon) {
                         rate_substitution = mutation_rate_matrix(n_from, n_to);
                     } else {
-                        // The substitution rate is the mutation rate multiplied by the rate of fixation.
+                        // The substitution rate is the mutation rate multiplied by the rate of
+                        // fixation.
                         rate_substitution = mutation_rate_matrix(n_from, n_to) * s / (1 - exp(-s));
                     }
                     non_syn_opp_matrix(n_from, n_to) += mutation_rate_matrix(n_from, n_to);
@@ -193,31 +200,33 @@ public:
                 substitution_rates[9 * site + neighbor] = rate_substitution;
                 // Increment the sum of substitution rates
                 total_substitution_rates += rate_substitution;
-
             }
         }
 
         // Decrement the time by inverse of the sum of substitution rates.
         time_left -= 1. / total_substitution_rates;
 
-        // Substitute the sequence if the time is positive, else there is no substitution but the time left is set to 0.
+        // Substitute the sequence if the time is positive, else there is no substitution but the
+        // time left is set to 0.
         if (time_left > 0. and total_substitution_rates != 0.) {
-
-            discrete_distribution<unsigned> substitution_distr(substitution_rates.begin(), substitution_rates.end());
+            discrete_distribution<unsigned> substitution_distr(
+                substitution_rates.begin(), substitution_rates.end());
 
             unsigned index = substitution_distr(Codon::re);
             unsigned site = index / 9;
             char codom_from = codon_seq[site];
 
             // Array of neighbors of the original codon (codons differing by only 1 mutation).
-            array<tuple<char, char, char>, 9> neighbors = Codon::codon_to_neighbors_array[codom_from];
+            array<tuple<char, char, char>, 9> neighbors =
+                Codon::codon_to_neighbors_array[codom_from];
 
             // Codon after mutation, Nucleotide original and Nucleotide after mutation.
             char codon_to{0}, n_from{0}, n_to{0};
 
             tie(codon_to, n_from, n_to) = neighbors[index % 9];
 
-            Substitution sub = {site, codom_from, codon_to, n_from, n_to, non_syn_opp_matrix, syn_opp_matrix};
+            Substitution sub = {
+                site, codom_from, codon_to, n_from, n_to, non_syn_opp_matrix, syn_opp_matrix};
 
             if (non_syn_opp_matrix.sum() > 10e10 or syn_opp_matrix.sum() > 10e10) {
                 printf("Shit !!!!");
@@ -240,10 +249,11 @@ public:
                     if (all_sites) {
                         for (unsigned site_shuffle{0}; site_shuffle < nbr_sites; site_shuffle++) {
                             shuffle(aa_fitness_profiles[site_shuffle].begin(),
-                                    aa_fitness_profiles[site_shuffle].end(), Codon::re);
+                                aa_fitness_profiles[site_shuffle].end(), Codon::re);
                         }
                     } else {
-                        shuffle(aa_fitness_profiles[site].begin(), aa_fitness_profiles[site].end(), Codon::re);
+                        shuffle(aa_fitness_profiles[site].begin(), aa_fitness_profiles[site].end(),
+                            Codon::re);
                     }
                 }
             }
@@ -258,11 +268,10 @@ public:
 
     // Method computing all substitution event occurring during a given time-frame.
     // t: time during which substitution events occur (typically branch length).
-    // This method is o(n²) where n is the number of sites, but can take into account epistatic effects
+    // This method is o(n²) where n is the number of sites, but can take into account epistatic
+    // effects
     void run_substitutions(double t, vector<Substitution> &subs) {
-        while (t > 0) {
-            t = next_substitution(t, subs);
-        }
+        while (t > 0) { t = next_substitution(t, subs); }
     }
 
 
@@ -281,12 +290,13 @@ public:
             double codon_freq{1.};
 
             // For all nucleotides in the codon
-            for (auto &nuc: Codon::codon_to_triplet_array[codon]) {
+            for (auto &nuc : Codon::codon_to_triplet_array[codon]) {
                 codon_freq *= nuc_frequencies(nuc);
             }
 
             if (Codon::codon_to_aa_array[codon] != 20) {
-                codon_frequencies[codon] = codon_freq * exp(aa_fitness_profil[Codon::codon_to_aa_array[codon]]);
+                codon_frequencies[codon] =
+                    codon_freq * exp(aa_fitness_profil[Codon::codon_to_aa_array[codon]]);
             } else {
                 codon_frequencies[codon] = 0.;
             }
@@ -297,9 +307,7 @@ public:
         }
 
         // Normalize the vector of equilibrium frequencies.
-        for (char codon{0}; codon < 64; codon++) {
-            codon_frequencies[codon] /= total_frequencies;
-        }
+        for (char codon{0}; codon < 64; codon++) { codon_frequencies[codon] /= total_frequencies; }
 
         return codon_frequencies;
     };
@@ -329,9 +337,7 @@ public:
     }
 
     // Set attribute method for the mutation rate matrix.
-    void set_mutation_rate(Matrix4x4 const &mutation_rate) {
-        mutation_rate_matrix = mutation_rate;
-    }
+    void set_mutation_rate(Matrix4x4 const &mutation_rate) { mutation_rate_matrix = mutation_rate; }
 
     // Set attribute method for the amino-acid fitness profil.
     void set_fitness_profiles(vector<array<double, 20>> const &fitness_profiles) {
@@ -345,14 +351,10 @@ public:
     }
 
     // Set attribute method for wave boolean.
-    void set_sel_coef(double const s) {
-        sel_coef = s;
-    }
+    void set_sel_coef(double const s) { sel_coef = s; }
 
     // Set attribute method for wave boolean.
-    void set_bool_all_sites(bool const bool_all_sites) {
-        all_sites = bool_all_sites;
-    }
+    void set_bool_all_sites(bool const bool_all_sites) { all_sites = bool_all_sites; }
 
     // Theoretical computation of the predicted omega
     double predicted_omega(string const &source, string const &target, bool averaged = true) {
@@ -370,10 +372,8 @@ public:
             double dn{0.}, d0{0.};
             for (char codon_from{0}; codon_from < 64; codon_from++) {
                 if (Codon::codon_to_aa_array[codon_from] != 20) {
-
                     // For all possible neighbors.
-                    for (auto &neighbor: Codon::codon_to_neighbors_array[codon_from]) {
-
+                    for (auto &neighbor : Codon::codon_to_neighbors_array[codon_from]) {
                         // Codon after mutation, Nucleotide original and Nucleotide after mutation.
                         char codon_to{0}, n_from{0}, n_to{0};
                         tie(codon_to, n_from, n_to) = neighbor;
@@ -382,32 +382,36 @@ public:
                         size_t target_find = target.find(Codon::nucleotides[n_to]);
                         if (source_find != string::npos and target_find != string::npos) {
                             // If the mutated amino-acid is a stop codon, the rate of fixation is 0.
-                            // Else, if the mutated and original amino-acids are non-synonymous, we compute the rate of fixation.
-                            // Note that, if the mutated and original amino-acids are synonymous, the rate of fixation is 1.
+                            // Else, if the mutated and original amino-acids are non-synonymous, we
+                            // compute the rate of fixation. Note that, if the mutated and original
+                            // amino-acids are synonymous, the rate of fixation is 1.
                             if (Codon::codon_to_aa_array[codon_to] != 20 and
-                                Codon::codon_to_aa_array[codon_from] != Codon::codon_to_aa_array[codon_to]) {
+                                Codon::codon_to_aa_array[codon_from] !=
+                                    Codon::codon_to_aa_array[codon_to]) {
                                 // Selective strength between the mutated and original amino-acids.
                                 double s{0.};
                                 // Rate of fixation initialized to 1 (neutral mutation)
                                 double rate_fixation{1.};
 
                                 s = aa_fitness_profiles[site][Codon::codon_to_aa_array[codon_to]];
-                                s -= aa_fitness_profiles[site][Codon::codon_to_aa_array[codon_from]];
+                                s -=
+                                    aa_fitness_profiles[site][Codon::codon_to_aa_array[codon_from]];
                                 // If the selective strength is 0, the rate of fixation is neutral.
-                                // Else, the rate of fixation is computed using population genetic formulas (Kimura).
+                                // Else, the rate of fixation is computed using population genetic
+                                // formulas (Kimura).
                                 if (fabs(s) <= Codon::epsilon) {
                                     rate_fixation = 1;
                                 } else {
                                     rate_fixation = s / (1 - exp(-s));
                                 }
 
-                                dn += codon_freqs[codon_from] * mutation_rate_matrix(n_from, n_to) * rate_fixation;
+                                dn += codon_freqs[codon_from] * mutation_rate_matrix(n_from, n_to) *
+                                      rate_fixation;
                                 d0 += codon_freqs[codon_from] * mutation_rate_matrix(n_from, n_to);
                             }
                         }
                     }
                 }
-
             }
             dn_per_site[site] = dn;
             ds_per_site[site] = d0;
@@ -422,13 +426,11 @@ public:
 
     // Method returning the DNA string corresponding to the codon sequence.
     string get_dna_str() const {
-
         // The DNA string is 3 times larger than the codon sequence.
         string dna_str(nbr_sites * 3, ' ');
 
         // For each site of the sequence.
         for (unsigned site{0}; site < nbr_sites; site++) {
-
             // Assert there is no stop in the sequence.
             assert(Codon::codon_to_aa_array[codon_seq[site]] != 20);
 
@@ -438,47 +440,41 @@ public:
                 dna_str[3 * site + position] = Codon::nucleotides[triplet[position]];
             }
         }
-        return dna_str; // return the DNA sequence as a string.
+        return dna_str;  // return the DNA sequence as a string.
     }
 };
 
 
 // Class representing nodes of a tree.
 class Node {
-private:
-    string name;  // The species name of the node.
-    double length;  // The length of the branch attached to the node (ascending).
-    string newick;  // The newick tree descending from the node.
-    vector<Node> children;  // Vector of direct children (first order, no grand-children).
+  private:
+    string name;                // The species name of the node.
+    double length;              // The length of the branch attached to the node (ascending).
+    string newick;              // The newick tree descending from the node.
+    vector<Node> children;      // Vector of direct children (first order, no grand-children).
     Sequence_dna sequence_dna;  // The DNA sequence attached to the node.
-    vector<Substitution> substitutions;  // The number of substitutions in the branch attached to the node.
+    vector<Substitution>
+        substitutions;  // The number of substitutions in the branch attached to the node.
 
-public:
-
+  public:
     // Constructor
-    Node(string name, string const &len, string newick, Sequence_dna seq) :
-            name{move(name)}, length{stod(len)}, newick{move(newick)}, sequence_dna{move(seq)} {
-
+    Node(string name, string const &len, string newick, Sequence_dna seq)
+        : name{move(name)}, length{stod(len)}, newick{move(newick)}, sequence_dna{move(seq)} {
         // Parse the newick tree descending of the node.
         parse_newick();
     }
 
-    Node(string newick, unsigned const nbr_sites) :
-            name{"Root"}, length{0.}, newick{move(newick)}, sequence_dna(nbr_sites) {
-
+    Node(string newick, unsigned const nbr_sites)
+        : name{"Root"}, length{0.}, newick{move(newick)}, sequence_dna(nbr_sites) {
         // Parse the newick tree descending of the node.
         parse_newick();
     }
 
     // Is true if the node don't have children.
-    bool is_leaf() const {
-        return newick.length() == 0;
-    }
+    bool is_leaf() const { return newick.length() == 0; }
 
     // Add a node as the vector of children.
-    void add_child(Node const &node) {
-        children.push_back(node);
-    }
+    void add_child(Node const &node) { children.push_back(node); }
 
     // Recursively iterate through the subtree and count the number of nodes.
     double tot_length() {
@@ -486,9 +482,7 @@ public:
 
         if (!is_leaf()) {
             // Else, if the node is internal, iterate through the direct children.
-            for (auto &child : children) {
-                tot_length += child.tot_length();
-            }
+            for (auto &child : children) { tot_length += child.tot_length(); }
         }
         return tot_length;
     }
@@ -499,9 +493,7 @@ public:
 
         if (!is_leaf()) {
             // Else, if the node is internal, iterate through the direct children.
-            for (auto &child : children) {
-                nbr_nodes += child.nbr_nodes();
-            }
+            for (auto &child : children) { nbr_nodes += child.nbr_nodes(); }
         }
         return nbr_nodes;
     }
@@ -515,9 +507,7 @@ public:
             nbr_leaves = 1;
         } else {
             // Else, if the node is internal, iterate through the direct children.
-            for (auto &child : children) {
-                nbr_leaves += child.nbr_leaves();
-            }
+            for (auto &child : children) { nbr_leaves += child.nbr_leaves(); }
         }
         return nbr_leaves;
     }
@@ -572,9 +562,8 @@ public:
 
     // Set method for the parameters of evolution of the sequence
     void set_evolution_parameters(Matrix4x4 const &mutation_rate,
-                                  vector<array<double, 20>> const &fitness_profiles,
-                                  double const s,
-                                  double const proba_permutation, bool const all_sites) {
+        vector<array<double, 20>> const &fitness_profiles, double const s,
+        double const proba_permutation, bool const all_sites) {
         sequence_dna.set_mutation_rate(mutation_rate);
         sequence_dna.set_fitness_profiles(fitness_profiles);
         sequence_dna.set_sel_coef(s);
@@ -591,7 +580,7 @@ public:
     tuple<double, double> evolutionary_rates(string const &source, string const &target) {
         double dn{0}, ds{0};
 
-        for (auto &substitution: substitutions) {
+        for (auto &substitution : substitutions) {
             double non_syn_opp{0}, syn_opp{0};
             for (auto &dna_source : source) {
                 char nuc_source{Codon::nuc_to_index.at(dna_source)};
@@ -630,7 +619,8 @@ public:
         double dn{0}, ds{0};
         tie(dn, ds) = evolutionary_rates(source, target);
         if (ds == .0) {
-            cerr << "There is no synonymous substitutions generated by the simulation, dN/dS can't be computed!"
+            cerr << "There is no synonymous substitutions generated by the simulation, dN/dS can't "
+                    "be computed!"
                  << endl;
             return .0;
         } else {
@@ -639,24 +629,22 @@ public:
     }
 
     // Set the the DNA sequence to the mutation-selection equilibrium.
-    void at_equilibrium() {
-        sequence_dna.at_equilibrium();
-    }
+    void at_equilibrium() { sequence_dna.at_equilibrium(); }
 
     void parse_newick() {
-
         if (!is_leaf()) {
             // The size of the string of newick tree.
             size_t max_position{newick.size()};
             // The current position in the string of the newick tree.
             size_t position{0};
 
-            // While the current position is lower than the size of the string, their is at least one node to parse.
+            // While the current position is lower than the size of the string, their is at least
+            // one node to parse.
             while (position < max_position) {
-                // 'subtree' is the left hand side of the node name, it can be a subtree or nothing if the node is a leaf.
+                // 'subtree' is the left hand side of the node name, it can be a subtree or nothing
+                // if the node is a leaf.
                 string subtree{};
                 if (newick[position] == '(') {
-
                     size_t postpoint{position};
                     unsigned nbr_open{1};
 
@@ -729,16 +717,13 @@ vector<array<double, 20>> open_preferences(string const &file_name, double const
     getline(input_stream, line);
 
     while (getline(input_stream, line)) {
-
         array<double, 20> fitness_profil{0};
         string word;
         istringstream line_stream(line);
         unsigned counter{0};
 
         while (getline(line_stream, word, ' ')) {
-            if (counter > 2) {
-                fitness_profil[counter - 3] = beta * log(stod(word));
-            }
+            if (counter > 2) { fitness_profil[counter - 3] = beta * log(stod(word)); }
             counter++;
         }
 
@@ -753,7 +738,7 @@ string char_to_str(char const &_char) {
 }
 
 static char const USAGE[] =
-        R"(
+    R"(
 Usage:
       SimuEvol [--preferences=<file_path>] [--newick=<file_path>] [--output=<file_path>] [--mu=<0.5>] [--lambda=<3>] [--beta=<2.5>] [--s=<0.0>] [--p=<0.0>] [--a=<False>]
       SimuEvol --help
@@ -774,31 +759,21 @@ Options:
 )";
 
 int main(int argc, char *argv[]) {
-
-    auto args = docopt::docopt(USAGE,
-                               {argv + 1, argv + argc},
-                               true,              // show help if requested
-                               "SimuEvol 0.1");  // version string
+    auto args = docopt::docopt(USAGE, {argv + 1, argv + argc},
+        true,             // show help if requested
+        "SimuEvol 0.1");  // version string
 
     string preferences_path{"../data_prefs/np.txt"};
-    if (args["--preferences"]) {
-        preferences_path = args["--preferences"].asString();
-    }
+    if (args["--preferences"]) { preferences_path = args["--preferences"].asString(); }
 
     string newick_path{"../data_trees/np.newick"};
-    if (args["--newick"]) {
-        newick_path = args["--newick"].asString();
-    }
+    if (args["--newick"]) { newick_path = args["--newick"].asString(); }
 
     string output_path{"../data_alignment/np"};
-    if (args["--output"]) {
-        output_path = args["--output"].asString();
-    }
+    if (args["--output"]) { output_path = args["--output"].asString(); }
 
     double beta = 2.5;
-    if (args["--beta"]) {
-        beta = stod(args["--beta"].asString());
-    }
+    if (args["--beta"]) { beta = stod(args["--beta"].asString()); }
     vector<array<double, 20>> fitness_profiles = open_preferences(preferences_path, beta);
     auto nbr_sites = static_cast<unsigned>(fitness_profiles.size());
 
@@ -806,18 +781,11 @@ int main(int argc, char *argv[]) {
     Node root(newick_tree, nbr_sites);
 
     double mu = 2.5;
-    if (args["--mu"]) {
-        mu = stod(args["--mu"].asString());
-    }
+    if (args["--mu"]) { mu = stod(args["--mu"].asString()); }
     double lambda = 5.0;
-    if (args["--lambda"]) {
-        lambda = stod(args["--lambda"].asString());
-    }
+    if (args["--lambda"]) { lambda = stod(args["--lambda"].asString()); }
     Matrix4x4 mutation_rate;
-    mutation_rate << 0, 1, 1, lambda,
-            lambda, 0, 1, lambda,
-            lambda, 1, 0, lambda,
-            lambda, 1, 1, 0;
+    mutation_rate << 0, 1, 1, lambda, lambda, 0, 1, lambda, lambda, 1, 0, lambda, lambda, 1, 1, 0;
     mutation_rate = normalize_submatrix(mutation_rate);
 
     mutation_rate *= mu;
@@ -835,8 +803,7 @@ int main(int argc, char *argv[]) {
     ofstream txt_file;
     txt_file.open(output_path + ".txt");
     txt_file << "The tree contains " << root.nbr_nodes() << " nodes for " << root.nbr_leaves()
-             << " species at the tips."
-             << endl;
+             << " species at the tips." << endl;
     txt_file << "The tree has a total branch length of " << root.tot_length() << "." << endl;
     txt_file << "The DNA sequence is " << nbr_sites * 3 << " base pairs long." << endl;
     txt_file << "The mutation transition matrix (" << Codon::nucleotides << ") is: " << endl;
@@ -844,19 +811,13 @@ int main(int argc, char *argv[]) {
 
 
     double s = 10.0;
-    if (args["--s"]) {
-        s = stod(args["--s"].asString());
-    }
+    if (args["--s"]) { s = stod(args["--s"].asString()); }
 
     double p = 0.0;
-    if (args["--p"]) {
-        p = stod(args["--p"].asString());
-    }
+    if (args["--p"]) { p = stod(args["--p"].asString()); }
 
     bool all_sites = false;
-    if (args["--a"]) {
-        all_sites = (args["--a"].asString() == "True");
-    }
+    if (args["--a"]) { all_sites = (args["--a"].asString() == "True"); }
 
     txt_file << "s=" << s << endl;
     txt_file << "all_sites=" << all_sites << endl;
@@ -864,8 +825,10 @@ int main(int argc, char *argv[]) {
 
     root.set_evolution_parameters(mutation_rate, fitness_profiles, s, p, all_sites);
 
-    txt_file << "w0=" << root.predicted_omega(Codon::nucleotides, Codon::nucleotides, false) << endl;
-    txt_file << "<w0>=" << root.predicted_omega(Codon::nucleotides, Codon::nucleotides, true) << endl;
+    txt_file << "w0=" << root.predicted_omega(Codon::nucleotides, Codon::nucleotides, false)
+             << endl;
+    txt_file << "<w0>=" << root.predicted_omega(Codon::nucleotides, Codon::nucleotides, true)
+             << endl;
     txt_file.close();
 
     root.at_equilibrium();
@@ -876,41 +839,45 @@ int main(int argc, char *argv[]) {
 
     // .txt output
     txt_file.open(output_path + ".txt", ios_base::app);
-    txt_file << "The simulation mapped " << nbr_synonymous + nbr_non_synonymous << " substitutions along the tree."
-             << endl;
-    txt_file << "On average, this is " << static_cast<double>(nbr_synonymous + nbr_non_synonymous) / nbr_sites
+    txt_file << "The simulation mapped " << nbr_synonymous + nbr_non_synonymous
+             << " substitutions along the tree." << endl;
+    txt_file << "On average, this is "
+             << static_cast<double>(nbr_synonymous + nbr_non_synonymous) / nbr_sites
              << " substitutions per site." << endl;
-    txt_file << nbr_synonymous << " synonymous and " << nbr_non_synonymous << " non-synonymous substitutions." << endl;
+    txt_file << nbr_synonymous << " synonymous and " << nbr_non_synonymous
+             << " non-synonymous substitutions." << endl;
     txt_file << "w=" << root.simulated_omega(Codon::nucleotides, Codon::nucleotides) << endl;
 
-/*
-    string weak_strong = "WS";
-    map<char, string> const WS_map{{'W', "AT"},
-                                   {'S', "GC"}};
-    for (auto subset_from : weak_strong) {
-        for (auto subset_to : weak_strong) {
-            txt_file << "w0_" << subset_from << subset_to << "="
-                     << root.predicted_omega(WS_map.at(subset_from), WS_map.at(subset_to), false) << endl;
-            txt_file << "<w0>_" << subset_from << subset_to << "="
-                     << root.predicted_omega(WS_map.at(subset_from), WS_map.at(subset_to), true) << endl;
-            txt_file << "w_" << subset_from << subset_to << "="
-                     << root.simulated_omega(WS_map.at(subset_from), WS_map.at(subset_to)) << endl;
-        }
-    }
-
-    for (auto nuc_from : Codon::nucleotides) {
-        for (auto nuc_to : Codon::nucleotides) {
-            if (nuc_from != nuc_to) {
-                txt_file << "w0_" << nuc_from << nuc_to << "="
-                         << root.predicted_omega(char_to_str(nuc_from), char_to_str(nuc_to), false) << endl;
-                txt_file << "<w0>_" << nuc_from << nuc_to << "="
-                         << root.predicted_omega(char_to_str(nuc_from), char_to_str(nuc_to), true) << endl;
-                txt_file << "w_" << nuc_from << nuc_to << "="
-                         << root.simulated_omega(char_to_str(nuc_from), char_to_str(nuc_to)) << endl;
+    /*
+        string weak_strong = "WS";
+        map<char, string> const WS_map{{'W', "AT"},
+                                       {'S', "GC"}};
+        for (auto subset_from : weak_strong) {
+            for (auto subset_to : weak_strong) {
+                txt_file << "w0_" << subset_from << subset_to << "="
+                         << root.predicted_omega(WS_map.at(subset_from), WS_map.at(subset_to),
+       false) << endl; txt_file << "<w0>_" << subset_from << subset_to << "="
+                         << root.predicted_omega(WS_map.at(subset_from), WS_map.at(subset_to), true)
+       << endl; txt_file << "w_" << subset_from << subset_to << "="
+                         << root.simulated_omega(WS_map.at(subset_from), WS_map.at(subset_to)) <<
+       endl;
             }
         }
-    }
-*/
+
+        for (auto nuc_from : Codon::nucleotides) {
+            for (auto nuc_to : Codon::nucleotides) {
+                if (nuc_from != nuc_to) {
+                    txt_file << "w0_" << nuc_from << nuc_to << "="
+                             << root.predicted_omega(char_to_str(nuc_from), char_to_str(nuc_to),
+       false) << endl; txt_file << "<w0>_" << nuc_from << nuc_to << "="
+                             << root.predicted_omega(char_to_str(nuc_from), char_to_str(nuc_to),
+       true) << endl; txt_file << "w_" << nuc_from << nuc_to << "="
+                             << root.simulated_omega(char_to_str(nuc_from), char_to_str(nuc_to)) <<
+       endl;
+                }
+            }
+        }
+    */
 
     txt_file.close();
 

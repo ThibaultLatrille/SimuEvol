@@ -1,8 +1,8 @@
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <random>
-#include <fstream>
 #include <set>
-#include <iomanip>
 
 using namespace std;
 
@@ -16,56 +16,49 @@ normal_distribution<double> normal_distr(0.0, 1.0);
 uniform_int_distribution<u_long> chr_distr(0, 1);
 
 double distance(vector<double> const &v) {
-    return sqrt(accumulate(v.begin(), v.end(), 0.0, [](double a, double const &b) { return a + b * b; }));
+    return sqrt(
+        accumulate(v.begin(), v.end(), 0.0, [](double a, double const &b) { return a + b * b; }));
 }
 
 vector<double> spherical_coord(u_long n, double radius) {
     vector<double> coord(n, 0);
 
-    for (int i = 0; i < n; ++i) {
-        coord[i] = normal_distr(generator);
-    }
+    for (int i = 0; i < n; ++i) { coord[i] = normal_distr(generator); }
 
     double norm = radius / distance(coord);
 
-    for (int i = 0; i < n; ++i) {
-        coord[i] *= norm;
-    }
+    for (int i = 0; i < n; ++i) { coord[i] *= norm; }
     return coord;
 }
 
 // Mean of a vector
-double mean(vector<double> const &v) {
-    return accumulate(v.begin(), v.end(), 0.0) / v.size();
-}
+double mean(vector<double> const &v) { return accumulate(v.begin(), v.end(), 0.0) / v.size(); }
 
 // Variance of a vector
 double var(vector<double> const &v) {
-    double s2 = accumulate(v.begin(), v.end(), 0.0, [](double a, double const &b) { return a + b * b; }) / v.size();
+    double s2 = accumulate(v.begin(), v.end(), 0.0, [](double a, double const &b) {
+        return a + b * b;
+    }) / v.size();
     double s = mean(v);
     return s2 - s * s;
 }
 
 class Chromosome {
-public:
+  public:
     vector<double> phenotype;
 
     explicit Chromosome() = default;
 
-    explicit Chromosome(u_long n, double radius) {
-        phenotype = spherical_coord(n, radius);
-    };
+    explicit Chromosome(u_long n, double radius) { phenotype = spherical_coord(n, radius); };
 
     void add_mutation(vector<double> &mut) {
         assert(mut.size() == phenotype.size());
-        for (int i = 0; i < mut.size(); ++i) {
-            phenotype[i] += mut[i];
-        }
+        for (int i = 0; i < mut.size(); ++i) { phenotype[i] += mut[i]; }
     };
 };
 
 class Being {
-public:
+  public:
     vector<Chromosome> genome;
     double fitness{1.0};
     double d{0.0};
@@ -99,10 +92,8 @@ public:
 
     void update_fitness() {
         vector<double> p(n, 0.0);
-        for (auto const &chr: genome) {
-            for (int i = 0; i < n; ++i) {
-                p[i] += chr.phenotype[i];
-            }
+        for (auto const &chr : genome) {
+            for (int i = 0; i < n; ++i) { p[i] += chr.phenotype[i]; }
         }
         d = distance(p);
         fitness = exp(-a * pow(d, q));
@@ -130,8 +121,7 @@ public:
 };
 
 class Population {
-public:
-
+  public:
     // Parameters
     u_long population_size{100};
     u_long elapsed{0};
@@ -144,16 +134,13 @@ public:
     };
 
     void mutation() {
-        for (auto &being: beings) {
-            being.mutation();
-        }
+        for (auto &being : beings) { being.mutation(); }
     };
 
     void selection() {
         vector<double> fitness_beings(beings.size(), 0.0);
-        transform(beings.begin(), beings.end(), fitness_beings.begin(), [](Being &b) {
-            return b.fitness;
-        });
+        transform(beings.begin(), beings.end(), fitness_beings.begin(),
+            [](Being &b) { return b.fitness; });
         discrete_distribution<u_long> parent_distr(fitness_beings.begin(), fitness_beings.end());
 
         vector<Being> next_beings;
@@ -161,9 +148,7 @@ public:
         for (u_long i_being{0}; i_being < beings.size(); i_being++) {
             u_long mum = parent_distr(generator);
             u_long dad = mum;
-            while (dad == mum) {
-                dad = parent_distr(generator);
-            }
+            while (dad == mum) { dad = parent_distr(generator); }
             next_beings.emplace_back(Being(beings[mum], beings[dad]));
         }
         beings = move(next_beings);
@@ -177,15 +162,14 @@ public:
         for (u_long i_being{0}; i_being < beings.size(); i_being++) {
             u_long mum = parent_distr(generator);
             u_long dad = mum;
-            while (dad == mum) {
-                dad = parent_distr(generator);
-            }
+            while (dad == mum) { dad = parent_distr(generator); }
             next_beings.emplace_back(Being(beings[mum], beings[dad]));
         }
         beings = move(next_beings);
     };
 
-    void run(string &output_filename, u_long nbr_intervals, u_long interval_length, u_long relax_time) {
+    void run(
+        string &output_filename, u_long nbr_intervals, u_long interval_length, u_long relax_time) {
         // Run under selection
         cout << "Running under selection" << endl;
         output_state(output_filename);
@@ -220,31 +204,25 @@ public:
         vector<double> fitnesses(population_size, 0);
         vector<double> distances(population_size, 0);
 
-        transform(beings.begin(), beings.end(), fitnesses.begin(), [](Being const &b) {
-            return b.fitness;
-        });
-        transform(beings.begin(), beings.end(), distances.begin(), [](Being const &b) {
-            return b.d;
-        });
+        transform(beings.begin(), beings.end(), fitnesses.begin(),
+            [](Being const &b) { return b.fitness; });
+        transform(
+            beings.begin(), beings.end(), distances.begin(), [](Being const &b) { return b.d; });
 
         sort(fitnesses.begin(), fitnesses.end());
         sort(distances.begin(), distances.end());
 
         double f_tot = accumulate(fitnesses.begin(), fitnesses.end(), 0.0);
         double entropy = 0;
-        for (auto const &f: fitnesses) {
-            entropy += f * log(f / f_tot);
-        }
+        for (auto const &f : fitnesses) { entropy += f * log(f / f_tot); }
         entropy = exp(-entropy / f_tot) / fitnesses.size();
 
         auto min_over_max = max_element(fitnesses.begin(), fitnesses.end());
-        
+
         vector<double> p(Being::n, 0.0);
-        for (auto const &being: beings) {
-            for (auto const &chr: being.genome) {
-                for (int i = 0; i < Being::n; ++i) {
-                    p[i] += chr.phenotype[i];
-                }
+        for (auto const &being : beings) {
+            for (auto const &chr : being.genome) {
+                for (int i = 0; i < Being::n; ++i) { p[i] += chr.phenotype[i]; }
             }
         }
         double d = distance(p);
@@ -279,7 +257,7 @@ double Being::a = 0;
 double Being::q = 0;
 
 static char const USAGE[] =
-        R"(
+    R"(
 Usage:
       SimuRelax [--pop_size=<100>] [--k=<23>] [--mu=<1e-3>] [--r=<1e-3>] [--n=<10>] [--m=<10>] [--a=<0.5>] [--q=<2.0>] [--output=<path>]
       SimuRelax --help
@@ -301,40 +279,29 @@ Options:
 )";
 
 int main(int argc, char *argv[]) {
-
-    auto args = docopt::docopt(USAGE,
-                               {argv + 1, argv + argc},
-                               true,              // show help if requested
-                               "SimuRelax 0.1");  // version string
+    auto args = docopt::docopt(USAGE, {argv + 1, argv + argc},
+        true,              // show help if requested
+        "SimuRelax 0.1");  // version string
 
     u_long pop_size = 100;
-    if (args["--pop_size"]) {
-        pop_size = static_cast<u_long>(args["--pop_size"].asLong());
-    }
+    if (args["--pop_size"]) { pop_size = static_cast<u_long>(args["--pop_size"].asLong()); }
     cout << "Population of " << pop_size << " individuals." << endl;
 
     Being::k = 23;
-    if (args["--k"]) {
-        Being::k = static_cast<u_long>(args["--k"].asLong());
-    }
+    if (args["--k"]) { Being::k = static_cast<u_long>(args["--k"].asLong()); }
     cout << "Each individual has " << Being::k << " pairs of chromosomes." << endl;
 
     Being::mu = 10.0;
-    if (args["--mu"]) {
-        Being::mu = stod(args["--mu"].asString());
-    }
+    if (args["--mu"]) { Being::mu = stod(args["--mu"].asString()); }
     cout << "Each individual has on average " << Being::mu << " mutations per generations." << endl;
 
     Being::r = 1e-2;
-    if (args["--r"]) {
-        Being::r = stod(args["--r"].asString());
-    }
-    cout << "Each mutation move the phenotype at a distance " << Being::r << " from the parent." << endl;
+    if (args["--r"]) { Being::r = stod(args["--r"].asString()); }
+    cout << "Each mutation move the phenotype at a distance " << Being::r << " from the parent."
+         << endl;
 
     Being::n = 10;
-    if (args["--n"]) {
-        Being::n = static_cast<u_long>(args["--n"].asLong());
-    }
+    if (args["--n"]) { Being::n = static_cast<u_long>(args["--n"].asLong()); }
     cout << "The phenotypic space is of dimension " << Being::n << "." << endl;
 
     Being::m = Being::n;
@@ -345,15 +312,11 @@ int main(int argc, char *argv[]) {
     cout << "Each mutation has a pleiotropic effect on " << Being::m << " dimensions." << endl;
 
     Being::a = 0.5;
-    if (args["--a"]) {
-        Being::a = stod(args["--a"].asString());
-    }
+    if (args["--a"]) { Being::a = stod(args["--a"].asString()); }
     cout << "The flatness of the fitness function is " << Being::a << "." << endl;
 
     Being::q = 3.0;
-    if (args["--q"]) {
-        Being::q = stod(args["--q"].asString());
-    }
+    if (args["--q"]) { Being::q = stod(args["--q"].asString()); }
     cout << "The epistasis of the fitness function is " << Being::q << "." << endl;
 
     u_long nbr_intervals = 10;
@@ -361,12 +324,10 @@ int main(int argc, char *argv[]) {
     u_long relax_length = 100;
 
     string path{"SimuRelaxOutput"};
-    if (args["--output"]) {
-        path = args["--output"].asString();
-    }
-    path += "/" + to_string(pop_size) + "_" + to_string(Being::k) + "_" + to_string(Being::mu) + "_" +
-            to_string(Being::r) + "_" + to_string(Being::n) + "_" + to_string(Being::m) + "_" + to_string(Being::a) +
-            "_" + to_string(Being::q);
+    if (args["--output"]) { path = args["--output"].asString(); }
+    path += "/" + to_string(pop_size) + "_" + to_string(Being::k) + "_" + to_string(Being::mu) +
+            "_" + to_string(Being::r) + "_" + to_string(Being::n) + "_" + to_string(Being::m) +
+            "_" + to_string(Being::a) + "_" + to_string(Being::q);
     cout << "The data will be written in " << path << endl;
 
 
