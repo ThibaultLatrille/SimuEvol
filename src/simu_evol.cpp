@@ -1,18 +1,17 @@
 #include <fstream>
 #include <iostream>
 #include <random>
-#include "codon.hpp"
-
-using namespace std;
-
 #include "Eigen/Dense"
+#include "argparse.hpp"
+#include "codon.hpp"
+#include "statistic.hpp"
+#include "tree.hpp"
+
+using namespace TCLAP;
+using namespace std;
 
 typedef Eigen::Matrix<double, 4, 4> Matrix4x4;
 typedef Eigen::Matrix<double, 4, 1> Vector4x1;
-
-#define DOCOPT_HEADER_ONLY
-
-#include "docopt.cpp/docopt.h"
 
 struct Substitution {
     unsigned site{0};
@@ -23,19 +22,6 @@ struct Substitution {
     Matrix4x4 non_syn_opp_matrix;
     Matrix4x4 syn_opp_matrix;
 };
-
-// Function for sum
-double sum(vector<double> &v) { return accumulate(v.begin(), v.end(), 0.0); }
-
-// Function for average
-double avg(vector<double> &v) { return sum(v) / v.size(); }
-
-// Function for variance
-double variance(vector<double> &v) {
-    double v_squarred =
-        accumulate(v.begin(), v.end(), 0.0, [](double a, double b) { return a + pow(b, 2); });
-    return (v_squarred / v.size()) - pow(avg(v), 2);
-}
 
 bool is_synonymous(Substitution const &s) {
     return (Codon::codon_to_aa_array[s.codon_from] == Codon::codon_to_aa_array[s.codon_to]);
@@ -105,14 +91,16 @@ class Sequence_dna {
   public:
     // Constructor of Sequence_dna.
     // size: the size of the DNA sequence.
-    explicit Sequence_dna(unsigned const size)
-        : nbr_sites{size},
-          codon_seq(size, 0),
-          aa_fitness_profiles{0},
-          sel_coef{0},
-          proba_permutation{0.},
-          all_sites{false} {
-        mutation_rate_matrix = Matrix4x4::Zero();
+    explicit Sequence_dna(Matrix4x4 const &mutation_rate,
+        vector<array<double, 20>> const &fitness_profiles, double const s,
+        double const proba_permutation, bool const all_sites)
+        : nbr_sites{static_cast<unsigned>(fitness_profiles.size())},
+          codon_seq(nbr_sites, 0),
+          aa_fitness_profiles{fitness_profiles},
+          sel_coef{s},
+          proba_permutation{proba_permutation},
+          all_sites{all_sites} {
+        mutation_rate_matrix = mutation_rate;
     }
 
     // Method translating the codon sequence to amino-acid sequence.
@@ -326,36 +314,6 @@ class Sequence_dna {
         }
     }
 
-    // Set attribute method for the codon sequence.
-    void set_parameters(Sequence_dna const &sequence_dna) {
-        codon_seq = sequence_dna.codon_seq;
-        mutation_rate_matrix = sequence_dna.mutation_rate_matrix;
-        aa_fitness_profiles = sequence_dna.aa_fitness_profiles;
-        proba_permutation = sequence_dna.proba_permutation;
-        sel_coef = sequence_dna.sel_coef;
-        all_sites = sequence_dna.all_sites;
-    }
-
-    // Set attribute method for the mutation rate matrix.
-    void set_mutation_rate(Matrix4x4 const &mutation_rate) { mutation_rate_matrix = mutation_rate; }
-
-    // Set attribute method for the amino-acid fitness profil.
-    void set_fitness_profiles(vector<array<double, 20>> const &fitness_profiles) {
-        assert(nbr_sites == fitness_profiles.size());
-        aa_fitness_profiles = fitness_profiles;
-    }
-
-    // Set attribute method for the mutation rate matrix.
-    void set_proba_permutation(double const proba_randomize) {
-        proba_permutation = proba_randomize;
-    }
-
-    // Set attribute method for wave boolean.
-    void set_sel_coef(double const s) { sel_coef = s; }
-
-    // Set attribute method for wave boolean.
-    void set_bool_all_sites(bool const bool_all_sites) { all_sites = bool_all_sites; }
-
     // Theoretical computation of the predicted omega
     double predicted_omega(string const &source, string const &target, bool averaged = true) {
         vector<double> omega_per_site(nbr_sites, 0.);
@@ -445,71 +403,17 @@ class Sequence_dna {
 };
 
 
-// Class representing nodes of a tree.
-class Node {
+class Process {
   private:
-    string name;                // The species name of the node.
-    double length;              // The length of the branch attached to the node (ascending).
-    string newick;              // The newick tree descending from the node.
-    vector<Node> children;      // Vector of direct children (first order, no grand-children).
-    Sequence_dna sequence_dna;  // The DNA sequence attached to the node.
-    vector<Substitution>
-        substitutions;  // The number of substitutions in the branch attached to the node.
+    const Tree &tree;
+    vector<Sequence_dna *> sequences;    // Vector of sequence DNA.
+    vector<Substitution> substitutions;  // The number of substitutions.
 
   public:
     // Constructor
-    Node(string name, string const &len, string newick, Sequence_dna seq)
-        : name{move(name)}, length{stod(len)}, newick{move(newick)}, sequence_dna{move(seq)} {
-        // Parse the newick tree descending of the node.
-        parse_newick();
-    }
-
-    Node(string newick, unsigned const nbr_sites)
-        : name{"Root"}, length{0.}, newick{move(newick)}, sequence_dna(nbr_sites) {
-        // Parse the newick tree descending of the node.
-        parse_newick();
-    }
-
-    // Is true if the node don't have children.
-    bool is_leaf() const { return newick.length() == 0; }
-
-    // Add a node as the vector of children.
-    void add_child(Node const &node) { children.push_back(node); }
-
-    // Recursively iterate through the subtree and count the number of nodes.
-    double tot_length() {
-        double tot_length = length;
-
-        if (!is_leaf()) {
-            // Else, if the node is internal, iterate through the direct children.
-            for (auto &child : children) { tot_length += child.tot_length(); }
-        }
-        return tot_length;
-    }
-
-    // Recursively iterate through the subtree and count the number of nodes.
-    unsigned nbr_nodes() {
-        unsigned nbr_nodes = 1;
-
-        if (!is_leaf()) {
-            // Else, if the node is internal, iterate through the direct children.
-            for (auto &child : children) { nbr_nodes += child.nbr_nodes(); }
-        }
-        return nbr_nodes;
-    }
-
-    // Recursively iterate through the subtree and count the number of leaves.
-    unsigned nbr_leaves() {
-        unsigned nbr_leaves = 0;
-
-        if (is_leaf()) {
-            // If the node is a leaf, return 1.
-            nbr_leaves = 1;
-        } else {
-            // Else, if the node is internal, iterate through the direct children.
-            for (auto &child : children) { nbr_leaves += child.nbr_leaves(); }
-        }
-        return nbr_leaves;
+    Process(const Tree &intree, Sequence_dna &root_seq) : tree{intree}, sequences() {
+        sequences.resize(tree.nb_nodes());
+        sequences[tree.root()] = &root_seq;
     }
 
     // Recursively iterate through the subtree and count the number of substitutions.
@@ -519,61 +423,38 @@ class Node {
         nbr_syn = count_if(substitutions.begin(), substitutions.end(), is_synonymous);
         nbr_non_syn = substitutions.size() - nbr_syn;
 
-        if (!is_leaf()) {
-            // Else, if the node is internal, iterate through the direct children.
-            for (auto &child : children) {
-                long child_nbr_syn{0}, child_nbr_non_syn{0};
-                tie(child_nbr_non_syn, child_nbr_syn) = child.nbr_substitutions();
-                nbr_non_syn += child_nbr_non_syn;
-                nbr_syn += child_nbr_syn;
-            }
-        }
         return make_tuple(nbr_non_syn, nbr_syn);
     }
 
-    // Recursively iterate through the subtree.
-    void traverse(string &output_filename) {
-        // Substitutions of the DNA sequence is generated.
-        sequence_dna.run_substitutions(length, substitutions);
+    void run(string output_filename) { run_recursive(tree.root(), output_filename); }
 
-        if (is_leaf()) {
+    // Recursively iterate through the subtree.
+    void run_recursive(Tree::NodeIndex node, string output_filename) {
+        // Substitutions of the DNA sequence is generated.
+        sequences[node]->run_substitutions(tree.node_length(node), substitutions);
+
+        if (tree.is_leaf(node)) {
             // If the node is a leaf, output the DNA sequence and name.
-            string dna_str = sequence_dna.get_dna_str();
+            string dna_str = sequences[node]->get_dna_str();
 
             // .ali format
             ofstream ali_file;
             ali_file.open(output_filename + ".ali", ios_base::app);
-            ali_file << name << " " << dna_str << endl;
+            ali_file << tree.node_name(node) << " " << dna_str << endl;
             ali_file.close();
 
             // .fasta format
             ofstream fasta_file;
             fasta_file.open(output_filename + ".fasta", ios_base::app);
-            fasta_file << ">" << name << endl << dna_str << endl;
+            fasta_file << ">" << tree.node_name(node) << endl << dna_str << endl;
             fasta_file.close();
         } else {
             // If the node is internal, iterate through the direct children.
-            for (auto &child : children) {
-                child.sequence_dna.set_parameters(sequence_dna);
-                child.traverse(output_filename);
+            for (auto &child : tree.children(node)) {
+                sequences[child] = new Sequence_dna(*sequences[node]);
+                run_recursive(child, output_filename);
             }
         }
-    }
-
-    // Set method for the parameters of evolution of the sequence
-    void set_evolution_parameters(Matrix4x4 const &mutation_rate,
-        vector<array<double, 20>> const &fitness_profiles, double const s,
-        double const proba_permutation, bool const all_sites) {
-        sequence_dna.set_mutation_rate(mutation_rate);
-        sequence_dna.set_fitness_profiles(fitness_profiles);
-        sequence_dna.set_sel_coef(s);
-        sequence_dna.set_proba_permutation(proba_permutation);
-        sequence_dna.set_bool_all_sites(all_sites);
-    }
-
-    // Theoretical prediction of omega from the parameters of the simulation
-    double predicted_omega(string const &source, string const &target, bool average) {
-        return sequence_dna.predicted_omega(source, target, average);
     }
 
     // Recursively iterate through the subtree and count the number of substitutions.
@@ -601,16 +482,6 @@ class Node {
                 }
             }
         }
-
-        if (!is_leaf()) {
-            // Else, if the node is internal, iterate through the direct children.
-            for (auto &child : children) {
-                double dn_child{0.}, ds_child{0.};
-                tie(dn_child, ds_child) = child.evolutionary_rates(source, target);
-                dn += dn_child;
-                ds += ds_child;
-            }
-        }
         return make_tuple(dn, ds);
     }
 
@@ -627,172 +498,62 @@ class Node {
             return dn / ds;
         }
     }
-
-    // Set the the DNA sequence to the mutation-selection equilibrium.
-    void at_equilibrium() { sequence_dna.at_equilibrium(); }
-
-    void parse_newick() {
-        if (!is_leaf()) {
-            // The size of the string of newick tree.
-            size_t max_position{newick.size()};
-            // The current position in the string of the newick tree.
-            size_t position{0};
-
-            // While the current position is lower than the size of the string, their is at least
-            // one node to parse.
-            while (position < max_position) {
-                // 'subtree' is the left hand side of the node name, it can be a subtree or nothing
-                // if the node is a leaf.
-                string subtree{};
-                if (newick[position] == '(') {
-                    size_t postpoint{position};
-                    unsigned nbr_open{1};
-
-                    for (size_t i{position + 1}; i < max_position; i++) {
-                        if (nbr_open == 0) {
-                            postpoint = i;
-                            break;
-                        } else if (newick[i] == '(') {
-                            nbr_open++;
-                        } else if (newick[i] == ')') {
-                            nbr_open--;
-                        };
-                    }
-                    subtree = newick.substr(position + 1, postpoint - position - 2);
-                    position = postpoint;
-                }
-
-                // 'name_suffix' contains the name of the node and the branch length.
-                string name_suffix{};
-
-                size_t next_sep = newick.substr(position).find(',');
-                if (next_sep == string::npos) {
-                    name_suffix = newick.substr(position);
-                    position = max_position;
-                } else {
-                    name_suffix = newick.substr(position, next_sep);
-                    position = position + next_sep + 1;
-                }
-
-                // 'length' contains the name of the node.
-                string length{};
-                // 'name' contains the branch length of the node.
-                string name{};
-                size_t ddot = name_suffix.rfind(':');
-                if (ddot != string::npos) {
-                    length = name_suffix.substr(ddot + 1);
-                    name = name_suffix.substr(0, ddot);
-                } else {
-                    name = name_suffix;
-                    length = "0";
-                }
-
-                // New node from 'subtree', 'name' and 'length' using the DNA sequence of this node.
-                add_child(Node(name, length, subtree, sequence_dna));
-            }
-        }
-    }
 };
 
+class SimuRelaxArgParse : public SimuArgParse {
+  public:
+    explicit SimuRelaxArgParse(CmdLine &cmd) : SimuArgParse(cmd) {}
 
-string open_newick(string const &file_name) {
-    ifstream input_stream(file_name);
-    if (!input_stream) cerr << "Can't open newick file!" << endl;
-
-    string line;
-    getline(input_stream, line);
-
-    return line;
-}
-
-vector<array<double, 20>> open_preferences(string const &file_name, double const &beta) {
-    vector<array<double, 20>> fitness_profiles{0};
-
-    ifstream input_stream(file_name);
-    if (!input_stream) cerr << "Can't open preferences file!" << endl;
-
-    string line;
-
-    // skip the header of the file
-    getline(input_stream, line);
-
-    while (getline(input_stream, line)) {
-        array<double, 20> fitness_profil{0};
-        string word;
-        istringstream line_stream(line);
-        unsigned counter{0};
-
-        while (getline(line_stream, word, ' ')) {
-            if (counter > 2) { fitness_profil[counter - 3] = beta * log(stod(word)); }
-            counter++;
-        }
-
-        fitness_profiles.push_back(fitness_profil);
-    }
-    return fitness_profiles;
-}
-
-string char_to_str(char const &_char) {
-    string _str(1, _char);
-    return _str;
-}
-
-static char const USAGE[] =
-    R"(
-Usage:
-      SimuEvol [--preferences=<file_path>] [--newick=<file_path>] [--output=<file_path>] [--mu=<0.5>] [--lambda=<3>] [--beta=<2.5>] [--s=<0.0>] [--p=<0.0>] [--a=<False>]
-      SimuEvol --help
-      SimuEvol --version
-
-Options:
--h --help                    show this help message and exit
---version                    show version and exit
---preferences=<file_path>    specify input site-specific preferences file [default: ../data/gal4.txt]
---newick=<file_path>         specify input newick tree [default: ../data/gal4.newick]
---output=<file_path>         specify output protein name [default: ../data/gal4]
---mu=<0.5>                   specify the mutation rate [default: 0.5]
---lambda=<3>                 specify the strong to weak mutation bias [default: 3]
---beta=<1.0>                 specify the strength of selection [default: 1.0]
---s=<0.0>                    specify the selection coefficient against the current amino-acid [default: 0.0]
---p=<0.0>                    specify the probability to randomize the fitness landscape [default: 0.0]
---a=<False>                  all sites are affected by the random shuffling [default: false]
-)";
+    TCLAP::ValueArg<double> mu{"m", "mu", "Mutation rate", false, 2.5, "double", cmd};
+    TCLAP::ValueArg<double> lambda{
+        "l", "lambda", "Strong to weak mutation bias", false, 5.0, "double", cmd};
+    TCLAP::ValueArg<double> beta{
+        "b", "beta", "Effective population size (relative)", false, 1.0, "double", cmd};
+    TCLAP::ValueArg<double> selection{"s", "selection",
+        "Selection coefficient given the current amino-acid", false, 0.0, "double", cmd};
+    TCLAP::ValueArg<double> shuffle_proba{"p", "shuffle_proba",
+        "Probability to randomize the fitness landscape (once a substitution occured)", false, 0.0,
+        "double", cmd};
+    SwitchArg shuffle_all{"a", "shuffle_all",
+        "All sites are affected by the random shuffling (instead of just the one where the "
+        "substitution occured)",
+        cmd, false};
+};
 
 int main(int argc, char *argv[]) {
-    auto args = docopt::docopt(USAGE, {argv + 1, argv + argc},
-        true,             // show help if requested
-        "SimuEvol 0.1");  // version string
+    CmdLine cmd{"SimuEvol", ' ', "0.1"};
+    SimuRelaxArgParse args(cmd);
+    cmd.parse(argc, argv);
 
-    string preferences_path{"../data_prefs/np.txt"};
-    if (args["--preferences"]) { preferences_path = args["--preferences"].asString(); }
+    string preferences_path{args.preferences_path.getValue()};
+    string newick_path{args.newick_path.getValue()};
+    string output_path{args.output_path.getValue()};
 
-    string newick_path{"../data_trees/np.newick"};
-    if (args["--newick"]) { newick_path = args["--newick"].asString(); }
+    double mu{args.mu.getValue()};
+    double lambda{args.lambda.getValue()};
+    double beta{args.beta.getValue()};
+    double s{args.selection.getValue()};
+    double p{args.shuffle_proba.getValue()};
+    bool all_sites{args.shuffle_all.getValue()};
 
-    string output_path{"../data_alignment/np"};
-    if (args["--output"]) { output_path = args["--output"].asString(); }
-
-    double beta = 2.5;
-    if (args["--beta"]) { beta = stod(args["--beta"].asString()); }
     vector<array<double, 20>> fitness_profiles = open_preferences(preferences_path, beta);
     auto nbr_sites = static_cast<unsigned>(fitness_profiles.size());
 
-    string newick_tree = open_newick(newick_path);
-    Node root(newick_tree, nbr_sites);
-
-    double mu = 2.5;
-    if (args["--mu"]) { mu = stod(args["--mu"].asString()); }
-    double lambda = 5.0;
-    if (args["--lambda"]) { lambda = stod(args["--lambda"].asString()); }
     Matrix4x4 mutation_rate;
     mutation_rate << 0, 1, 1, lambda, lambda, 0, 1, lambda, lambda, 1, 0, lambda, lambda, 1, 1, 0;
     mutation_rate = normalize_submatrix(mutation_rate);
-
     mutation_rate *= mu;
+
+    Sequence_dna root_sequence(mutation_rate, fitness_profiles, s, p, all_sites);
+
+    std::ifstream tree_stream{newick_path};
+    NHXParser parser{tree_stream};
+    std::unique_ptr<const Tree> tree;
+    tree = make_from_parser(parser);
 
     ofstream ali_file;
     ali_file.open(output_path + ".ali");
-    ali_file << root.nbr_leaves() << " " << nbr_sites * 3 << endl;
+    ali_file << tree->nb_leaves() << " " << nbr_sites * 3 << endl;
     ali_file.close();
 
     ofstream fasta_file;
@@ -802,40 +563,28 @@ int main(int argc, char *argv[]) {
     // .txt output
     ofstream txt_file;
     txt_file.open(output_path + ".txt");
-    txt_file << "The tree contains " << root.nbr_nodes() << " nodes for " << root.nbr_leaves()
+    txt_file << "The tree contains " << tree->nb_nodes() << " nodes for " << tree->nb_leaves()
              << " species at the tips." << endl;
-    txt_file << "The tree has a total branch length of " << root.tot_length() << "." << endl;
+    txt_file << "The tree has a total branch length of " << tree->total_length() << "." << endl;
     txt_file << "The DNA sequence is " << nbr_sites * 3 << " base pairs long." << endl;
     txt_file << "The mutation transition matrix (" << Codon::nucleotides << ") is: " << endl;
     txt_file << mutation_rate << endl;
-
-
-    double s = 10.0;
-    if (args["--s"]) { s = stod(args["--s"].asString()); }
-
-    double p = 0.0;
-    if (args["--p"]) { p = stod(args["--p"].asString()); }
-
-    bool all_sites = false;
-    if (args["--a"]) { all_sites = (args["--a"].asString() == "True"); }
-
     txt_file << "s=" << s << endl;
     txt_file << "all_sites=" << all_sites << endl;
     txt_file << "p=" << p << endl;
-
-    root.set_evolution_parameters(mutation_rate, fitness_profiles, s, p, all_sites);
-
-    txt_file << "w0=" << root.predicted_omega(Codon::nucleotides, Codon::nucleotides, false)
+    txt_file << "w0="
+             << root_sequence.predicted_omega(Codon::nucleotides, Codon::nucleotides, false)
              << endl;
-    txt_file << "<w0>=" << root.predicted_omega(Codon::nucleotides, Codon::nucleotides, true)
-             << endl;
+    txt_file << "<w0>="
+             << root_sequence.predicted_omega(Codon::nucleotides, Codon::nucleotides, true) << endl;
     txt_file.close();
 
-    root.at_equilibrium();
-    root.traverse(output_path);
+    root_sequence.at_equilibrium();
+    Process simu_process(*tree, root_sequence);
+    simu_process.run(output_path);
 
     long nbr_non_synonymous, nbr_synonymous;
-    tie(nbr_non_synonymous, nbr_synonymous) = root.nbr_substitutions();
+    tie(nbr_non_synonymous, nbr_synonymous) = simu_process.nbr_substitutions();
 
     // .txt output
     txt_file.open(output_path + ".txt", ios_base::app);
@@ -846,7 +595,8 @@ int main(int argc, char *argv[]) {
              << " substitutions per site." << endl;
     txt_file << nbr_synonymous << " synonymous and " << nbr_non_synonymous
              << " non-synonymous substitutions." << endl;
-    txt_file << "w=" << root.simulated_omega(Codon::nucleotides, Codon::nucleotides) << endl;
+    txt_file << "w=" << simu_process.simulated_omega(Codon::nucleotides, Codon::nucleotides)
+             << endl;
 
     /*
         string weak_strong = "WS";

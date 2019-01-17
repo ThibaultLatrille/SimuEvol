@@ -1,19 +1,17 @@
+#include <sys/resource.h>
 #include <unistd.h>
-#include <fstream>
+#include <chrono>
 #include <iomanip>
 #include <random>
 #include <set>
+#include "Eigen/Dense"
+#include "argparse.hpp"
 #include "codon.hpp"
+#include "statistic.hpp"
+#include "tree.hpp"
 
+using namespace TCLAP;
 using namespace std;
-
-string version_string = "SimuPoly 0.1";
-
-#define DOCOPT_HEADER_ONLY
-
-#include "docopt.cpp/docopt.h"
-
-#include <chrono>
 
 #define duration(a) chrono::duration_cast<std::chrono::nanoseconds>(a).count()
 #define timeNow() chrono::high_resolution_clock::now()
@@ -47,21 +45,6 @@ unsigned pow_int(unsigned x, unsigned p) {
     else
         return x * tmp * tmp;
 }
-
-// Function for sum
-double sum(vector<unsigned> const &v) {
-    return accumulate(v.begin(), v.end(), static_cast<unsigned>(0));
-}
-
-// Function for mean
-double mean(vector<unsigned> const &v) {
-    double return_value = 0.0;
-
-    for (unsigned i = 0; i < v.size(); i++) { return_value += i * v[i]; }
-
-    return return_value / sum(v);
-};
-
 
 string join(vector<unsigned> &v, char sep) {
     return accumulate(v.begin() + 1, v.end(), to_string(v[0]),
@@ -238,7 +221,7 @@ class Haplotype {
     } GreaterThan;
 };
 
-// Class representing a population
+// Class representing a genetical linked sequences (blocks are unlinked between them)
 class Block {
   public:
     // Block
@@ -712,7 +695,7 @@ class Population {
 
         string out;
         out += "##fileformat=VCFv4.0";
-        out += "\n##source=" + version_string;
+        out += "\n##source=SimuPoly";
         out += "\n##nodeName=" + node_name;
         out += "\n##sequenceSize=" + to_string(nbr_nucleotides);
         out += "\n##ploidyLevel=diploid";
@@ -1135,83 +1118,38 @@ class Population {
 unsigned Block::nbr_mutations = 0, Block::nbr_fixations = 0;
 vector<SummaryStatistics> Population::stats_vector{};
 
-// Class representing nodes of a tree.
-class Node {
+class Process {
   private:
-    string name;            // The species name of the node.
-    double length;          // The length of the branch attached to the node (ascending).
-    string newick;          // The newick tree descending from the node.
-    vector<Node> children;  // Vector of direct children (first order, no grand-children).
+    static double length_computed;
+    const Tree &tree;
+    vector<Population *> populations;  // Vector of sequence DNA.
 
   public:
-    static double length_computed;
-    Population population{};  // The block attached to the node.
-
     // Constructor
-    Node(string name, string const &len, string newick)
-        : name{move(name)}, length{stod(len)}, newick{move(newick)} {
-        // Parse the newick tree descending of the node.
-        parse_newick();
+    Process(const Tree &intree, Population &root_pop) : tree{intree}, populations() {
+        populations.resize(tree.nb_nodes());
+        populations[tree.root()] = &root_pop;
     }
 
-    Node(string newick, Population &pop)
-        : name{"Root"}, length{0.}, newick{move(newick)}, population{pop} {
-        // Parse the newick tree descending of the node.
-        parse_newick();
+    void run(string &output_filename, double scale, MutationParams const &p) {
+        run_recursive(tree.root(), output_filename, scale, p);
     }
 
-    // Is true if the node don't have children.
-    bool is_leaf() const { return newick.length() == 0; }
-
-    // Recursively iterate through the subtree and count the number of nodes.
-    double tot_length() {
-        double tot_length = length;
-
-        if (!is_leaf()) {
-            // Else, if the node is internal, iterate through the direct children.
-            for (auto &child : children) { tot_length += child.tot_length(); }
-        }
-        return tot_length;
-    }
-
-    // Recursively iterate through the subtree and count the number of nodes.
-    unsigned nbr_nodes() {
-        unsigned nbr_nodes = 1;
-
-        if (!is_leaf()) {
-            // Else, if the node is internal, iterate through the direct children.
-            for (auto &child : children) { nbr_nodes += child.nbr_nodes(); }
-        }
-        return nbr_nodes;
-    }
-
-    // Recursively iterate through the subtree and count the number of leaves.
-    unsigned nbr_leaves() {
-        unsigned nbr_leaves = 0;
-
-        if (is_leaf()) {
-            // If the node is a leaf, return 1.
-            nbr_leaves = 1;
-        } else {
-            // Else, if the node is internal, iterate through the direct children.
-            for (auto &child : children) { nbr_leaves += child.nbr_leaves(); }
-        }
-        return nbr_leaves;
-    }
 
     // Recursively iterate through the subtree.
-    void traverse(string &output_filename, double scale, MutationParams const &p) {
+    void run_recursive(
+        Tree::NodeIndex node, string &output_filename, double scale, MutationParams const &p) {
         // Substitutions of the DNA sequence is generated.
 
-        auto gen = static_cast<unsigned>(scale * length / (p.mutation_rate()));
-        population.run_forward(gen, p);
+        auto gen = static_cast<unsigned>(scale * tree.node_length(node) / (p.mutation_rate()));
+        populations[node]->run_forward(gen, p);
 
-        length_computed += length;
+        length_computed += tree.node_length(node);
         cout << length_computed << " length computed" << endl;
-
-        if (is_leaf()) {
+        string name = tree.node_name(node);
+        if (tree.is_leaf(node)) {
             // If the node is a leaf, output the DNA sequence and name.
-            string dna_str = population.get_dna_str();
+            string dna_str = populations[node]->get_dna_str();
 
             // .ali format
             ofstream ali_file;
@@ -1225,185 +1163,59 @@ class Node {
             fasta_file << ">" << name << endl << dna_str << endl;
             fasta_file.close();
 
-            population.output_vcf(output_filename, name, p);
+            populations[node]->output_vcf(output_filename, name, p);
         } else {
             // If the node is internal, iterate through the direct children.
-            for (auto &child : children) {
-                child.population = population;
-                child.traverse(output_filename, scale, p);
-            }
-        }
-    }
-
-    void parse_newick() {
-        if (!is_leaf()) {
-            // The size of the string of newick tree.
-            size_t max_position{newick.size()};
-            // The current position in the string of the newick tree.
-            size_t position{0};
-
-            // While the current position is lower than the size of the string, their is at least
-            // one node to parse.
-            while (position < max_position) {
-                // 'subtree' is the left hand side of the node name, it can be a subtree or nothing
-                // if the node is a leaf.
-                string subtree{};
-                if (newick[position] == '(') {
-                    size_t postpoint{position};
-                    unsigned nbr_open{1};
-
-                    for (size_t i{position + 1}; i < max_position; i++) {
-                        if (nbr_open == 0) {
-                            postpoint = i;
-                            break;
-                        } else if (newick[i] == '(') {
-                            nbr_open++;
-                        } else if (newick[i] == ')') {
-                            nbr_open--;
-                        };
-                    }
-                    subtree = newick.substr(position + 1, postpoint - position - 2);
-                    position = postpoint;
-                }
-
-                // 'name_suffix' contains the name of the node and the branch length.
-                string name_suffix{};
-
-                size_t next_sep = newick.substr(position).find(',');
-                if (next_sep == string::npos) {
-                    name_suffix = newick.substr(position);
-                    position = max_position;
-                } else {
-                    name_suffix = newick.substr(position, next_sep);
-                    position = position + next_sep + 1;
-                }
-
-                // 'length' contains the name of the node.
-                string length{};
-                // 'name' contains the branch length of the node.
-                string name{};
-                size_t ddot = name_suffix.rfind(':');
-                if (ddot != string::npos) {
-                    length = name_suffix.substr(ddot + 1);
-                    name = name_suffix.substr(0, ddot);
-                } else {
-                    name = name_suffix;
-                    length = "0";
-                }
-
-                // New node from 'subtree', 'name' and 'length' using the DNA sequence of this node.
-                children.emplace_back(Node(name, length, subtree));
+            for (auto &child : tree.children(node)) {
+                populations[child] = new Population(*populations[node]);
+                run_recursive(child, output_filename, scale, p);
             }
         }
     }
 };
 
 // Initialize static variables
-double Node::length_computed = 0.0;
+double Process::length_computed = 0.0;
 
-string open_newick(string const &file_name) {
-    ifstream input_stream(file_name);
-    if (!input_stream) cerr << "Can't open newick file!" << endl;
+class SimuPolyArgParse : public SimuArgParse {
+  public:
+    explicit SimuPolyArgParse(CmdLine &cmd) : SimuArgParse(cmd) {}
 
-    string line;
-    getline(input_stream, line);
-
-    return line;
-}
-
-
-vector<array<double, 20>> open_preferences(string const &file_name, double const &beta) {
-    vector<array<double, 20>> fitness_profiles{0};
-
-    ifstream input_stream(file_name);
-    if (!input_stream) cerr << "Can't open preferences file!" << endl;
-
-    string line;
-
-    // skip the header of the file
-    getline(input_stream, line);
-
-    while (getline(input_stream, line)) {
-        array<double, 20> fitness_profil{0};
-        string word;
-        istringstream line_stream(line);
-        unsigned counter{0};
-
-        while (getline(line_stream, word, ' ')) {
-            if (counter > 2) { fitness_profil[counter - 3] = beta * log(stod(word)); }
-            counter++;
-        }
-
-        fitness_profiles.push_back(fitness_profil);
-    }
-    return fitness_profiles;
-}
-
-static char const USAGE[] =
-    R"(
-Usage:
-      SimuPoly [--preferences=<file_path>] [--newick=<file_path>] [--output=<file_path>] [--gen=<1e-2>] [--mu=<1e-7>] [--lambda=<5.0>] [--pop_size=<500>] [--sample_size=<500>] [--beta=<1.0>] [--linked=<true>]
-      SimuPoly --help
-      SimuPoly --version
-
-Options:
--h --help                    show this help message and exit
---version                    show version and exit
---preferences=<file_path>    specify input site-specific preferences file [default: ../data_prefs/np.txt]
---newick=<file_path>         specify input newick tree [default: ../data/np.newick]
---output=<file_path>         specify output path [default: ../data/np.newick]
---mu=<1e-7>                  specify the mutation rate [default: 1e-7]
---gen=<0.01>                 specify the number of expected substitutions per unit of branch length [default: 0.01]
---lambda=<5.0>               specify the strong to weak mutation bias [default: 5.0]
---pop_size=<500>             specify the population size [default: 500]
---sample_size=<20>           specify the sample size [default: 20]
---beta=<1.0>                 specify the strength of selection [default: 1.0]
---linked=<true>              specify if the sites are linked [default: true]
-)";
-
-#include <sys/resource.h>
+    TCLAP::ValueArg<double> mu{"m", "mu", "Mutation rate", false, 1e-8, "double", cmd};
+    TCLAP::ValueArg<double> substitutions{"s", "substitutions",
+        "Number of expected substitutions per unit of branch length", false, 0.01, "double", cmd};
+    TCLAP::ValueArg<double> lambda{
+        "l", "lambda", "Strong to weak mutation bias", false, 5.0, "double", cmd};
+    TCLAP::ValueArg<unsigned> pop_size{
+        "n", "pop_size", "Population size", false, 500, "unsigned", cmd};
+    TCLAP::ValueArg<unsigned> sample_size{
+        "p", "sample_size", "Sample size", false, 20, "unsigned", cmd};
+    TCLAP::ValueArg<double> beta{
+        "b", "beta", "Effective population size (relative)", false, 1.0, "double", cmd};
+    SwitchArg linked{"g", "linked", "Sites are geneticaly linked", cmd, true};
+};
 
 int main(int argc, char *argv[]) {
-    auto args = docopt::docopt(USAGE, {argv + 1, argv + argc},
-        true,             // show help if requested
-        version_string);  // version string
+    CmdLine cmd{"SimuPoly", ' ', "0.1"};
+    SimuPolyArgParse args(cmd);
+    cmd.parse(argc, argv);
 
-    string preferences_path{"../data_prefs/gal4.txt"};
-    if (args["--preferences"]) { preferences_path = args["--preferences"].asString(); }
+    string preferences_path{args.preferences_path.getValue()};
+    string newick_path{args.newick_path.getValue()};
+    string output_path{args.output_path.getValue()};
 
-    double gen = 0.01;
-    if (args["--gen"]) { gen = stod(args["--gen"].asString()); }
+    double mu{args.mu.getValue()};
+    double lambda{args.lambda.getValue()};
+    double sub_rate{args.substitutions.getValue()};
+    unsigned pop_size{args.pop_size.getValue()};
+    unsigned sample_size{args.sample_size.getValue()};
+    double beta{args.substitutions.getValue()};
+    bool linked_sites{args.linked.getValue()};
 
-    double beta = 2.5;
-    if (args["--beta"]) { beta = stod(args["--beta"].asString()); }
     vector<array<double, 20>> fitness_profiles = open_preferences(preferences_path, beta);
 
-    double mu = 1e-8;
-    if (args["--mu"]) { mu = stod(args["--mu"].asString()); }
-
-    double lambda = 2.0;
-    if (args["--lambda"]) { lambda = stod(args["--lambda"].asString()); }
-
-    unsigned pop_size = 500;
-    if (args["--pop_size"]) { pop_size = args["--pop_size"].asLong(); }
-
-    unsigned sample_size = 20;
-    if (args["--sample_size"]) { sample_size = args["--sample_size"].asLong(); }
-
-    bool linked_sites = true;
-    if (args["--linked"]) {
-        string linked_site_str = args["--linked"].asString();
-        transform(
-            linked_site_str.begin(), linked_site_str.end(), linked_site_str.begin(), ::tolower);
-        linked_sites = (linked_site_str == "true");
-    }
-
     assert(sample_size <= pop_size);
-    // output
     cout << "The DNA sequence is " << fitness_profiles.size() * 3 << " base pairs." << endl;
-
-    string output_path{"../data_sfs/mammals"};
-    if (args["--output"]) { output_path = args["--output"].asString(); }
 
     ofstream txt_file;
     txt_file.open(output_path + ".tsv");
@@ -1422,22 +1234,24 @@ int main(int argc, char *argv[]) {
 
     unsigned burn_in = 100;
     MutationParams p(lambda, mu);
-    Population population(fitness_profiles, pop_size, sample_size, output_path, linked_sites, p);
-    population.burn_in(burn_in, p);
+    Population root_population(
+        fitness_profiles, pop_size, sample_size, output_path, linked_sites, p);
+    root_population.burn_in(burn_in, p);
 
-    string newick_path{"../data_trees/mammals.newick"};
-    // newick_path = "300";
-    if (args["--newick"]) { newick_path = args["--newick"].asString(); }
+
     bool newick_is_int{true};
     try {
         stoi(newick_path);
     } catch (const invalid_argument &ia) { newick_is_int = false; }
     if (!newick_is_int) {
-        string newick_tree = open_newick(newick_path);
-        Node root(newick_tree, population);
-        unsigned nbr_leaves = root.nbr_leaves();
+        std::ifstream tree_stream{newick_path};
+        NHXParser parser{tree_stream};
+        std::unique_ptr<const Tree> tree;
+        tree = make_from_parser(parser);
+
+        unsigned nbr_leaves = tree->nb_leaves();
         cout << "The tree has " << nbr_leaves << " leaves" << endl;
-        cout << "The tree is of length " << root.tot_length() << endl;
+        cout << "The tree is of length " << tree->total_length() << endl;
         ofstream ali_file;
         ali_file.open(output_path + ".ali");
         ali_file << nbr_leaves << " " << fitness_profiles.size() * 3 << endl;
@@ -1447,7 +1261,8 @@ int main(int argc, char *argv[]) {
         fasta_file.open(output_path + ".fasta");
         fasta_file.close();
 
-        root.traverse(output_path, gen, p);
+        Process simu_process(*tree, root_population);
+        simu_process.run(output_path, sub_rate, p);
         Population::avg_summary_statistics();
     } else {
         auto generations = static_cast<unsigned>(stoi(newick_path));
@@ -1456,7 +1271,7 @@ int main(int argc, char *argv[]) {
                 "for "
              << generations * pop_size * interval << " and output the summary statistics every "
              << interval * pop_size << " generations" << endl;
-        population.linear_run(output_path, generations, interval, p);
+        root_population.linear_run(output_path, generations, interval, p);
         Population::avg_summary_statistics();
     }
     return 0;

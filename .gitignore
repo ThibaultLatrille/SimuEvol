@@ -12,9 +12,8 @@
 /figures
 /qsub
 /notebooks
-/_test
-/_build
-/bin
+/test
+/build
 *.pyc
 *.aux
 *.log

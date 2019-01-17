@@ -3,12 +3,11 @@
 #include <iostream>
 #include <random>
 #include <set>
+#include "statistic.hpp"
+#include "argparse.hpp"
 
+using namespace TCLAP;
 using namespace std;
-
-#define DOCOPT_HEADER_ONLY
-
-#include "docopt.cpp/docopt.h"
 
 double seed{0};
 default_random_engine generator(seed);
@@ -29,18 +28,6 @@ vector<double> spherical_coord(u_long n, double radius) {
 
     for (int i = 0; i < n; ++i) { coord[i] *= norm; }
     return coord;
-}
-
-// Mean of a vector
-double mean(vector<double> const &v) { return accumulate(v.begin(), v.end(), 0.0) / v.size(); }
-
-// Variance of a vector
-double var(vector<double> const &v) {
-    double s2 = accumulate(v.begin(), v.end(), 0.0, [](double a, double const &b) {
-        return a + b * b;
-    }) / v.size();
-    double s = mean(v);
-    return s2 - s * s;
 }
 
 class Chromosome {
@@ -66,14 +53,14 @@ class Being {
     static u_long k;
     static double mu;
     static double r;
-    static u_long n;
-    static u_long m;
+    static u_long complexity;
+    static u_long pleiotropy;
     static double a;
     static double q;
 
     explicit Being() {
         genome.reserve(2 * k);
-        auto chr = Chromosome(Being::n, 1.0 / (2 * k));
+        auto chr = Chromosome(Being::complexity, 1.0 / (2 * k));
         for (int i = 0; i < k; ++i) {
             genome.push_back(chr);
             genome.push_back(chr);
@@ -91,9 +78,9 @@ class Being {
     };
 
     void update_fitness() {
-        vector<double> p(n, 0.0);
+        vector<double> p(complexity, 0.0);
         for (auto const &chr : genome) {
-            for (int i = 0; i < n; ++i) { p[i] += chr.phenotype[i]; }
+            for (int i = 0; i < complexity; ++i) { p[i] += chr.phenotype[i]; }
         }
         d = distance(p);
         fitness = exp(-a * pow(d, q));
@@ -107,9 +94,9 @@ class Being {
             uniform_int_distribution<u_long> chr_distr(0, 2 * k - 1);
 
             for (u_long mutation{0}; mutation < poisson_draw; mutation++) {
-                auto mutation_coord = spherical_coord(m, r);
-                if (m < n) {
-                    mutation_coord.resize(n, 0.0);
+                auto mutation_coord = spherical_coord(pleiotropy, r);
+                if (pleiotropy < complexity) {
+                    mutation_coord.resize(complexity, 0.0);
                     shuffle(mutation_coord.begin(), mutation_coord.end(), generator);
                 }
                 genome[chr_distr(generator)].add_mutation(mutation_coord);
@@ -219,10 +206,10 @@ class Population {
 
         auto min_over_max = max_element(fitnesses.begin(), fitnesses.end());
 
-        vector<double> p(Being::n, 0.0);
+        vector<double> p(Being::complexity, 0.0);
         for (auto const &being : beings) {
             for (auto const &chr : being.genome) {
-                for (int i = 0; i < Being::n; ++i) { p[i] += chr.phenotype[i]; }
+                for (int i = 0; i < Being::complexity; ++i) { p[i] += chr.phenotype[i]; }
             }
         }
         double d = distance(p);
@@ -232,18 +219,15 @@ class Population {
         tsv.open(output_filename + ".tsv", ios_base::app);
         tsv << elapsed << "\t" << 1 << "\tFitness lower bound\t" << fitnesses[low_bound] << endl;
         tsv << elapsed << "\t" << 1 << "\tFitness upper bound\t" << fitnesses[up_bound] << endl;
-        tsv << elapsed << "\t" << 1 << "\tMean fitness\t" << mean(fitnesses) << endl;
+        tsv << elapsed << "\t" << 1 << "\tMean fitness\t" << avg(fitnesses) << endl;
         tsv << elapsed << "\t" << 1 << "\tFitness of mean phenotype\t" << fitness << endl;
         tsv << elapsed << "\t" << 1 << "\tFitness entropy\t" << entropy << endl;
-
         tsv << elapsed << "\t" << 2 << "\tDistance lower bound\t" << distances[low_bound] << endl;
         tsv << elapsed << "\t" << 2 << "\tDistance upper bound\t" << distances[up_bound] << endl;
-        tsv << elapsed << "\t" << 2 << "\tMean distance\t" << mean(distances) << endl;
-
+        tsv << elapsed << "\t" << 2 << "\tMean distance\t" << avg(distances) << endl;
         tsv << elapsed << "\t" << 3 << "\tDistance of mean phenotype\t" << d << endl;
-
-        tsv << elapsed << "\t" << 0 << "\tVar fitness\t" << var(fitnesses) << endl;
-        tsv << elapsed << "\t" << 0 << "\tVar distance\t" << var(distances) << endl;
+        tsv << elapsed << "\t" << 0 << "\tVar fitness\t" << variance(fitnesses) << endl;
+        tsv << elapsed << "\t" << 0 << "\tVar distance\t" << variance(distances) << endl;
         tsv.close();
     };
 };
@@ -251,105 +235,101 @@ class Population {
 u_long Being::k = 1;
 double Being::mu = 0;
 double Being::r = 0;
-u_long Being::n = 1;
-u_long Being::m = 1;
+u_long Being::complexity = 1;
+u_long Being::pleiotropy = 1;
 double Being::a = 0;
 double Being::q = 0;
 
-static char const USAGE[] =
-    R"(
-Usage:
-      SimuRelax [--pop_size=<100>] [--k=<23>] [--mu=<1e-3>] [--r=<1e-3>] [--n=<10>] [--m=<10>] [--a=<0.5>] [--q=<2.0>] [--output=<path>]
-      SimuRelax --help
-      SimuRelax --version
+class SimuRelaxArgParse : public OutputArgParse {
+  public:
+    explicit SimuRelaxArgParse(CmdLine &cmd) : OutputArgParse(cmd) {}
 
-Options:
--h --help                    show this help message and exit
---version                    show version and exit
---pop_size=<100>             specify the population size [default: 100]
---k=<23>                     specify the number of chromosomes per individual [default: 23]
---mu=<10.0>                  specify the mean number of mutations per individual per generation [default: 10.0]
---r=<0.01>                   specify the effect of a mutation (radius of the move in the phenotypic space) [default: 1e-2]
---n=<10>                     specify the complexity (dimension) of the phenotypic space [default: 10]
---m=<10>                     specify the pleiotropy of mutations (m<=n, and m=n if not specified) [default: 10]
---a=<1.0>                    specify the a parameter (peakness) of the fitness function (exp(-a*(d^q)) [default: 0.5]
---q=<2.0>                    specify the q parameter (epistasis) of fitness function (exp(-a*(d^q)) [default: 2.0]
---output=<path>              specify the output data folder [default: SimuRelaxOutput]
-
-)";
+    TCLAP::ValueArg<u_long> pop_size{"n", "pop_size", "population size", false, 100, "u_long", cmd};
+    TCLAP::ValueArg<u_long> chromosomes{
+        "k", "chromosomes", "number of chromosomes per individual", false, 23, "u_long", cmd};
+    TCLAP::ValueArg<double> mu{"m", "mu", "mean number of mutations per individual per generation",
+        false, 10, "double", cmd};
+    TCLAP::ValueArg<double> radius{"r", "radius",
+        "effect of a mutation (radius of the move in the phenotypic space)", false, 1e-2, "double",
+        cmd};
+    TCLAP::ValueArg<u_long> complexity{"c", "complexity",
+        "complexity (dimension) of the phenotypic space", false, 10, "u_long", cmd};
+    TCLAP::ValueArg<u_long> pleiotropy{"p", "pleiotropy",
+        "pleiotropy of mutations (p<=c, and p=c if not specified)", false, 0, "u_long", cmd};
+    TCLAP::ValueArg<double> peakness{"a", "peakness",
+        "'a' parameter (peakness) of the fitness function (exp(-a*(d^q))", false, 0.5, "double",
+        cmd};
+    TCLAP::ValueArg<double> epistasis{"q", "epistasis",
+        "'q' parameter (epistasis) of fitness function (exp(-a*(d^q))", false, 3.0, "double", cmd};
+};
 
 int main(int argc, char *argv[]) {
-    auto args = docopt::docopt(USAGE, {argv + 1, argv + argc},
-        true,              // show help if requested
-        "SimuRelax 0.1");  // version string
+    CmdLine cmd{"SimuRelax", ' ', "0.1"};
+    SimuRelaxArgParse args(cmd);
+    cmd.parse(argc, argv);
 
-    u_long pop_size = 100;
-    if (args["--pop_size"]) { pop_size = static_cast<u_long>(args["--pop_size"].asLong()); }
+    string output_path{args.output_path.getValue()};
+
+    u_long pop_size{args.pop_size.getValue()};
     cout << "Population of " << pop_size << " individuals." << endl;
 
-    Being::k = 23;
-    if (args["--k"]) { Being::k = static_cast<u_long>(args["--k"].asLong()); }
+    Being::k = args.chromosomes.getValue();
     cout << "Each individual has " << Being::k << " pairs of chromosomes." << endl;
 
-    Being::mu = 10.0;
-    if (args["--mu"]) { Being::mu = stod(args["--mu"].asString()); }
+    Being::mu = args.mu.getValue();
     cout << "Each individual has on average " << Being::mu << " mutations per generations." << endl;
 
-    Being::r = 1e-2;
-    if (args["--r"]) { Being::r = stod(args["--r"].asString()); }
+    Being::r = args.radius.getValue();
     cout << "Each mutation move the phenotype at a distance " << Being::r << " from the parent."
          << endl;
 
-    Being::n = 10;
-    if (args["--n"]) { Being::n = static_cast<u_long>(args["--n"].asLong()); }
-    cout << "The phenotypic space is of dimension " << Being::n << "." << endl;
+    Being::complexity = args.complexity.getValue();
+    cout << "The phenotypic space is of dimension " << Being::complexity << "." << endl;
 
-    Being::m = Being::n;
-    if (args["--m"]) {
-        Being::m = static_cast<u_long>(args["--m"].asLong());
-        assert(Being::m <= Being::n);
+    Being::pleiotropy = args.pleiotropy.getValue();
+    if (Being::pleiotropy == 0) {
+        Being::pleiotropy = Being::complexity;
+    } else {
+        assert(Being::pleiotropy <= Being::complexity);
     }
-    cout << "Each mutation has a pleiotropic effect on " << Being::m << " dimensions." << endl;
+    cout << "Each mutation has a pleiotropic effect on " << Being::pleiotropy << " dimensions." << endl;
 
-    Being::a = 0.5;
-    if (args["--a"]) { Being::a = stod(args["--a"].asString()); }
-    cout << "The flatness of the fitness function is " << Being::a << "." << endl;
+    Being::a = args.peakness.getValue();
+    cout << "The peakness of the fitness function is " << Being::a << "." << endl;
 
-    Being::q = 3.0;
-    if (args["--q"]) { Being::q = stod(args["--q"].asString()); }
+    Being::q = args.epistasis.getValue();
     cout << "The epistasis of the fitness function is " << Being::q << "." << endl;
 
     u_long nbr_intervals = 10;
     u_long interval_length = 10;
     u_long relax_length = 100;
 
-    string path{"SimuRelaxOutput"};
-    if (args["--output"]) { path = args["--output"].asString(); }
-    path += "/" + to_string(pop_size) + "_" + to_string(Being::k) + "_" + to_string(Being::mu) +
-            "_" + to_string(Being::r) + "_" + to_string(Being::n) + "_" + to_string(Being::m) +
-            "_" + to_string(Being::a) + "_" + to_string(Being::q);
-    cout << "The data will be written in " << path << endl;
+    output_path += "/" + to_string(pop_size) + "_" + to_string(Being::k) + "_" +
+                   to_string(Being::mu) + "_" + to_string(Being::r) + "_" + to_string(Being::complexity) +
+                   "_" + to_string(Being::pleiotropy) + "_" + to_string(Being::a) + "_" +
+                   to_string(Being::q);
+    cout << "The data will be written in " << output_path << endl;
 
 
     ofstream tsv;
-    tsv.open(path + ".tsv");
-    tsv << "ne\t" << pop_size << endl;
-    tsv << "k\t" << Being::k << endl;
+    tsv.open(output_path + ".tsv");
+    tsv << "pop_size\t" << pop_size << endl;
+    tsv << "chromosomes\t" << Being::k << endl;
     tsv << "mu\t" << Being::mu << endl;
-    tsv << "r\t" << Being::r << endl;
-    tsv << "n\t" << Being::n << endl;
-    tsv << "m\t" << Being::m << endl;
-    tsv << "a\t" << Being::a << endl;
-    tsv << "q\t" << Being::q << endl;
+    tsv << "radius\t" << Being::r << endl;
+    tsv << "complexity\t" << Being::complexity << endl;
+    tsv << "pleiotropy\t" << Being::pleiotropy << endl;
+    tsv << "peakness\t" << Being::a << endl;
+    tsv << "epistasis\t" << Being::q << endl;
     tsv << "t\t" << nbr_intervals * interval_length << endl;
     tsv.close();
 
     assert(pop_size > 1);
-    assert(Being::n > 0);
-    assert(Being::m > 0);
+    assert(Being::complexity > 0);
+    assert(Being::pleiotropy > 0);
     assert(Being::k > 0);
     Population population(pop_size);
-    population.run(path, nbr_intervals, interval_length, relax_length);
+    population.run(output_path, nbr_intervals, interval_length, relax_length);
 
     return 0;
 }
