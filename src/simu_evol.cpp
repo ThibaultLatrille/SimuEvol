@@ -500,9 +500,9 @@ class Process {
     }
 };
 
-class SimuRelaxArgParse : public SimuArgParse {
+class SimuEvolArgParse : public SimuArgParse {
   public:
-    explicit SimuRelaxArgParse(CmdLine &cmd) : SimuArgParse(cmd) {}
+    explicit SimuEvolArgParse(CmdLine &cmd) : SimuArgParse(cmd) {}
 
     TCLAP::ValueArg<double> mu{"m", "mu", "Mutation rate", false, 2.5, "double", cmd};
     TCLAP::ValueArg<double> lambda{
@@ -522,7 +522,7 @@ class SimuRelaxArgParse : public SimuArgParse {
 
 int main(int argc, char *argv[]) {
     CmdLine cmd{"SimuEvol", ' ', "0.1"};
-    SimuRelaxArgParse args(cmd);
+    SimuEvolArgParse args(cmd);
     cmd.parse(argc, argv);
 
     string preferences_path{args.preferences_path.getValue()};

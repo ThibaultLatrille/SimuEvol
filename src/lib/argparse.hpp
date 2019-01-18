@@ -63,7 +63,7 @@ std::vector<std::array<double, 20>> open_preferences(
     return fitness_profiles;
 }
 
-std::string char_to_str(char const &_char) {
+std::string char_to_str(char const& _char) {
     std::string _str(1, _char);
     return _str;
 }

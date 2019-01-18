@@ -151,9 +151,9 @@ class MutationParams {
     MutationParams(double const &mutation_bias, double const &mu)
         : lambda{mutation_bias},
           mutation_rate_matrix{},
+          nuc_frequencies{{mutation_bias, 1, 1, mutation_bias}},
           max_sum_mutation_rates{0},
-          sum_mutation_rates{0},
-          nuc_frequencies{{mutation_bias, 1, 1, mutation_bias}} {
+          sum_mutation_rates{0} {
         mutation_rate_matrix[0] = {0, 1, 1, lambda};
         mutation_rate_matrix[1] = {lambda, 0, 1, lambda};
         mutation_rate_matrix[2] = {lambda, 1, 0, lambda};
@@ -249,8 +249,8 @@ class Block {
     explicit Block(vector<array<double, 20>> const &fitness_profiles, const unsigned &position,
         const unsigned &population_size, const string &output_path, MutationParams const &p)
         : population_size{population_size},
-          aa_fitness_profiles{fitness_profiles},
           position{position},
+          aa_fitness_profiles{fitness_profiles},
           nbr_sites{unsigned(fitness_profiles.size())},
           nbr_nucleotides{unsigned(3 * fitness_profiles.size())},
           codon_seq(fitness_profiles.size(), 0),
@@ -537,10 +537,10 @@ class Population {
     // TimeElapsed
     unsigned elapsed{0};
 
-    unsigned sample_size{0};
-
     // Blocks
     vector<Block> blocks;
+
+    unsigned sample_size{0};
     unsigned max_population_size{0};
 
     // Statics variables (shared by all instances)
@@ -994,7 +994,7 @@ class Population {
         vector<unsigned long> binom_coeff(sample_range.size(), 0);
         vector<double> sample_sfs(sample_range.size(), 0);
 
-        for (int index{0}; index < sample_range.size(); index++) {
+        for (size_t index{0}; index < sample_range.size(); index++) {
             binom_coeff[index] = binomial_coefficient(nbr_sample, sample_range[index]);
         }
 
@@ -1053,7 +1053,7 @@ class Population {
 
                     y_array[point] = res;
 
-                    for (int index{0}; index < sample_range.size(); index++) {
+                    for (size_t index{0}; index < sample_range.size(); index++) {
                         unsigned a = sample_range[index];
                         double y = y_array[point] * pow(x, a - 1) * pow(1 - x, nbr_sample - a - 1);
                         sample_sfs[index] += binom_coeff[index] * h * y;

@@ -11,8 +11,7 @@ double avg(std::vector<double> const &v) { return sum(v) / v.size(); }
 
 // Function for variance
 double variance(std::vector<double> const &v) {
-    double s2 =
-        accumulate(v.begin(), v.end(), 0.0, [](double a, double b) { return a + b * b; });
+    double s2 = accumulate(v.begin(), v.end(), 0.0, [](double a, double b) { return a + b * b; });
     double mean = avg(v);
     return (s2 / v.size()) - mean * mean;
 }

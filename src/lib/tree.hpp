@@ -19,7 +19,7 @@ class Tree {
             children_.emplace_back(input_tree.children(i).begin(), input_tree.children(i).end());
             name_.push_back(input_tree.tag(i, "name"));
             std::string length = input_tree.tag(i, "length");
-            if (length == ""){
+            if (length.empty()) {
                 length_.push_back(0.0);
             } else {
                 length_.push_back(std::stod(length));
@@ -33,7 +33,7 @@ class Tree {
     double node_length(NodeIndex node) const { return length_[node]; }
     double total_length() const {
         double tot = 0.0;
-        for (NodeIndex i = 0; i < nb_nodes(); i++) { tot += node_length(i); }
+        for (NodeIndex i = 0; i < NodeIndex(nb_nodes()); i++) { tot += node_length(i); }
         return tot;
     }
     NodeIndex root() const { return root_; }
@@ -43,7 +43,7 @@ class Tree {
     int nb_branches() const { return nb_nodes() - 1; }
     int nb_leaves() const {
         int leaves = 0;
-        for (NodeIndex i = 0; i < nb_nodes(); i++) {
+        for (NodeIndex i = 0; i < NodeIndex(nb_nodes()); i++) {
             if (is_leaf(i)) { leaves++; }
         }
         return leaves;

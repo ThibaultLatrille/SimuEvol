@@ -3,8 +3,8 @@
 #include <iostream>
 #include <random>
 #include <set>
-#include "statistic.hpp"
 #include "argparse.hpp"
+#include "statistic.hpp"
 
 using namespace TCLAP;
 using namespace std;
@@ -22,11 +22,11 @@ double distance(vector<double> const &v) {
 vector<double> spherical_coord(u_long n, double radius) {
     vector<double> coord(n, 0);
 
-    for (int i = 0; i < n; ++i) { coord[i] = normal_distr(generator); }
+    for (u_long i = 0; i < n; ++i) { coord[i] = normal_distr(generator); }
 
     double norm = radius / distance(coord);
 
-    for (int i = 0; i < n; ++i) { coord[i] *= norm; }
+    for (u_long i = 0; i < n; ++i) { coord[i] *= norm; }
     return coord;
 }
 
@@ -40,7 +40,7 @@ class Chromosome {
 
     void add_mutation(vector<double> &mut) {
         assert(mut.size() == phenotype.size());
-        for (int i = 0; i < mut.size(); ++i) { phenotype[i] += mut[i]; }
+        for (u_long i = 0; i < mut.size(); ++i) { phenotype[i] += mut[i]; }
     };
 };
 
@@ -61,7 +61,7 @@ class Being {
     explicit Being() {
         genome.reserve(2 * k);
         auto chr = Chromosome(Being::complexity, 1.0 / (2 * k));
-        for (int i = 0; i < k; ++i) {
+        for (u_long i = 0; i < k; ++i) {
             genome.push_back(chr);
             genome.push_back(chr);
         }
@@ -70,7 +70,7 @@ class Being {
 
     Being(Being const &mum, Being const &dad) {
         genome.reserve(2 * k);
-        for (int i = 0; i < k; ++i) {
+        for (u_long i = 0; i < k; ++i) {
             genome.emplace_back(mum.genome[2 * i + chr_distr(generator)]);
             genome.emplace_back(dad.genome[2 * i + chr_distr(generator)]);
         }
@@ -80,7 +80,7 @@ class Being {
     void update_fitness() {
         vector<double> p(complexity, 0.0);
         for (auto const &chr : genome) {
-            for (int i = 0; i < complexity; ++i) { p[i] += chr.phenotype[i]; }
+            for (u_long i = 0; i < complexity; ++i) { p[i] += chr.phenotype[i]; }
         }
         d = distance(p);
         fitness = exp(-a * pow(d, q));
@@ -204,12 +204,10 @@ class Population {
         for (auto const &f : fitnesses) { entropy += f * log(f / f_tot); }
         entropy = exp(-entropy / f_tot) / fitnesses.size();
 
-        auto min_over_max = max_element(fitnesses.begin(), fitnesses.end());
-
         vector<double> p(Being::complexity, 0.0);
         for (auto const &being : beings) {
             for (auto const &chr : being.genome) {
-                for (int i = 0; i < Being::complexity; ++i) { p[i] += chr.phenotype[i]; }
+                for (u_long i = 0; i < Being::complexity; ++i) { p[i] += chr.phenotype[i]; }
             }
         }
         double d = distance(p);
@@ -240,9 +238,9 @@ u_long Being::pleiotropy = 1;
 double Being::a = 0;
 double Being::q = 0;
 
-class SimuRelaxArgParse : public OutputArgParse {
+class SimuEvolArgParse : public OutputArgParse {
   public:
-    explicit SimuRelaxArgParse(CmdLine &cmd) : OutputArgParse(cmd) {}
+    explicit SimuEvolArgParse(CmdLine &cmd) : OutputArgParse(cmd) {}
 
     TCLAP::ValueArg<u_long> pop_size{"n", "pop_size", "population size", false, 100, "u_long", cmd};
     TCLAP::ValueArg<u_long> chromosomes{
@@ -265,7 +263,7 @@ class SimuRelaxArgParse : public OutputArgParse {
 
 int main(int argc, char *argv[]) {
     CmdLine cmd{"SimuRelax", ' ', "0.1"};
-    SimuRelaxArgParse args(cmd);
+    SimuEvolArgParse args(cmd);
     cmd.parse(argc, argv);
 
     string output_path{args.output_path.getValue()};
@@ -292,7 +290,8 @@ int main(int argc, char *argv[]) {
     } else {
         assert(Being::pleiotropy <= Being::complexity);
     }
-    cout << "Each mutation has a pleiotropic effect on " << Being::pleiotropy << " dimensions." << endl;
+    cout << "Each mutation has a pleiotropic effect on " << Being::pleiotropy << " dimensions."
+         << endl;
 
     Being::a = args.peakness.getValue();
     cout << "The peakness of the fitness function is " << Being::a << "." << endl;
@@ -305,9 +304,9 @@ int main(int argc, char *argv[]) {
     u_long relax_length = 100;
 
     output_path += "/" + to_string(pop_size) + "_" + to_string(Being::k) + "_" +
-                   to_string(Being::mu) + "_" + to_string(Being::r) + "_" + to_string(Being::complexity) +
-                   "_" + to_string(Being::pleiotropy) + "_" + to_string(Being::a) + "_" +
-                   to_string(Being::q);
+                   to_string(Being::mu) + "_" + to_string(Being::r) + "_" +
+                   to_string(Being::complexity) + "_" + to_string(Being::pleiotropy) + "_" +
+                   to_string(Being::a) + "_" + to_string(Being::q);
     cout << "The data will be written in " << output_path << endl;
 
 

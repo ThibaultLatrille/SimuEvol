@@ -36,7 +36,7 @@ namespace Codon {
 
     // Function to build an array mapping each of the 64 codons to their respective triplet.
     std::array<std::array<char, 3>, 64> build_codon_to_triplet_array() {
-        std::array<std::array<char, 3>, 64> codon_to_triplet_vec = {0};
+        std::array<std::array<char, 3>, 64> codon_to_triplet_vec = {};
 
         for (char n_1{0}; n_1 < 4; n_1++) {
             // n_1 is the first position of the triplet.
