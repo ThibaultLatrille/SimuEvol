@@ -1,10 +1,5 @@
-#include <sys/resource.h>
-#include <unistd.h>
 #include <chrono>
-#include <iomanip>
-#include <random>
-#include <set>
-#include "Eigen/Dense"
+#include "random.hpp"
 #include "argparse.hpp"
 #include "codon.hpp"
 #include "statistic.hpp"
@@ -259,7 +254,7 @@ class Block {
         for (unsigned site{0}; site < nbr_sites; site++) {
             array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profiles[site], p);
             discrete_distribution<char> freq_codon_distr(codon_freqs.begin(), codon_freqs.end());
-            codon_seq[site] = freq_codon_distr(Codon::re);
+            codon_seq[site] = freq_codon_distr(generator);
         }
 
         haplotype_vector.emplace_back(Haplotype(2 * population_size, 0.0));
@@ -329,7 +324,7 @@ class Block {
 
         binomial_distribution<unsigned> binomial_distr(
             2 * population_size * nbr_nucleotides, p.max_sum_mutation_rates);
-        unsigned binomial_draw = binomial_distr(Codon::re);
+        unsigned binomial_draw = binomial_distr(generator);
 
         if (binomial_draw > 0) {
             set<tuple<unsigned, unsigned, unsigned>> coordinates_set{};
@@ -341,11 +336,11 @@ class Block {
             while (nbr_draws < binomial_draw) {
                 unsigned haplotype_draw = 0;
 
-                if (haplotype_vector.size() > 1) { haplotype_draw = haplotype_distr(Codon::re); }
+                if (haplotype_vector.size() > 1) { haplotype_draw = haplotype_distr(generator); }
 
                 uniform_int_distribution<unsigned> copy_and_site_distr(
                     0, haplotype_vector[haplotype_draw].nbr_copies * nbr_nucleotides - 1);
-                unsigned copy_and_site_draw = copy_and_site_distr(Codon::re);
+                unsigned copy_and_site_draw = copy_and_site_distr(generator);
                 unsigned nuc_site = copy_and_site_draw % nbr_nucleotides;
                 unsigned copy = copy_and_site_draw / nbr_nucleotides;
 
@@ -383,7 +378,7 @@ class Block {
 
                     if (p.max_sum_mutation_rates != p.sum_mutation_rates[nuc_from]) {
                         uniform_real_distribution<double> uni_distr(0.0, p.max_sum_mutation_rates);
-                        double sum_unif = uni_distr(Codon::re);
+                        double sum_unif = uni_distr(generator);
 
                         if (sum_unif > p.sum_mutation_rates[nuc_from]) { draw_mutation = false; }
                     }
@@ -393,7 +388,7 @@ class Block {
                             p.mutation_rate_matrix[nuc_from].begin(),
                             p.mutation_rate_matrix[nuc_from].end());
 
-                        triplet_nuc[nuc_position] = mutation_distr(Codon::re);
+                        triplet_nuc[nuc_position] = mutation_distr(generator);
                         char codon_to =
                             Codon::triplet_to_codon(triplet_nuc[0], triplet_nuc[1], triplet_nuc[2]);
                         if (Codon::codon_to_aa_array[codon_to] != 20) {
@@ -448,7 +443,7 @@ class Block {
 
             for (unsigned i_hap{0}; i_hap < haplotype_vector.size() - 1; i_hap++) {
                 binomial_distribution<unsigned> bin(children_tot, fitness_vector[i_hap] / fit_tot);
-                unsigned children = bin(Codon::re);
+                unsigned children = bin(generator);
                 haplotype_vector[i_hap].nbr_copies = children;
                 children_tot -= children;
                 fit_tot -= fitness_vector[i_hap];
@@ -739,12 +734,12 @@ class Population {
                 }
                 sum_copies += block.haplotype_vector[i_hap].nbr_copies;
             }
-            shuffle(haplotypes_sample.begin(), haplotypes_sample.end(), Codon::re);
+            shuffle(haplotypes_sample.begin(), haplotypes_sample.end(), generator);
             haplotypes_sample.resize(2 * sample_size);
 
             // dN/dS computed using one individual of the sample
             uniform_int_distribution<unsigned> chosen_distr(0, 2 * sample_size - 1);
-            unsigned chosen = chosen_distr(Codon::re);
+            unsigned chosen = chosen_distr(generator);
             for (auto const &change :
                 block.haplotype_vector[haplotypes_sample[chosen]].set_change) {
                 if (is_synonymous(change)) {

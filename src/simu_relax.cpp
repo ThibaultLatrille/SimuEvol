@@ -1,16 +1,10 @@
-#include <fstream>
-#include <iomanip>
-#include <iostream>
-#include <random>
-#include <set>
+#include "random.hpp"
 #include "argparse.hpp"
 #include "statistic.hpp"
 
 using namespace TCLAP;
 using namespace std;
 
-double seed{0};
-default_random_engine generator(seed);
 normal_distribution<double> normal_distr(0.0, 1.0);
 uniform_int_distribution<u_long> chr_distr(0, 1);
 

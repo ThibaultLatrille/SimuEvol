@@ -174,8 +174,4 @@ namespace Codon {
     }
 
     char codon_aa_string(char codon) { return amino_acids[codon_to_aa_array[codon]]; }
-
-    // Random generator engine with seed 0.
-    double seed{0};
-    std::default_random_engine re(seed);
 }  // namespace Codon

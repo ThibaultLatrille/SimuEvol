@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <fstream>
+#include <cmath>
 #include "tclap/CmdLine.h"
 
 class OutputArgParse {
@@ -19,28 +20,20 @@ class SimuArgParse : public OutputArgParse {
   public:
     explicit SimuArgParse(TCLAP::CmdLine& cmd) : OutputArgParse(cmd) {}
 
+    TCLAP::ValueArg<std::string> nuc_matrix_path{
+            "q", "nuc_matrix", "input nucleotide matrix preferences path", false, "nuc_matrix", "string", cmd};
     TCLAP::ValueArg<std::string> preferences_path{
-        "f", "preferences", "input site-specific preferences path", true, "chain", "string", cmd};
+        "f", "preferences", "input site-specific preferences path", true, "preferences", "string", cmd};
     TCLAP::ValueArg<std::string> newick_path{
-        "t", "newick", "input newick tree path", true, "chain", "string", cmd};
+        "t", "newick", "input newick tree path", true, "newick", "string", cmd};
 };
-
-std::string open_newick(std::string const& file_name) {
-    std::ifstream input_stream(file_name);
-    if (!input_stream) std::cerr << "Can't open newick file!" << std::endl;
-
-    std::string line;
-    getline(input_stream, line);
-
-    return line;
-}
 
 std::vector<std::array<double, 20>> open_preferences(
     std::string const& file_name, double const& beta) {
     std::vector<std::array<double, 20>> fitness_profiles{0};
 
     std::ifstream input_stream(file_name);
-    if (!input_stream) std::cerr << "Can't open preferences file!" << std::endl;
+    if (!input_stream) std::cerr << "Preferences file " << file_name << "doesn't exist" << std::endl;
 
     std::string line;
 
@@ -54,7 +47,7 @@ std::vector<std::array<double, 20>> open_preferences(
         unsigned counter{0};
 
         while (getline(line_stream, word, ' ')) {
-            if (counter > 2) { fitness_profil[counter - 3] = beta * log(stod(word)); }
+            if (counter > 2) { fitness_profil[counter - 3] = beta * std::log(stod(word)); }
             counter++;
         }
 
