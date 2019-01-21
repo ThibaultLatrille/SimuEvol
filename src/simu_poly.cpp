@@ -1,7 +1,9 @@
 #include <chrono>
-#include "random.hpp"
 #include "argparse.hpp"
 #include "codon.hpp"
+#include "io.hpp"
+#include "matrices.hpp"
+#include "random.hpp"
 #include "statistic.hpp"
 #include "tree.hpp"
 
@@ -134,55 +136,6 @@ void average(vector<SummaryStatistics> const &vector_stats) {
          << endl;
 }
 
-class MutationParams {
-  public:
-    // Mutation
-    double lambda;
-    array<array<double, 4>, 4> mutation_rate_matrix;
-    array<double, 4> nuc_frequencies;
-    double max_sum_mutation_rates;
-    array<double, 4> sum_mutation_rates;
-
-    MutationParams(double const &mutation_bias, double const &mu)
-        : lambda{mutation_bias},
-          mutation_rate_matrix{},
-          nuc_frequencies{{mutation_bias, 1, 1, mutation_bias}},
-          max_sum_mutation_rates{0},
-          sum_mutation_rates{0} {
-        mutation_rate_matrix[0] = {0, 1, 1, lambda};
-        mutation_rate_matrix[1] = {lambda, 0, 1, lambda};
-        mutation_rate_matrix[2] = {lambda, 1, 0, lambda};
-        mutation_rate_matrix[3] = {lambda, 1, 1, 0};
-
-        double sum_freq = accumulate(nuc_frequencies.begin(), nuc_frequencies.end(), 0.0);
-        for (char nuc_from{0}; nuc_from < 4; nuc_from++) {
-            nuc_frequencies[nuc_from] /= sum_freq;
-            for (char nuc_to{0}; nuc_to < 4; nuc_to++) {
-                mutation_rate_matrix[nuc_from][nuc_to] *= mu;
-            }
-        }
-
-
-        for (char nuc_from{0}; nuc_from < 4; nuc_from++) {
-            sum_mutation_rates[nuc_from] = 0;
-            for (char nuc_to{0}; nuc_to < 4; nuc_to++) {
-                sum_mutation_rates[nuc_from] += mutation_rate_matrix[nuc_from][nuc_to];
-            }
-        }
-        max_sum_mutation_rates = *max_element(sum_mutation_rates.begin(), sum_mutation_rates.end());
-    };
-
-    double mutation_rate() const {
-        double total = 0;
-        for (char nuc_from{0}; nuc_from < 4; nuc_from++) {
-            for (char nuc_to{0}; nuc_to < 4; nuc_to++) {
-                total += nuc_frequencies[nuc_from] * mutation_rate_matrix[nuc_from][nuc_to];
-            }
-        }
-        return total;
-    };
-};
-
 class Haplotype {
   public:
     // The nbr_copies of sites in the sequence (each position is a codon, thus the DNA sequence is 3
@@ -242,7 +195,7 @@ class Block {
 
     // Constructor
     explicit Block(vector<array<double, 20>> const &fitness_profiles, const unsigned &position,
-        const unsigned &population_size, const string &output_path, MutationParams const &p)
+        const unsigned &population_size, const string &output_path, NucleotideRateMatrix const &p)
         : population_size{population_size},
           position{position},
           aa_fitness_profiles{fitness_profiles},
@@ -264,7 +217,7 @@ class Block {
 
     // Method computing the equilibrium frequencies for one site.
     array<double, 64> codon_frequencies(
-        array<double, 20> const &aa_fitness_profil, MutationParams const &p) const {
+        array<double, 20> const &aa_fitness_profil, NucleotideRateMatrix const &p) const {
         array<double, 64> codon_frequencies{0};
         // For each site of the vector of the site frequencies.
         for (char codon{0}; codon < 64; codon++) {
@@ -302,7 +255,7 @@ class Block {
         assert(nbr_copies == 2 * population_size);
     }
 
-    void forward(MutationParams const &p) {
+    void forward(NucleotideRateMatrix const &p) {
         mutation(p);
         selection_and_drift();
         extinction();
@@ -319,7 +272,7 @@ class Block {
         return haplotype_distr;
     }
 
-    void mutation(MutationParams const &p) {
+    void mutation(NucleotideRateMatrix const &p) {
         TimeVar t_start = timeNow();
 
         binomial_distribution<unsigned> binomial_distr(
@@ -376,19 +329,13 @@ class Block {
 
                     bool draw_mutation = true;
 
-                    if (p.max_sum_mutation_rates != p.sum_mutation_rates[nuc_from]) {
-                        uniform_real_distribution<double> uni_distr(0.0, p.max_sum_mutation_rates);
-                        double sum_unif = uni_distr(generator);
-
-                        if (sum_unif > p.sum_mutation_rates[nuc_from]) { draw_mutation = false; }
+                    if (p.max_sum_mutation_rates != p.sum_mutation_rates(nuc_from)) {
+                        double sum_unif = p.max_real_distr(generator);
+                        if (sum_unif > p.sum_mutation_rates(nuc_from)) { draw_mutation = false; }
                     }
 
                     if (draw_mutation) {
-                        discrete_distribution<char> mutation_distr(
-                            p.mutation_rate_matrix[nuc_from].begin(),
-                            p.mutation_rate_matrix[nuc_from].end());
-
-                        triplet_nuc[nuc_position] = mutation_distr(generator);
+                        triplet_nuc[nuc_position] = p.mutation_distr[nuc_from](generator);
                         char codon_to =
                             Codon::triplet_to_codon(triplet_nuc[0], triplet_nuc[1], triplet_nuc[2]);
                         if (Codon::codon_to_aa_array[codon_to] != 20) {
@@ -544,7 +491,8 @@ class Population {
     explicit Population() = default;
 
     Population(vector<array<double, 20>> const &fitness_profiles, unsigned &population_size,
-        unsigned &sample_size, string &output_path, bool linked_sites, MutationParams const &p)
+        unsigned &sample_size, string &output_path, bool linked_sites,
+        NucleotideRateMatrix const &p)
         : blocks{}, sample_size{sample_size} {
         if (linked_sites) {
             blocks.emplace_back(Block(fitness_profiles, 0, population_size, output_path, p));
@@ -566,7 +514,7 @@ class Population {
         for (auto const &block : blocks) { block.check_consistency(); }
     };
 
-    void run_forward(unsigned t_max, MutationParams const &p) {
+    void run_forward(unsigned t_max, NucleotideRateMatrix const &p) {
         for (unsigned gen{1}; gen <= t_max; gen++) {
             for (auto &block : blocks) {
                 assert(!block.haplotype_vector.empty());
@@ -578,14 +526,14 @@ class Population {
         check_consistency();
     }
 
-    void burn_in(unsigned burn_in_length, MutationParams const &p) {
+    void burn_in(unsigned burn_in_length, NucleotideRateMatrix const &p) {
         cout << "Burn-in (" << burn_in_length * max_population_size << " generations)" << endl;
         run_forward(max_population_size * burn_in_length, p);
         cout << "Burn-in completed" << endl;
     }
 
     void linear_run(string &output_filename, unsigned nbr_intervals, unsigned interval_length,
-        MutationParams const &p) {
+        NucleotideRateMatrix const &p) {
         for (unsigned sample{1}; sample <= nbr_intervals; sample++) {
             run_forward(max_population_size * interval_length, p);
             string name = to_string(elapsed);
@@ -596,7 +544,7 @@ class Population {
         }
     }
 
-    unsigned theoretical_dnds(SummaryStatistics &stats, MutationParams const &p) const {
+    unsigned theoretical_dnds(SummaryStatistics &stats, NucleotideRateMatrix const &p) const {
         unsigned nbr_nucleotides{0};
         double at_sites{0};
         double sub_flow{0.}, mut_flow{0.};
@@ -630,10 +578,8 @@ class Population {
                                     p_fix = delta_f / (1 - exp(-delta_f));
                                 }
 
-                                sub_flow += codon_freqs[codon_from] *
-                                            p.mutation_rate_matrix[n_from][n_to] * p_fix;
-                                mut_flow +=
-                                    codon_freqs[codon_from] * p.mutation_rate_matrix[n_from][n_to];
+                                sub_flow += codon_freqs[codon_from] * p(n_from, n_to) * p_fix;
+                                mut_flow += codon_freqs[codon_from] * p(n_from, n_to);
                             }
                         }
                     }
@@ -653,7 +599,8 @@ class Population {
         return nbr_nucleotides;
     };
 
-    void output_vcf(string &output_filename, string &node_name, MutationParams const &p) const {
+    void output_vcf(
+        string &output_filename, string &node_name, NucleotideRateMatrix const &p) const {
         TimeVar t_start = timeNow();
 
         SummaryStatistics stats;
@@ -922,7 +869,7 @@ class Population {
 
         unsigned nbr_mutations = table.syn_mut + table.non_syn_mut;
         unsigned nbr_fixations = table.syn_fix + table.non_syn_fix;
-        // .ali format
+
         ofstream tsv;
         tsv.open(output_filename + ".tsv", ios_base::app);
         tsv << node_name << "\t" << elapsed << "\t" << 2 << "\tdN\t" << stats.dn << endl;
@@ -979,7 +926,8 @@ class Population {
         time_elapsed.exportation += duration(timeNow() - t_start);
     }
 
-    vector<double> theoretial_sfs(MutationParams const &p, unsigned nbr_sample, bool synonymous) {
+    vector<double> theoretial_sfs(
+        NucleotideRateMatrix const &p, unsigned nbr_sample, bool synonymous) {
         unsigned precision = 8;
         unsigned nbr_points = pow_int(2, precision) + 1;
 
@@ -994,7 +942,7 @@ class Population {
         }
 
         for (auto const &block : blocks) {
-            double theta = 4 * block.population_size * p.mutation_rate();
+            double theta = 4 * block.population_size * p.mutation_rate;
 
             for (auto const &aa_fitness_profil : block.aa_fitness_profiles) {
                 array<double, 64> codon_freqs = block.codon_frequencies(aa_fitness_profil, p);
@@ -1038,7 +986,7 @@ class Population {
                                             pij *= (1 - exp(-s * (1 - x))) / (1 - exp(-s));
                                         }
                                     }
-                                    pij *= p.mutation_rate_matrix[n_from][n_to];
+                                    pij *= p(n_from, n_to);
                                     tmp_res += pij;
                                 }
                             }
@@ -1126,17 +1074,17 @@ class Process {
         populations[tree.root()] = &root_pop;
     }
 
-    void run(string &output_filename, double scale, MutationParams const &p) {
+    void run(string &output_filename, double scale, NucleotideRateMatrix const &p) {
         run_recursive(tree.root(), output_filename, scale, p);
     }
 
 
     // Recursively iterate through the subtree.
-    void run_recursive(
-        Tree::NodeIndex node, string &output_filename, double scale, MutationParams const &p) {
+    void run_recursive(Tree::NodeIndex node, string &output_filename, double scale,
+        NucleotideRateMatrix const &p) {
         // Substitutions of the DNA sequence is generated.
 
-        auto gen = static_cast<unsigned>(scale * tree.node_length(node) / (p.mutation_rate()));
+        auto gen = static_cast<unsigned>(scale * tree.node_length(node) / (p.mutation_rate));
         populations[node]->run_forward(gen, p);
 
         length_computed += tree.node_length(node);
@@ -1144,20 +1092,7 @@ class Process {
         string name = tree.node_name(node);
         if (tree.is_leaf(node)) {
             // If the node is a leaf, output the DNA sequence and name.
-            string dna_str = populations[node]->get_dna_str();
-
-            // .ali format
-            ofstream ali_file;
-            ali_file.open(output_filename + ".ali", ios_base::app);
-            ali_file << name << " " << dna_str << endl;
-            ali_file.close();
-
-            // .fasta format
-            ofstream fasta_file;
-            fasta_file.open(output_filename + ".fasta", ios_base::app);
-            fasta_file << ">" << name << endl << dna_str << endl;
-            fasta_file.close();
-
+            write_sequence(output_filename, name, populations[node]->get_dna_str());
             populations[node]->output_vcf(output_filename, name, p);
         } else {
             // If the node is internal, iterate through the direct children.
@@ -1179,8 +1114,6 @@ class SimuPolyArgParse : public SimuArgParse {
     TCLAP::ValueArg<double> mu{"m", "mu", "Mutation rate", false, 1e-8, "double", cmd};
     TCLAP::ValueArg<double> substitutions{"s", "substitutions",
         "Number of expected substitutions per unit of branch length", false, 0.01, "double", cmd};
-    TCLAP::ValueArg<double> lambda{
-        "l", "lambda", "Strong to weak mutation bias", false, 5.0, "double", cmd};
     TCLAP::ValueArg<unsigned> pop_size{
         "n", "pop_size", "Population size", false, 500, "unsigned", cmd};
     TCLAP::ValueArg<unsigned> sample_size{
@@ -1200,7 +1133,6 @@ int main(int argc, char *argv[]) {
     string output_path{args.output_path.getValue()};
 
     double mu{args.mu.getValue()};
-    double lambda{args.lambda.getValue()};
     double sub_rate{args.substitutions.getValue()};
     unsigned pop_size{args.pop_size.getValue()};
     unsigned sample_size{args.sample_size.getValue()};
@@ -1216,10 +1148,8 @@ int main(int argc, char *argv[]) {
     txt_file.open(output_path + ".tsv");
     txt_file << "Beta\t" << beta << endl;
     txt_file << "MutationRate\t" << mu << endl;
-    txt_file << "MutationalBias\t" << lambda << endl;
     txt_file << "PopulationSize\t" << pop_size << endl;
     txt_file << "SampleSize\t" << sample_size << endl;
-    txt_file << "ExpectedSubs\t" << lambda << endl;
     txt_file << "SequenceSize\t" << fitness_profiles.size() * 3 << endl;
     txt_file.close();
 
@@ -1228,7 +1158,7 @@ int main(int argc, char *argv[]) {
     tsv_file.close();
 
     unsigned burn_in = 100;
-    MutationParams p(lambda, mu);
+    NucleotideRateMatrix p(args.nuc_matrix_path.getValue(), mu, true);
     Population root_population(
         fitness_profiles, pop_size, sample_size, output_path, linked_sites, p);
     root_population.burn_in(burn_in, p);
@@ -1244,17 +1174,7 @@ int main(int argc, char *argv[]) {
         std::unique_ptr<const Tree> tree;
         tree = make_from_parser(parser);
 
-        unsigned nbr_leaves = tree->nb_leaves();
-        cout << "The tree has " << nbr_leaves << " leaves" << endl;
-        cout << "The tree is of length " << tree->total_length() << endl;
-        ofstream ali_file;
-        ali_file.open(output_path + ".ali");
-        ali_file << nbr_leaves << " " << fitness_profiles.size() * 3 << endl;
-        ali_file.close();
-
-        ofstream fasta_file;
-        fasta_file.open(output_path + ".fasta");
-        fasta_file.close();
+        init_alignments(output_path, tree->nb_leaves(), fitness_profiles.size() * 3);
 
         Process simu_process(*tree, root_population);
         simu_process.run(output_path, sub_rate, p);

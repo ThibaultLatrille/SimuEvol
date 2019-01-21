@@ -51,7 +51,7 @@ class Sequence_dna {
     vector<char> codon_seq;
 
     // The matrix of mutation rates between nucleotides.
-    Matrix4x4 mutation_rate_matrix;
+    NucleotideRateMatrix const &mutation_rate_matrix;
 
     // The fitness profiles of amino-acids.
     vector<array<double, 20>> aa_fitness_profiles;
@@ -68,16 +68,17 @@ class Sequence_dna {
   public:
     // Constructor of Sequence_dna.
     // size: the size of the DNA sequence.
-    explicit Sequence_dna(Matrix4x4 const &mutation_rate,
+    explicit Sequence_dna(NucleotideRateMatrix const &mutation_rate,
         vector<array<double, 20>> const &fitness_profiles, double const s,
         double const proba_permutation, bool const all_sites)
         : nbr_sites{static_cast<unsigned>(fitness_profiles.size())},
           codon_seq(nbr_sites, 0),
+          mutation_rate_matrix{mutation_rate},
           aa_fitness_profiles{fitness_profiles},
           sel_coef{s},
           proba_permutation{proba_permutation},
           all_sites{all_sites} {
-        mutation_rate_matrix = mutation_rate;
+        ;
     }
 
     // Method translating the codon sequence to amino-acid sequence.
@@ -182,9 +183,8 @@ class Sequence_dna {
             Substitution sub = {
                 site, codom_from, codon_to, n_from, n_to, non_syn_opp_matrix, syn_opp_matrix};
 
-            if (non_syn_opp_matrix.sum() > 10e10 or syn_opp_matrix.sum() > 10e10) {
-                printf("Shit !!!!");
-            }
+            assert(non_syn_opp_matrix.sum() < 10e10);
+            assert(syn_opp_matrix.sum() < 10e10);
 
             substitutions_vec.push_back(sub);
 
@@ -232,7 +232,7 @@ class Sequence_dna {
     // Method computing the equilibrium frequencies for one site.
     // aa_fitness_profil: The amino-acid fitness profil of the given site.
     array<double, 64> codon_frequencies(array<double, 20> const &aa_fitness_profil) {
-        Vector4x1 nuc_frequencies = equilibrium_frequencies(mutation_rate_matrix);
+        Vector4x1 nuc_frequencies = mutation_rate_matrix.nuc_frequencies;
 
         array<double, 64> codon_frequencies{0};
 
@@ -353,6 +353,7 @@ class Sequence_dna {
         Trace trace;
         for (unsigned site{0}; site < nbr_sites; site++) {
             // Codon original before substitution.
+            trace.add("site", site + 1);
             array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profiles[site]);
             for (char codon_from{0}; codon_from < 64; codon_from++) {
                 // For all possible neighbors.
@@ -408,8 +409,7 @@ class Process {
 
         if (tree.is_leaf(node)) {
             // If the node is a leaf, output the DNA sequence and name.
-            string dna_str = sequences[node]->get_dna_str();
-            write_sequence(output_filename, tree.node_name(node), dna_str);
+            write_sequence(output_filename, tree.node_name(node), sequences[node]->get_dna_str());
         } else {
             // If the node is internal, iterate through the direct children.
             for (auto &child : tree.children(node)) {
@@ -496,8 +496,7 @@ int main(int argc, char *argv[]) {
         open_preferences(args.preferences_path.getValue(), args.beta.getValue());
     auto nbr_sites = static_cast<unsigned>(fitness_profiles.size());
 
-    Matrix4x4 mutation_rate = input_matrix(args.nuc_matrix_path.getValue());
-    mutation_rate *= mu;
+    NucleotideRateMatrix mutation_rate(args.nuc_matrix_path.getValue(), mu, true);
 
     Sequence_dna root_sequence(mutation_rate, fitness_profiles, s, p, all_sites);
 
@@ -506,7 +505,7 @@ int main(int argc, char *argv[]) {
     std::unique_ptr<const Tree> tree;
     tree = make_from_parser(parser);
 
-    init_alignments(output_path, tree->nb_leaves(), nbr_sites);
+    init_alignments(output_path, tree->nb_leaves(), nbr_sites * 3);
 
     trace.add("Tree nodes", tree->nb_nodes());
     trace.add("Tree leaves", tree->nb_leaves());
@@ -534,7 +533,9 @@ int main(int argc, char *argv[]) {
         "Simulated omega", simu_process.simulated_omega(Codon::nucleotides, Codon::nucleotides));
 
     trace.write_tsv(output_path);
-    cout << "Simulation computed. Log of the simulation available at: " << endl;
-    cout << output_path + ".txt" << endl;
+    cout << "Simulation computed." << endl;
+    cout << "Statistics summarized in: " << output_path + ".tsv" << endl;
+    cout << "Fasta file in: " << output_path + ".fasta" << endl;
+    cout << "Alignment (.ali) file in: " << output_path + ".ali" << endl;
     return 0;
 }
