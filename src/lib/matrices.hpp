@@ -3,6 +3,8 @@
 #include <cassert>
 #include <random>
 #include "Eigen/Dense"
+#include "statistic.hpp"
+
 typedef Eigen::Matrix<double, 4, 4> Matrix4x4;
 typedef Eigen::Matrix<double, 4, 1> Vector4x1;
 
@@ -55,20 +57,6 @@ class NucleotideRateMatrix : public Matrix4x4 {
         std::cout << "The equilibrium nucleotides frequencies (" << Codon::nucleotides << ") are:\n"
                   << nuc_frequencies.transpose() << std::endl;
 
-        bool reversible = true;
-        for (int row{0}; row < 4; row++) {
-            for (int col{0}; col < 4; col++) {
-                double diff = nuc_frequencies(row) * (*this)(row, col) -
-                              nuc_frequencies(col) * (*this)(col, row);
-                if (std::abs(diff) > 1e-6) { reversible = false; }
-            }
-        }
-        if (reversible) {
-            std::cout << "The nucleotide rate matrix is time-reversible." << std::endl;
-        } else {
-            std::cerr << "The nucleotide rate matrix is not time-reversible." << std::endl;
-        }
-
         if (normalize) { normalize_matrix(); }
 
         (*this) *= mutation_rate;
@@ -83,12 +71,27 @@ class NucleotideRateMatrix : public Matrix4x4 {
         for (char nuc_from{0}; nuc_from < 4; nuc_from++) {
             std::array<double, 4> rates{0.0};
             for (char nuc_to{0}; nuc_to < 4; nuc_to++) {
-                if (nuc_from != nuc_to) {
-                    rates[nuc_to] = (*this)(nuc_from, nuc_to);
-                }
+                if (nuc_from != nuc_to) { rates[nuc_to] = (*this)(nuc_from, nuc_to); }
             }
             mutation_distr[nuc_from] = std::discrete_distribution<char>(rates.begin(), rates.end());
         }
+    }
+
+    bool is_reversible() {
+        bool reversible = true;
+        for (int row{0}; row < 4; row++) {
+            for (int col{0}; col < 4; col++) {
+                double diff = nuc_frequencies(row) * (*this)(row, col) -
+                              nuc_frequencies(col) * (*this)(col, row);
+                if (std::abs(diff) > 1e-6) { reversible = false; }
+            }
+        }
+        if (reversible) {
+            std::cout << "The nucleotide rate matrix is time-reversible." << std::endl;
+        } else {
+            std::cerr << "The nucleotide rate matrix is not time-reversible." << std::endl;
+        }
+        return reversible;
     }
 
     // Compute the kernel of the mutation-rate matrix.
@@ -104,4 +107,108 @@ class NucleotideRateMatrix : public Matrix4x4 {
         double events = -(nuc_frequencies.transpose() * (*this).diagonal()).sum();
         (*this) /= events;
     }
+
+    void add_to_trace(Trace &trace) {
+        for (char nuc_from{0}; nuc_from < 4; nuc_from++) {
+            for (char nuc_to{0}; nuc_to < 4; nuc_to++) {
+                if (nuc_from != nuc_to) {
+                    std::string key = "q_";
+                    key += Codon::nucleotides[nuc_from];
+                    key += Codon::nucleotides[nuc_to];
+                    trace.add(key, (*this)(nuc_from, nuc_to));
+                }
+            }
+        }
+        trace.add("NucleotideMatrixReversible", is_reversible());
+    }
 };
+
+// Method computing the equilibrium frequencies for one site.
+std::array<double, 64> codon_frequencies(
+    std::array<double, 20> const &aa_fitness_profil, NucleotideRateMatrix const &rates) {
+    std::array<double, 64> codon_frequencies{0};
+    // For each site of the vector of the site frequencies.
+    for (char codon{0}; codon < 64; codon++) {
+        double codon_freq = 1.0;
+
+        // For all nucleotides in the codon
+        for (auto const &nuc : Codon::codon_to_triplet_array[codon]) {
+            codon_freq *= rates.nuc_frequencies[nuc];
+        }
+
+        if (Codon::codon_to_aa_array[codon] != 20) {
+            codon_frequencies[codon] =
+                codon_freq * exp(aa_fitness_profil[Codon::codon_to_aa_array[codon]]);
+        } else {
+            codon_frequencies[codon] = 0.;
+        }
+    }
+
+    double sum_freq = std::accumulate(codon_frequencies.begin(), codon_frequencies.end(), 0.0);
+    for (char codon{0}; codon < 64; codon++) { codon_frequencies[codon] /= sum_freq; }
+
+    return codon_frequencies;
+};
+
+double rate_fixation(std::array<double, 20> const &preferences, char codon_from, char codon_to) {
+    double rate_fix = 1.0;
+    // Selective strength between the mutated and original amino-acids.
+    double s{0.};
+    s = preferences[Codon::codon_to_aa_array[codon_to]];
+    s -= preferences[Codon::codon_to_aa_array[codon_from]];
+    // If the selective strength is 0, the rate of fixation is neutral.
+    // Else, the rate of fixation is computed using population genetic formulas
+    // (Kimura).
+    if (fabs(s) > Codon::epsilon) {
+        // The substitution rate is the mutation rate multiplied by the rate of
+        // fixation.
+        rate_fix = s / (1 - exp(-s));
+    }
+    return rate_fix;
+}
+
+// Theoretical computation of the predicted omega
+std::tuple<double, double> predicted_dn_d0(
+    std::vector<std::array<double, 20>> const &aa_fitness_profiles,
+    NucleotideRateMatrix const &mutation_rate_matrix) {
+    // For all site of the sequence.
+    double dn{0.}, d0{0.};
+    for (auto const &aa_fitness_profile : aa_fitness_profiles) {
+        // Codon original before substitution.
+        std::array<double, 64> codon_freqs =
+            codon_frequencies(aa_fitness_profile, mutation_rate_matrix);
+
+        for (char codon_from{0}; codon_from < 64; codon_from++) {
+            if (Codon::codon_to_aa_array[codon_from] != 20) {
+                // For all possible neighbors.
+                for (auto &neighbor : Codon::codon_to_neighbors_array[codon_from]) {
+                    // Codon after mutation, Nucleotide original and Nucleotide after mutation.
+                    char codon_to{0}, n_from{0}, n_to{0};
+                    std::tie(codon_to, n_from, n_to) = neighbor;
+
+                    // If the mutated amino-acid is a stop codon, the rate of fixation is 0.
+                    // Else, if the mutated and original amino-acids are non-synonymous, we
+                    // compute the rate of fixation. Note that, if the mutated and original
+                    // amino-acids are synonymous, the rate of fixation is 1.
+                    if (Codon::codon_to_aa_array[codon_to] != 20 and
+                        Codon::codon_to_aa_array[codon_from] !=
+                            Codon::codon_to_aa_array[codon_to]) {
+                        dn += codon_freqs[codon_from] * mutation_rate_matrix(n_from, n_to) *
+                              rate_fixation(aa_fitness_profile, codon_from, codon_to);
+                        d0 += codon_freqs[codon_from] * mutation_rate_matrix(n_from, n_to);
+                    }
+                }
+            }
+        }
+    }
+    return std::make_tuple(dn, d0);
+}
+
+// Theoretical computation of the predicted omega
+double predicted_omega(std::vector<std::array<double, 20>> const &aa_fitness_profiles,
+    NucleotideRateMatrix const &mutation_rate_matrix) {
+    // For all site of the sequence.
+    double dn{0.}, d0{0.};
+    std::tie(dn, d0) = predicted_dn_d0(aa_fitness_profiles, mutation_rate_matrix);
+    return dn / d0;
+}

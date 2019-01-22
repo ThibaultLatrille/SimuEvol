@@ -72,6 +72,7 @@ class Trace {
         data.at(row).at(col) = val;
     }
 
+    void add(std::string const &key, bool val) { add(key, std::to_string(val)); }
     void add(std::string const &key, int val) { add(key, std::to_string(val)); }
     void add(std::string const &key, unsigned val) { add(key, std::to_string(val)); }
     void add(std::string const &key, long val) { add(key, std::to_string(val)); }

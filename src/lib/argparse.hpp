@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cassert>
-#include <fstream>
 #include <cmath>
+#include <fstream>
 #include "tclap/CmdLine.h"
 
 class OutputArgParse {
@@ -12,8 +12,7 @@ class OutputArgParse {
   public:
     explicit OutputArgParse(TCLAP::CmdLine& cmd) : cmd{cmd} {}
 
-    TCLAP::ValueArg<std::string> output_path{
-        "o", "output", "output protein path", true, "chain", "string", cmd};
+    TCLAP::ValueArg<std::string> output_path{"o", "output", "output path", true, "", "string", cmd};
 };
 
 class SimuArgParse : public OutputArgParse {
@@ -21,11 +20,11 @@ class SimuArgParse : public OutputArgParse {
     explicit SimuArgParse(TCLAP::CmdLine& cmd) : OutputArgParse(cmd) {}
 
     TCLAP::ValueArg<std::string> nuc_matrix_path{
-            "q", "nuc_matrix", "input nucleotide matrix preferences path", false, "nuc_matrix", "string", cmd};
+        "q", "nuc_matrix", "input nucleotide matrix preferences path", false, "", "string", cmd};
     TCLAP::ValueArg<std::string> preferences_path{
-        "f", "preferences", "input site-specific preferences path", true, "preferences", "string", cmd};
+        "f", "preferences", "input site-specific preferences path", true, "", "string", cmd};
     TCLAP::ValueArg<std::string> newick_path{
-        "t", "newick", "input newick tree path", true, "newick", "string", cmd};
+        "t", "newick", "input newick tree path", true, "", "string", cmd};
 };
 
 std::vector<std::array<double, 20>> open_preferences(
@@ -33,7 +32,8 @@ std::vector<std::array<double, 20>> open_preferences(
     std::vector<std::array<double, 20>> fitness_profiles{0};
 
     std::ifstream input_stream(file_name);
-    if (!input_stream) std::cerr << "Preferences file " << file_name << "doesn't exist" << std::endl;
+    if (!input_stream)
+        std::cerr << "Preferences file " << file_name << "doesn't exist" << std::endl;
 
     std::string line;
 

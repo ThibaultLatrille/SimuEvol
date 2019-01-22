@@ -1,5 +1,5 @@
-#include "random.hpp"
 #include "argparse.hpp"
+#include "random.hpp"
 #include "statistic.hpp"
 
 using namespace TCLAP;

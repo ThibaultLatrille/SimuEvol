@@ -90,13 +90,14 @@ struct TimeElapsed {
 };
 
 TimeElapsed time_elapsed;
+Trace trace;
 
 struct SummaryStatistics {
     double dn{0}, ds{0}, omega{0}, omega_predicted{0};
     double dn_sample{0}, ds_sample{0}, omega_sample{0};
     double pn_sample{0}, ps_sample{0}, pnps_sample{0};
     double pin_sample{0}, pis_sample{0}, pinpis_sample{0};
-    double at_pct_predicted{0}, at_pct{0}, mean_fitness{0};
+    double at_pct{0}, mean_fitness{0};
 };
 
 // Function for avg of a vector ignoring NaN
@@ -128,9 +129,6 @@ void average(vector<SummaryStatistics> const &vector_stats) {
          << average(vector_stats, [](SummaryStatistics stat) { return stat.pnps_sample; }) << endl;
     cout << "Sample pN/pS=" << average(vector_stats, [](SummaryStatistics stat) {
         return stat.pinpis_sample;
-    }) << endl;
-    cout << "Pred %AT=" << average(vector_stats, [](SummaryStatistics stat) {
-        return stat.at_pct_predicted;
     }) << endl;
     cout << "%AT=" << average(vector_stats, [](SummaryStatistics stat) { return stat.at_pct; })
          << endl;
@@ -195,7 +193,7 @@ class Block {
 
     // Constructor
     explicit Block(vector<array<double, 20>> const &fitness_profiles, const unsigned &position,
-        const unsigned &population_size, const string &output_path, NucleotideRateMatrix const &p)
+        const unsigned &population_size, NucleotideRateMatrix const &p)
         : population_size{population_size},
           position{position},
           aa_fitness_profiles{fitness_profiles},
@@ -214,34 +212,6 @@ class Block {
         check_consistency();
         assert(!haplotype_vector.empty());
     }
-
-    // Method computing the equilibrium frequencies for one site.
-    array<double, 64> codon_frequencies(
-        array<double, 20> const &aa_fitness_profil, NucleotideRateMatrix const &p) const {
-        array<double, 64> codon_frequencies{0};
-        // For each site of the vector of the site frequencies.
-        for (char codon{0}; codon < 64; codon++) {
-            double codon_freq = 1.0;
-
-            // For all nucleotides in the codon
-            for (auto const &nuc : Codon::codon_to_triplet_array[codon]) {
-                codon_freq *= p.nuc_frequencies[nuc];
-            }
-
-            if (Codon::codon_to_aa_array[codon] != 20) {
-                codon_frequencies[codon] =
-                    codon_freq * exp(aa_fitness_profil[Codon::codon_to_aa_array[codon]]);
-            } else {
-                codon_frequencies[codon] = 0.;
-            }
-        }
-
-        double sum_freq = accumulate(codon_frequencies.begin(), codon_frequencies.end(), 0.0);
-        for (char codon{0}; codon < 64; codon++) { codon_frequencies[codon] /= sum_freq; }
-
-        return codon_frequencies;
-    };
-
 
     void check_consistency() const {
         assert(haplotype_vector.size() <= 2 * population_size);
@@ -477,7 +447,8 @@ class Block {
 class Population {
   public:
     // TimeElapsed
-    unsigned elapsed{0};
+    double elapsed{0};
+    double generation_time{0};
 
     // Blocks
     vector<Block> blocks;
@@ -491,17 +462,16 @@ class Population {
     explicit Population() = default;
 
     Population(vector<array<double, 20>> const &fitness_profiles, unsigned &population_size,
-        unsigned &sample_size, string &output_path, bool linked_sites,
+        unsigned &sample_size, double generation_time, bool linked_sites,
         NucleotideRateMatrix const &p)
-        : blocks{}, sample_size{sample_size} {
+        : generation_time{generation_time}, blocks{}, sample_size{sample_size} {
         if (linked_sites) {
-            blocks.emplace_back(Block(fitness_profiles, 0, population_size, output_path, p));
+            blocks.emplace_back(Block(fitness_profiles, 0, population_size, p));
         } else {
             blocks.reserve(fitness_profiles.size());
             for (unsigned site{0}; site < fitness_profiles.size(); site++) {
                 vector<array<double, 20>> site_fitness_profile = {fitness_profiles[site]};
-                blocks.emplace_back(
-                    Block(site_fitness_profile, site, population_size, output_path, p));
+                blocks.emplace_back(Block(site_fitness_profile, site, population_size, p));
             }
         }
         cout << blocks.size() << " blocks created" << endl;
@@ -521,82 +491,27 @@ class Population {
                 block.forward(p);
             }
             check_consistency();
-            elapsed++;
+            elapsed += generation_time;
         }
         check_consistency();
     }
 
     void burn_in(unsigned burn_in_length, NucleotideRateMatrix const &p) {
-        cout << "Burn-in (" << burn_in_length * max_population_size << " generations)" << endl;
-        run_forward(max_population_size * burn_in_length, p);
-        cout << "Burn-in completed" << endl;
+        cout << "Burn-in for " << burn_in_length << " generations." << endl;
+        run_forward(burn_in_length, p);
+        cout << "Burn-in completed." << endl;
     }
 
-    void linear_run(string &output_filename, unsigned nbr_intervals, unsigned interval_length,
-        NucleotideRateMatrix const &p) {
-        for (unsigned sample{1}; sample <= nbr_intervals; sample++) {
-            run_forward(max_population_size * interval_length, p);
-            string name = to_string(elapsed);
-            output_vcf(output_filename, name, p);
-            cout << static_cast<double>(100 * sample) / nbr_intervals
-                 << "% of simulation computed (" << max_population_size * interval_length * sample
-                 << " generations)" << endl;
-        }
-    }
-
-    unsigned theoretical_dnds(SummaryStatistics &stats, NucleotideRateMatrix const &p) const {
-        unsigned nbr_nucleotides{0};
-        double at_sites{0};
+    void theoretical_dnds(SummaryStatistics &stats, NucleotideRateMatrix const &p) const {
         double sub_flow{0.}, mut_flow{0.};
 
         for (auto const &block : blocks) {
-            for (unsigned site{0}; site < block.nbr_sites; site++) {
-                array<double, 64> codon_freqs =
-                    block.codon_frequencies(block.aa_fitness_profiles[site], p);
-
-                for (char codon_from{0}; codon_from < 64; codon_from++) {
-                    if (Codon::codon_to_aa_array[codon_from] != 20) {
-                        for (auto &neighbor : Codon::codon_to_neighbors_array[codon_from]) {
-                            char codon_to{0}, n_from{0}, n_to{0};
-                            tie(codon_to, n_from, n_to) = neighbor;
-                            assert(n_from != n_to);
-
-                            if (Codon::codon_to_aa_array[codon_to] != 20 and
-                                Codon::codon_to_aa_array[codon_from] !=
-                                    Codon::codon_to_aa_array[codon_to]) {
-                                double p_fix{1.};
-
-                                double delta_f =
-                                    block.aa_fitness_profiles[site]
-                                                             [Codon::codon_to_aa_array[codon_to]];
-                                delta_f -=
-                                    block.aa_fitness_profiles[site]
-                                                             [Codon::codon_to_aa_array[codon_from]];
-                                if (fabs(delta_f) <= Codon::epsilon) {
-                                    p_fix = 1.0;
-                                } else {
-                                    p_fix = delta_f / (1 - exp(-delta_f));
-                                }
-
-                                sub_flow += codon_freqs[codon_from] * p(n_from, n_to) * p_fix;
-                                mut_flow += codon_freqs[codon_from] * p(n_from, n_to);
-                            }
-                        }
-                    }
-                    array<char, 3> triplet = Codon::codon_to_triplet_array[codon_from];
-                    for (char position{0}; position < 3; position++) {
-                        if (triplet[position] == 0 or triplet[position] == 3) {
-                            at_sites += codon_freqs[codon_from];
-                        }
-                    }
-                }
-            }
-            nbr_nucleotides += block.nbr_nucleotides;
+            double dn{0}, d0{0};
+            tie(dn, d0) = predicted_dn_d0(block.aa_fitness_profiles, p);
+            sub_flow += dn;
+            mut_flow += d0;
         }
-
-        stats.at_pct_predicted = at_sites / nbr_nucleotides;
         stats.omega_predicted = sub_flow / mut_flow;
-        return nbr_nucleotides;
     };
 
     void output_vcf(
@@ -870,58 +785,35 @@ class Population {
         unsigned nbr_mutations = table.syn_mut + table.non_syn_mut;
         unsigned nbr_fixations = table.syn_fix + table.non_syn_fix;
 
-        ofstream tsv;
-        tsv.open(output_filename + ".tsv", ios_base::app);
-        tsv << node_name << "\t" << elapsed << "\t" << 2 << "\tdN\t" << stats.dn << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 2 << "\tdS\t" << stats.ds << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 2 << "\tdN_sample\t" << stats.dn_sample
-            << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 2 << "\tdS_sample\t" << stats.ds_sample
-            << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 2 << "\tdN/dS\t" << stats.omega << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 2 << "\tdN/dS_sample\t" << stats.omega_sample
-            << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 2 << "\tdN/dS_predicted\t"
-            << stats.omega_predicted << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 3 << "\tpN_sample\t" << stats.pn_sample
-            << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 3 << "\tpS_sample\t" << stats.ps_sample
-            << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 3 << "\tpN/pS_sample\t" << stats.pnps_sample
-            << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 3 << "\tpiN_sample\t" << stats.pin_sample
-            << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 3 << "\tpiS_sample\t" << stats.pis_sample
-            << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 3 << "\tpiN/piS_sample\t"
-            << stats.pinpis_sample << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 5 << "\tNbrMutations\t" << nbr_mutations
-            << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 6 << "\tNbrFixations\t" << nbr_fixations
-            << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 5 << "\tNbrNonSynMutations\t"
-            << table.non_syn_mut << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 5 << "\tNbrSynMutations\t" << table.syn_mut
-            << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 6 << "\tNbrNonSynFixation\t"
-            << table.non_syn_fix << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 6 << "\tNbrSynFixation\t" << table.syn_fix
-            << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 8 << "\tMeanFitness\t" << stats.mean_fitness
-            << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 4 << "\tCpxSites\t" << complex_sites << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 0 << "\tSFSn\t" << join(sfs_non_syn, ' ')
-            << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 4 << "\tE[SFSn]\t" << mean(sfs_non_syn)
-            << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 0 << "\tSFSs\t" << join(sfs_syn, ' ')
-            << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 4 << "\tE[SFSs]\t" << mean(sfs_syn) << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 7 << "\t%AT\t" << stats.at_pct << endl;
-        tsv << node_name << "\t" << elapsed << "\t" << 7 << "\t%AT_predicted\t"
-            << stats.at_pct_predicted << endl;
-        tsv.close();
-
+        trace.add("taxon_name", node_name);
+        trace.add("#generations_from_root", elapsed);
+        trace.add("dN", elapsed);
+        trace.add("dN", stats.dn);
+        trace.add("dS", stats.ds);
+        trace.add("dN_sample", stats.dn_sample);
+        trace.add("dS_sample", stats.ds_sample);
+        trace.add("dN/dS", stats.omega);
+        trace.add("dN/dS_sample", stats.omega_sample);
+        trace.add("dN/dS_predicted", stats.omega_predicted);
+        trace.add("pN_sample", stats.pn_sample);
+        trace.add("pS_sample", stats.ps_sample);
+        trace.add("pN/pS_sample", stats.pnps_sample);
+        trace.add("piN_sample", stats.pin_sample);
+        trace.add("piS_sample", stats.pis_sample);
+        trace.add("piN/piS_sample", stats.pinpis_sample);
+        trace.add("#mutations", nbr_mutations);
+        trace.add("#fixations", nbr_fixations);
+        trace.add("#non_synonymous_mutations", table.non_syn_mut);
+        trace.add("#synonymous_mutations", table.syn_mut);
+        trace.add("#non_synonymous_fixations", table.non_syn_fix);
+        trace.add("#synonymous_fixations", table.syn_fix);
+        trace.add("MeanFitness", stats.mean_fitness);
+        trace.add("#complex_sites", complex_sites);
+        trace.add("%AT", stats.at_pct);
+        trace.add("SFSn", join(sfs_non_syn, ' '));
+        trace.add("E[SFSn]", mean(sfs_non_syn));
+        trace.add("SFSs", join(sfs_syn, ' '));
+        trace.add("E[SFSs]", mean(sfs_syn));
 
         time_elapsed.exportation += duration(timeNow() - t_start);
     }
@@ -945,7 +837,7 @@ class Population {
             double theta = 4 * block.population_size * p.mutation_rate;
 
             for (auto const &aa_fitness_profil : block.aa_fitness_profiles) {
-                array<double, 64> codon_freqs = block.codon_frequencies(aa_fitness_profil, p);
+                array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profil, p);
 
                 double x = 0.0;
                 double x_max = 1.0;
@@ -1063,7 +955,7 @@ vector<SummaryStatistics> Population::stats_vector{};
 
 class Process {
   private:
-    static double length_computed;
+    static double years_computed;
     const Tree &tree;
     vector<Population *> populations;  // Vector of sequence DNA.
 
@@ -1074,21 +966,24 @@ class Process {
         populations[tree.root()] = &root_pop;
     }
 
-    void run(string &output_filename, double scale, NucleotideRateMatrix const &p) {
-        run_recursive(tree.root(), output_filename, scale, p);
+    void run(string &output_filename, NucleotideRateMatrix const &p) {
+        run_recursive(tree.root(), output_filename, p);
     }
 
 
     // Recursively iterate through the subtree.
-    void run_recursive(Tree::NodeIndex node, string &output_filename, double scale,
-        NucleotideRateMatrix const &p) {
+    void run_recursive(
+        Tree::NodeIndex node, string &output_filename, NucleotideRateMatrix const &p) {
         // Substitutions of the DNA sequence is generated.
 
-        auto gen = static_cast<unsigned>(scale * tree.node_length(node) / (p.mutation_rate));
+        auto gen =
+            static_cast<unsigned>(tree.node_length(node) / (populations[node]->generation_time));
+        cout << "Running " << tree.node_name(node) << " for " << gen << " generations." << endl;
         populations[node]->run_forward(gen, p);
+        years_computed += tree.node_length(node);
+        cout << years_computed << " years computed ("
+             << static_cast<int>(100 * years_computed / tree.total_length()) << "%)." << endl;
 
-        length_computed += tree.node_length(node);
-        cout << length_computed << " length computed" << endl;
         string name = tree.node_name(node);
         if (tree.is_leaf(node)) {
             // If the node is a leaf, output the DNA sequence and name.
@@ -1098,29 +993,31 @@ class Process {
             // If the node is internal, iterate through the direct children.
             for (auto &child : tree.children(node)) {
                 populations[child] = new Population(*populations[node]);
-                run_recursive(child, output_filename, scale, p);
+                run_recursive(child, output_filename, p);
             }
         }
     }
 };
 
 // Initialize static variables
-double Process::length_computed = 0.0;
+double Process::years_computed = 0.0;
 
 class SimuPolyArgParse : public SimuArgParse {
   public:
     explicit SimuPolyArgParse(CmdLine &cmd) : SimuArgParse(cmd) {}
 
     TCLAP::ValueArg<double> mu{"m", "mu", "Mutation rate", false, 1e-8, "double", cmd};
-    TCLAP::ValueArg<double> substitutions{"s", "substitutions",
-        "Number of expected substitutions per unit of branch length", false, 0.01, "double", cmd};
+    TCLAP::ValueArg<double> root_age{
+        "a", "root_age", "Age of the root", false, 50e6, "double", cmd};
+    TCLAP::ValueArg<double> generation_time{
+        "g", "generation_time", "The number of year between generations", false, 40, "double", cmd};
     TCLAP::ValueArg<unsigned> pop_size{
         "n", "pop_size", "Population size", false, 500, "unsigned", cmd};
     TCLAP::ValueArg<unsigned> sample_size{
         "p", "sample_size", "Sample size", false, 20, "unsigned", cmd};
     TCLAP::ValueArg<double> beta{
         "b", "beta", "Effective population size (relative)", false, 1.0, "double", cmd};
-    SwitchArg linked{"g", "linked", "Sites are geneticaly linked", cmd, true};
+    SwitchArg linked{"l", "linked", "Sites are genetically linked", cmd, true};
 };
 
 int main(int argc, char *argv[]) {
@@ -1130,64 +1027,68 @@ int main(int argc, char *argv[]) {
 
     string preferences_path{args.preferences_path.getValue()};
     string newick_path{args.newick_path.getValue()};
+    string nuc_matrix_path{args.nuc_matrix_path.getValue()};
     string output_path{args.output_path.getValue()};
-
     double mu{args.mu.getValue()};
-    double sub_rate{args.substitutions.getValue()};
+    assert(mu > 0.0);
+    double root_age{args.root_age.getValue()};
+    assert(root_age > 0.0);
+    double generation_time{args.generation_time.getValue()};
+    assert(generation_time > 0.0);
+    assert(generation_time < root_age);
     unsigned pop_size{args.pop_size.getValue()};
     unsigned sample_size{args.sample_size.getValue()};
-    double beta{args.substitutions.getValue()};
+    assert(sample_size <= pop_size);
+    assert(sample_size > 0);
+    double beta{args.beta.getValue()};
+    assert(beta > 0.0);
     bool linked_sites{args.linked.getValue()};
 
     vector<array<double, 20>> fitness_profiles = open_preferences(preferences_path, beta);
+    Tree tree(newick_path);
+    tree.set_root_age(root_age);
 
-    assert(sample_size <= pop_size);
-    cout << "The DNA sequence is " << fitness_profiles.size() * 3 << " base pairs." << endl;
+    unsigned burn_in = 100 * pop_size;
+    NucleotideRateMatrix nuc_matrix(nuc_matrix_path, mu, true);
 
-    ofstream txt_file;
-    txt_file.open(output_path + ".tsv");
-    txt_file << "Beta\t" << beta << endl;
-    txt_file << "MutationRate\t" << mu << endl;
-    txt_file << "PopulationSize\t" << pop_size << endl;
-    txt_file << "SampleSize\t" << sample_size << endl;
-    txt_file << "SequenceSize\t" << fitness_profiles.size() * 3 << endl;
-    txt_file.close();
+    Trace parameters;
+    parameters.add("output_path", output_path);
+    parameters.add("tree_path", newick_path);
+    parameters.add("#tree_nodes", tree.nb_nodes());
+    parameters.add("#tree_branches", tree.nb_branches());
+    parameters.add("#tree_leaves", tree.nb_leaves());
+    parameters.add("tree_ultrametric", tree.is_ultrametric());
+    parameters.add("tree_min_distance_to_root_in_year", tree.min_distance_to_root());
+    parameters.add("tree_max_distance_to_root_in_year", tree.max_distance_to_root());
+    parameters.add("site_preferences_path", preferences_path);
+    parameters.add("#codonsites", fitness_profiles.size());
+    parameters.add("#nucleotidesites", fitness_profiles.size() * 3);
+    parameters.add("preferences_beta", beta);
+    parameters.add("nucleotide_matrix_path", output_path);
+    parameters.add("mutation_rate_per_generation", mu);
+    nuc_matrix.add_to_trace(parameters);
+    parameters.add("generation_time_in_year", generation_time);
+    parameters.add("#generations_burn_in", burn_in);
+    parameters.add("population_size", pop_size);
+    parameters.add("sample_size", sample_size);
+    parameters.add("linked_sites", linked_sites);
+    parameters.write_tsv(output_path + ".parameters");
 
-    ofstream tsv_file;
-    tsv_file.open(output_path + ".tsv");
-    tsv_file.close();
-
-    unsigned burn_in = 100;
-    NucleotideRateMatrix p(args.nuc_matrix_path.getValue(), mu, true);
+    init_alignments(output_path, tree.nb_leaves(), fitness_profiles.size() * 3);
     Population root_population(
-        fitness_profiles, pop_size, sample_size, output_path, linked_sites, p);
-    root_population.burn_in(burn_in, p);
+        fitness_profiles, pop_size, sample_size, generation_time, linked_sites, nuc_matrix);
+    root_population.burn_in(burn_in, nuc_matrix);
 
+    Process simu_process(tree, root_population);
+    simu_process.run(output_path, nuc_matrix);
 
-    bool newick_is_int{true};
-    try {
-        stoi(newick_path);
-    } catch (const invalid_argument &ia) { newick_is_int = false; }
-    if (!newick_is_int) {
-        std::ifstream tree_stream{newick_path};
-        NHXParser parser{tree_stream};
-        std::unique_ptr<const Tree> tree;
-        tree = make_from_parser(parser);
+    trace.write_tsv(output_path);
 
-        init_alignments(output_path, tree->nb_leaves(), fitness_profiles.size() * 3);
+    Population::avg_summary_statistics();
 
-        Process simu_process(*tree, root_population);
-        simu_process.run(output_path, sub_rate, p);
-        Population::avg_summary_statistics();
-    } else {
-        auto generations = static_cast<unsigned>(stoi(newick_path));
-        unsigned interval = 20;
-        cout << "The tree given is a number and not a newick file (a tree), the simulator will run "
-                "for "
-             << generations * pop_size * interval << " and output the summary statistics every "
-             << interval * pop_size << " generations" << endl;
-        root_population.linear_run(output_path, generations, interval, p);
-        Population::avg_summary_statistics();
-    }
+    cout << "Simulation computed." << endl;
+    cout << "Statistics summarized in: " << output_path + ".tsv" << endl;
+    cout << "Fasta file in: " << output_path + ".fasta" << endl;
+    cout << "Alignment (.ali) file in: " << output_path + ".ali" << endl;
     return 0;
 }
