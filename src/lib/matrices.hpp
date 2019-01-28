@@ -5,9 +5,12 @@
 #include "Eigen/Dense"
 #include "statistic.hpp"
 
+typedef Eigen::Matrix<double, 2, 2> Matrix2x2;
 typedef Eigen::Matrix<double, 4, 4> Matrix4x4;
+typedef Eigen::Matrix<double, 2, 1> Vector2x1;
 typedef Eigen::Matrix<double, 4, 1> Vector4x1;
 
+int to_int(char c) { return c - '0'; }
 
 class NucleotideRateMatrix : public Matrix4x4 {
   public:
@@ -123,9 +126,64 @@ class NucleotideRateMatrix : public Matrix4x4 {
     }
 };
 
+class RootVector : public Vector2x1 {
+  public:
+    explicit RootVector(unsigned population_size, double generation_time)
+        : Vector2x1(Vector2x1::Ones()) {
+        (*this)(0) = population_size;
+        (*this)(1) = generation_time;
+    }
+};
+
+class CorrelationMatrix : public Matrix2x2 {
+  private:
+    Vector2x1 const &root_vector;
+
+  public:
+    explicit CorrelationMatrix(std::string const &input_filename, Vector2x1 const &root_vector)
+        : Matrix2x2(Matrix2x2::Ones()), root_vector{root_vector} {
+        std::ifstream input_stream(input_filename);
+
+        if (input_filename.empty()) {
+            std::cerr << "No correlation matrix file provided, use the default correlation matrix."
+                      << std::endl;
+        }
+
+        if (!input_stream) {
+            std::cerr << "Correlation matrix file " << input_filename
+                      << " doesn't exist, use the default correlation matrix instead." << std::endl;
+        }
+
+        std::string line;
+        getline(input_stream, line);
+        std::stringstream header_stream(line);
+        getline(input_stream, line);
+        std::stringstream values_stream(line);
+        std::string header_word, value;
+        while (getline(header_stream, header_word, '\t')) {
+            assert(header_word.size() == 4);
+            assert(header_word.substr(0, 2) == "c_");
+            getline(values_stream, value, '\t');
+            (*this)(to_int(header_word[2]), to_int(header_word[3])) = stod(value);
+        }
+        std::cout << "The correlation matrix is:\n" << *this << std::endl;
+        assert(this->transpose() == (*this));
+    }
+
+    void add_to_trace(Trace &trace) {
+        for (int i = 0; i < 2; i++) {
+            trace.add("root_" + std::to_string(i), root_vector.coeffRef(i));
+            for (int j = 0; j <= i; j++) {
+                trace.add(
+                    "cov_" + std::to_string(i) + "_" + std::to_string(j), (*this).coeffRef(i, j));
+            }
+        }
+    }
+};
+
 // Method computing the equilibrium frequencies for one site.
 std::array<double, 64> codon_frequencies(
-    std::array<double, 20> const &aa_fitness_profil, NucleotideRateMatrix const &rates) {
+    std::array<double, 20> const &aa_fitness_profil, NucleotideRateMatrix const &nuc_matrix) {
     std::array<double, 64> codon_frequencies{0};
     // For each site of the vector of the site frequencies.
     for (char codon{0}; codon < 64; codon++) {
@@ -133,7 +191,7 @@ std::array<double, 64> codon_frequencies(
 
         // For all nucleotides in the codon
         for (auto const &nuc : Codon::codon_to_triplet_array[codon]) {
-            codon_freq *= rates.nuc_frequencies[nuc];
+            codon_freq *= nuc_matrix.nuc_frequencies[nuc];
         }
 
         if (Codon::codon_to_aa_array[codon] != 20) {

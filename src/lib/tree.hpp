@@ -34,7 +34,6 @@ class Tree {
         for (NodeIndex node = 0; node < NodeIndex(nb_nodes()); node++) {
             if (is_leaf(node)) {
                 double d = distance_to_root(node);
-                std::cerr << d << std::endl;
                 distances.push_back(d);
             }
         }

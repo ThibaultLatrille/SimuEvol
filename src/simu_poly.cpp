@@ -193,7 +193,7 @@ class Block {
 
     // Constructor
     explicit Block(vector<array<double, 20>> const &fitness_profiles, const unsigned &position,
-        const unsigned &population_size, NucleotideRateMatrix const &p)
+        const unsigned &population_size, NucleotideRateMatrix const &nuc_matrix)
         : population_size{population_size},
           position{position},
           aa_fitness_profiles{fitness_profiles},
@@ -203,7 +203,8 @@ class Block {
           haplotype_vector{} {
         // Draw codon from codon frequencies
         for (unsigned site{0}; site < nbr_sites; site++) {
-            array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profiles[site], p);
+            array<double, 64> codon_freqs =
+                codon_frequencies(aa_fitness_profiles[site], nuc_matrix);
             discrete_distribution<char> freq_codon_distr(codon_freqs.begin(), codon_freqs.end());
             codon_seq[site] = freq_codon_distr(generator);
         }
@@ -447,7 +448,7 @@ class Block {
 class Population {
   public:
     // TimeElapsed
-    double elapsed{0};
+    double time_from_root{0};
     double generation_time{0};
 
     // Blocks
@@ -459,19 +460,26 @@ class Population {
     // Statics variables (shared by all instances)
     static vector<SummaryStatistics> stats_vector;
 
+    NucleotideRateMatrix const &nuc_matrix;
+    CorrelationMatrix const &cor_matrix;
+
     explicit Population() = default;
 
     Population(vector<array<double, 20>> const &fitness_profiles, unsigned &population_size,
         unsigned &sample_size, double generation_time, bool linked_sites,
-        NucleotideRateMatrix const &p)
-        : generation_time{generation_time}, blocks{}, sample_size{sample_size} {
+        NucleotideRateMatrix const &nuc_matrix, CorrelationMatrix const &cor_matrix)
+        : generation_time{generation_time},
+          blocks{},
+          sample_size{sample_size},
+          nuc_matrix{nuc_matrix},
+          cor_matrix{cor_matrix} {
         if (linked_sites) {
-            blocks.emplace_back(Block(fitness_profiles, 0, population_size, p));
+            blocks.emplace_back(Block(fitness_profiles, 0, population_size, nuc_matrix));
         } else {
             blocks.reserve(fitness_profiles.size());
             for (unsigned site{0}; site < fitness_profiles.size(); site++) {
                 vector<array<double, 20>> site_fitness_profile = {fitness_profiles[site]};
-                blocks.emplace_back(Block(site_fitness_profile, site, population_size, p));
+                blocks.emplace_back(Block(site_fitness_profile, site, population_size, nuc_matrix));
             }
         }
         cout << blocks.size() << " blocks created" << endl;
@@ -484,43 +492,44 @@ class Population {
         for (auto const &block : blocks) { block.check_consistency(); }
     };
 
-    void run_forward(unsigned t_max, NucleotideRateMatrix const &p) {
-        for (unsigned gen{1}; gen <= t_max; gen++) {
+    void run_forward(double t_max) {
+        double time = 0.0;
+        while (time < t_max) {
             for (auto &block : blocks) {
                 assert(!block.haplotype_vector.empty());
-                block.forward(p);
+                block.forward(nuc_matrix);
             }
             check_consistency();
-            elapsed += generation_time;
+            time += generation_time;
+            time_from_root += generation_time;
         }
         check_consistency();
     }
 
-    void burn_in(unsigned burn_in_length, NucleotideRateMatrix const &p) {
+    void burn_in(unsigned burn_in_length) {
         cout << "Burn-in for " << burn_in_length << " generations." << endl;
-        run_forward(burn_in_length, p);
+        run_forward(burn_in_length);
         cout << "Burn-in completed." << endl;
     }
 
-    void theoretical_dnds(SummaryStatistics &stats, NucleotideRateMatrix const &p) const {
+    void theoretical_dnds(SummaryStatistics &stats) const {
         double sub_flow{0.}, mut_flow{0.};
 
         for (auto const &block : blocks) {
             double dn{0}, d0{0};
-            tie(dn, d0) = predicted_dn_d0(block.aa_fitness_profiles, p);
+            tie(dn, d0) = predicted_dn_d0(block.aa_fitness_profiles, nuc_matrix);
             sub_flow += dn;
             mut_flow += d0;
         }
         stats.omega_predicted = sub_flow / mut_flow;
     };
 
-    void output_vcf(
-        string &output_filename, string &node_name, NucleotideRateMatrix const &p) const {
+    void output_vcf(string &output_filename, string &node_name) const {
         TimeVar t_start = timeNow();
 
         SummaryStatistics stats;
         // Predicted dN/dS and %AT
-        theoretical_dnds(stats, p);
+        theoretical_dnds(stats);
 
         double at_sites_obs{0};
         unsigned nbr_nucleotides{0};
@@ -786,8 +795,7 @@ class Population {
         unsigned nbr_fixations = table.syn_fix + table.non_syn_fix;
 
         trace.add("taxon_name", node_name);
-        trace.add("#generations_from_root", elapsed);
-        trace.add("dN", elapsed);
+        trace.add("#generations_from_root", time_from_root);
         trace.add("dN", stats.dn);
         trace.add("dS", stats.ds);
         trace.add("dN_sample", stats.dn_sample);
@@ -966,20 +974,14 @@ class Process {
         populations[tree.root()] = &root_pop;
     }
 
-    void run(string &output_filename, NucleotideRateMatrix const &p) {
-        run_recursive(tree.root(), output_filename, p);
-    }
+    void run(string &output_filename) { run_recursive(tree.root(), output_filename); }
 
 
     // Recursively iterate through the subtree.
-    void run_recursive(
-        Tree::NodeIndex node, string &output_filename, NucleotideRateMatrix const &p) {
+    void run_recursive(Tree::NodeIndex node, string &output_filename) {
         // Substitutions of the DNA sequence is generated.
 
-        auto gen =
-            static_cast<unsigned>(tree.node_length(node) / (populations[node]->generation_time));
-        cout << "Running " << tree.node_name(node) << " for " << gen << " generations." << endl;
-        populations[node]->run_forward(gen, p);
+        populations[node]->run_forward(tree.node_length(node));
         years_computed += tree.node_length(node);
         cout << years_computed << " years computed ("
              << static_cast<int>(100 * years_computed / tree.total_length()) << "%)." << endl;
@@ -988,12 +990,12 @@ class Process {
         if (tree.is_leaf(node)) {
             // If the node is a leaf, output the DNA sequence and name.
             write_sequence(output_filename, name, populations[node]->get_dna_str());
-            populations[node]->output_vcf(output_filename, name, p);
+            populations[node]->output_vcf(output_filename, name);
         } else {
             // If the node is internal, iterate through the direct children.
             for (auto &child : tree.children(node)) {
                 populations[child] = new Population(*populations[node]);
-                run_recursive(child, output_filename, p);
+                run_recursive(child, output_filename);
             }
         }
     }
@@ -1006,6 +1008,8 @@ class SimuPolyArgParse : public SimuArgParse {
   public:
     explicit SimuPolyArgParse(CmdLine &cmd) : SimuArgParse(cmd) {}
 
+    TCLAP::ValueArg<std::string> correlation_path{
+        "c", "correlation_matrix", "input correlation matrix path", false, "", "string", cmd};
     TCLAP::ValueArg<double> mu{"m", "mu", "Mutation rate", false, 1e-8, "double", cmd};
     TCLAP::ValueArg<double> root_age{
         "a", "root_age", "Age of the root", false, 50e6, "double", cmd};
@@ -1029,6 +1033,7 @@ int main(int argc, char *argv[]) {
     string newick_path{args.newick_path.getValue()};
     string nuc_matrix_path{args.nuc_matrix_path.getValue()};
     string output_path{args.output_path.getValue()};
+    string correlation_path{args.correlation_path.getValue()};
     double mu{args.mu.getValue()};
     assert(mu > 0.0);
     double root_age{args.root_age.getValue()};
@@ -1044,12 +1049,16 @@ int main(int argc, char *argv[]) {
     assert(beta > 0.0);
     bool linked_sites{args.linked.getValue()};
 
+
     vector<array<double, 20>> fitness_profiles = open_preferences(preferences_path, beta);
     Tree tree(newick_path);
     tree.set_root_age(root_age);
 
     unsigned burn_in = 100 * pop_size;
     NucleotideRateMatrix nuc_matrix(nuc_matrix_path, mu, true);
+
+    RootVector root_vector(pop_size, generation_time);
+    CorrelationMatrix correlation_matrix(correlation_path, root_vector);
 
     Trace parameters;
     parameters.add("output_path", output_path);
@@ -1072,15 +1081,16 @@ int main(int argc, char *argv[]) {
     parameters.add("population_size", pop_size);
     parameters.add("sample_size", sample_size);
     parameters.add("linked_sites", linked_sites);
+    correlation_matrix.add_to_trace(parameters);
     parameters.write_tsv(output_path + ".parameters");
 
     init_alignments(output_path, tree.nb_leaves(), fitness_profiles.size() * 3);
-    Population root_population(
-        fitness_profiles, pop_size, sample_size, generation_time, linked_sites, nuc_matrix);
-    root_population.burn_in(burn_in, nuc_matrix);
+    Population root_population(fitness_profiles, pop_size, sample_size, generation_time,
+        linked_sites, nuc_matrix, correlation_matrix);
+    root_population.burn_in(burn_in);
 
     Process simu_process(tree, root_population);
-    simu_process.run(output_path, nuc_matrix);
+    simu_process.run(output_path);
 
     trace.write_tsv(output_path);
 
