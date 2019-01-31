@@ -5,10 +5,12 @@
 #include "Eigen/Dense"
 #include "statistic.hpp"
 
-typedef Eigen::Matrix<double, 2, 2> Matrix2x2;
+typedef Eigen::Matrix<double, 3, 3> Matrix3x3;
 typedef Eigen::Matrix<double, 4, 4> Matrix4x4;
-typedef Eigen::Matrix<double, 2, 1> Vector2x1;
+typedef Eigen::Matrix<double, 3, 1> Vector3x1;
 typedef Eigen::Matrix<double, 4, 1> Vector4x1;
+typedef Eigen::MatrixXd EMatrix;
+typedef Eigen::VectorXd EVector;
 
 int to_int(char c) { return c - '0'; }
 
@@ -80,7 +82,13 @@ class NucleotideRateMatrix : public Matrix4x4 {
         }
     }
 
-    bool is_reversible() {
+    void set_mutation_rate(double mu) {
+        (*this) *= (mu / mutation_rate);
+        mutation_rate = mu;
+    }
+
+
+    bool is_reversible() const {
         bool reversible = true;
         for (int row{0}; row < 4; row++) {
             for (int col{0}; col < 4; col++) {
@@ -111,7 +119,7 @@ class NucleotideRateMatrix : public Matrix4x4 {
         (*this) /= events;
     }
 
-    void add_to_trace(Trace &trace) {
+    void add_to_trace(Trace &trace) const {
         for (char nuc_from{0}; nuc_from < 4; nuc_from++) {
             for (char nuc_to{0}; nuc_to < 4; nuc_to++) {
                 if (nuc_from != nuc_to) {
@@ -126,22 +134,37 @@ class NucleotideRateMatrix : public Matrix4x4 {
     }
 };
 
-class RootVector : public Vector2x1 {
+class LogMultivariate : public Vector3x1 {
+    int dimensions = 3;
+
   public:
-    explicit RootVector(unsigned population_size, double generation_time)
-        : Vector2x1(Vector2x1::Ones()) {
-        (*this)(0) = population_size;
-        (*this)(1) = generation_time;
+    explicit LogMultivariate(unsigned population_size, double generation_time, double mu)
+        : Vector3x1(Vector3x1::Zero()) {
+        set_population_size(population_size);
+        set_generation_time(generation_time);
+        set_mu(mu);
+    }
+
+    void set_population_size(unsigned population_size) { (*this)(0) = std::log(population_size); }
+    void set_generation_time(double generation_time) { (*this)(1) = std::log(generation_time); }
+    void set_mu(double mu) { (*this)(2) = std::log(mu); }
+
+    unsigned population_size() { return static_cast<unsigned>(std::exp((*this)(0))); }
+    double generation_time() { return std::exp((*this)(1)); }
+    double mu() { return std::exp((*this)(2)); }
+
+    void add_to_trace(Trace &trace) const {
+        for (int i = 0; i < dimensions; i++) {
+            trace.add("logmultivariate_" + std::to_string(i), (*this).coeffRef(i));
+        }
     }
 };
 
-class CorrelationMatrix : public Matrix2x2 {
-  private:
-    Vector2x1 const &root_vector;
-
+class CorrelationMatrix : public Matrix3x3 {
   public:
-    explicit CorrelationMatrix(std::string const &input_filename, Vector2x1 const &root_vector)
-        : Matrix2x2(Matrix2x2::Ones()), root_vector{root_vector} {
+    int dimensions = 3;
+
+    explicit CorrelationMatrix(std::string const &input_filename) : Matrix3x3(Matrix3x3::Zero()) {
         std::ifstream input_stream(input_filename);
 
         if (input_filename.empty()) {
@@ -164,15 +187,21 @@ class CorrelationMatrix : public Matrix2x2 {
             assert(header_word.size() == 4);
             assert(header_word.substr(0, 2) == "c_");
             getline(values_stream, value, '\t');
-            (*this)(to_int(header_word[2]), to_int(header_word[3])) = stod(value);
+            int i = to_int(header_word[2]), j = to_int(header_word[3]);
+            double v = stod(value);
+            (*this)(i, j) = v;
+            if (i != j) {
+                (*this)(j, i) = v;
+            } else {
+                assert(v >= 0.0);
+            }
         }
         std::cout << "The correlation matrix is:\n" << *this << std::endl;
         assert(this->transpose() == (*this));
     }
 
-    void add_to_trace(Trace &trace) {
-        for (int i = 0; i < 2; i++) {
-            trace.add("root_" + std::to_string(i), root_vector.coeffRef(i));
+    void add_to_trace(Trace &trace) const {
+        for (int i = 0; i < dimensions; i++) {
             for (int j = 0; j <= i; j++) {
                 trace.add(
                     "cov_" + std::to_string(i) + "_" + std::to_string(j), (*this).coeffRef(i, j));
@@ -183,7 +212,7 @@ class CorrelationMatrix : public Matrix2x2 {
 
 // Method computing the equilibrium frequencies for one site.
 std::array<double, 64> codon_frequencies(
-    std::array<double, 20> const &aa_fitness_profil, NucleotideRateMatrix const &nuc_matrix) {
+    std::array<double, 20> const &aa_fitness_profil, NucleotideRateMatrix const &nuc_matrix, double scale = 1.0) {
     std::array<double, 64> codon_frequencies{0};
     // For each site of the vector of the site frequencies.
     for (char codon{0}; codon < 64; codon++) {
@@ -196,7 +225,7 @@ std::array<double, 64> codon_frequencies(
 
         if (Codon::codon_to_aa_array[codon] != 20) {
             codon_frequencies[codon] =
-                codon_freq * exp(aa_fitness_profil[Codon::codon_to_aa_array[codon]]);
+                codon_freq * exp(aa_fitness_profil[Codon::codon_to_aa_array[codon]] * scale);
         } else {
             codon_frequencies[codon] = 0.;
         }
@@ -208,12 +237,13 @@ std::array<double, 64> codon_frequencies(
     return codon_frequencies;
 };
 
-double rate_fixation(std::array<double, 20> const &preferences, char codon_from, char codon_to) {
+double rate_fixation(std::array<double, 20> const &preferences, char codon_from, char codon_to, double scale = 1.0) {
     double rate_fix = 1.0;
     // Selective strength between the mutated and original amino-acids.
     double s{0.};
     s = preferences[Codon::codon_to_aa_array[codon_to]];
     s -= preferences[Codon::codon_to_aa_array[codon_from]];
+    s *= scale;
     // If the selective strength is 0, the rate of fixation is neutral.
     // Else, the rate of fixation is computed using population genetic formulas
     // (Kimura).
@@ -228,13 +258,13 @@ double rate_fixation(std::array<double, 20> const &preferences, char codon_from,
 // Theoretical computation of the predicted omega
 std::tuple<double, double> predicted_dn_d0(
     std::vector<std::array<double, 20>> const &aa_fitness_profiles,
-    NucleotideRateMatrix const &mutation_rate_matrix) {
+    NucleotideRateMatrix const &mutation_rate_matrix, double scale = 1.0) {
     // For all site of the sequence.
     double dn{0.}, d0{0.};
     for (auto const &aa_fitness_profile : aa_fitness_profiles) {
         // Codon original before substitution.
         std::array<double, 64> codon_freqs =
-            codon_frequencies(aa_fitness_profile, mutation_rate_matrix);
+            codon_frequencies(aa_fitness_profile, mutation_rate_matrix, scale);
 
         for (char codon_from{0}; codon_from < 64; codon_from++) {
             if (Codon::codon_to_aa_array[codon_from] != 20) {
@@ -252,7 +282,7 @@ std::tuple<double, double> predicted_dn_d0(
                         Codon::codon_to_aa_array[codon_from] !=
                             Codon::codon_to_aa_array[codon_to]) {
                         dn += codon_freqs[codon_from] * mutation_rate_matrix(n_from, n_to) *
-                              rate_fixation(aa_fitness_profile, codon_from, codon_to);
+                              rate_fixation(aa_fitness_profile, codon_from, codon_to, scale);
                         d0 += codon_freqs[codon_from] * mutation_rate_matrix(n_from, n_to);
                     }
                 }

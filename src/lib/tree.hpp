@@ -83,8 +83,9 @@ class Tree {
             std::cerr << "The longest distance between root to leaf is used to set the root age."
                       << std::endl;
         }
-        root_age /= max_distance_;
-        for (auto& length : length_) { length *= root_age; }
+        min_distance_ = root_age * (min_distance_ / max_distance_);
+        for (auto& length : length_) { length *= (root_age / max_distance_); }
+        max_distance_ = root_age;
     };
 
     BranchIndex branch_index(NodeIndex i) const { return i - 1; }

@@ -87,6 +87,10 @@ struct TimeElapsed {
     double extinction{0.0};
     double fixation{0.0};
     double exportation{0.0};
+    double correlation{0.0};
+    double normal{0.0};
+    double matrix{0.0};
+    double exp{0.0};
 };
 
 TimeElapsed time_elapsed;
@@ -167,11 +171,11 @@ class Haplotype {
     } GreaterThan;
 };
 
-// Class representing a genetical linked sequences (blocks are unlinked between them)
+// Class representing a genetically linked sequences (blocks are unlinked between them)
 class Block {
   public:
     // Block
-    unsigned population_size;
+    unsigned &population_size;
     unsigned position;
 
     // Selection
@@ -193,7 +197,7 @@ class Block {
 
     // Constructor
     explicit Block(vector<array<double, 20>> const &fitness_profiles, const unsigned &position,
-        const unsigned &population_size, NucleotideRateMatrix const &nuc_matrix)
+        unsigned &population_size, NucleotideRateMatrix const &nuc_matrix)
         : population_size{population_size},
           position{position},
           aa_fitness_profiles{fitness_profiles},
@@ -204,7 +208,7 @@ class Block {
         // Draw codon from codon frequencies
         for (unsigned site{0}; site < nbr_sites; site++) {
             array<double, 64> codon_freqs =
-                codon_frequencies(aa_fitness_profiles[site], nuc_matrix);
+                codon_frequencies(aa_fitness_profiles[site], nuc_matrix, 4 * population_size);
             discrete_distribution<char> freq_codon_distr(codon_freqs.begin(), codon_freqs.end());
             codon_seq[site] = freq_codon_distr(generator);
         }
@@ -226,8 +230,8 @@ class Block {
         assert(nbr_copies == 2 * population_size);
     }
 
-    void forward(NucleotideRateMatrix const &p) {
-        mutation(p);
+    void forward(NucleotideRateMatrix const &nuc_matrix) {
+        mutation(nuc_matrix);
         selection_and_drift();
         extinction();
         fixation();
@@ -351,8 +355,7 @@ class Block {
 
             for (unsigned i_hap{0}; i_hap < haplotype_vector.size(); i_hap++) {
                 fitness_vector[i_hap] =
-                    (1 + haplotype_vector[i_hap].fitness / (4 * population_size)) *
-                    haplotype_vector[i_hap].nbr_copies;
+                    (1 + haplotype_vector[i_hap].fitness) * haplotype_vector[i_hap].nbr_copies;
                 haplotype_vector[i_hap].nbr_copies = 0;
             }
 
@@ -449,29 +452,32 @@ class Population {
   public:
     // TimeElapsed
     double time_from_root{0};
-    double generation_time{0};
 
     // Blocks
     vector<Block> blocks;
-
     unsigned sample_size{0};
-    unsigned max_population_size{0};
+
+    LogMultivariate log_multivariate;
+    unsigned population_size;
+    double generation_time;
+    NucleotideRateMatrix nuc_matrix;
+
+    CorrelationMatrix const &cor_matrix;
 
     // Statics variables (shared by all instances)
     static vector<SummaryStatistics> stats_vector;
 
-    NucleotideRateMatrix const &nuc_matrix;
-    CorrelationMatrix const &cor_matrix;
-
     explicit Population() = default;
 
-    Population(vector<array<double, 20>> const &fitness_profiles, unsigned &population_size,
-        unsigned &sample_size, double generation_time, bool linked_sites,
-        NucleotideRateMatrix const &nuc_matrix, CorrelationMatrix const &cor_matrix)
-        : generation_time{generation_time},
-          blocks{},
+    Population(vector<array<double, 20>> const &fitness_profiles, unsigned sample_size,
+        LogMultivariate &log_multi, bool linked_sites,
+        NucleotideRateMatrix const &nucleotide_matrix, CorrelationMatrix const &cor_matrix)
+        : blocks{},
           sample_size{sample_size},
-          nuc_matrix{nuc_matrix},
+          log_multivariate{log_multi},
+          population_size{log_multivariate.population_size()},
+          generation_time{log_multivariate.generation_time()},
+          nuc_matrix{nucleotide_matrix},
           cor_matrix{cor_matrix} {
         if (linked_sites) {
             blocks.emplace_back(Block(fitness_profiles, 0, population_size, nuc_matrix));
@@ -483,9 +489,6 @@ class Population {
             }
         }
         cout << blocks.size() << " blocks created" << endl;
-        for (auto const &block : blocks) {
-            max_population_size = max(max_population_size, block.population_size);
-        }
     }
 
     void check_consistency() {
@@ -494,7 +497,37 @@ class Population {
 
     void run_forward(double t_max) {
         double time = 0.0;
+        TimeVar t_start = timeNow();
+        Eigen::SelfAdjointEigenSolver<EMatrix> eigen_solver(cor_matrix);
+        EMatrix transform =
+            eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
+        EVector sampled_vector = EVector::Zero(cor_matrix.dimensions);
+        time_elapsed.correlation += duration(timeNow() - t_start);
+
         while (time < t_max) {
+            t_start = timeNow();
+            for (int dim = 0; dim < cor_matrix.dimensions; dim++) {
+                sampled_vector(dim) = generation_time * normal_distrib(generator);
+            }
+            time_elapsed.normal += duration(timeNow() - t_start);
+
+            t_start = timeNow();
+            log_multivariate += transform * sampled_vector;
+            time_elapsed.matrix += duration(timeNow() - t_start);
+
+            t_start = timeNow();
+            population_size = log_multivariate.population_size();
+            generation_time = log_multivariate.generation_time();
+            nuc_matrix.set_mutation_rate(log_multivariate.mu());
+            time_elapsed.exp += duration(timeNow() - t_start);
+
+            if (population_size < sample_size) {
+                cerr << "The population size became lower than sample size (reflecting back)."
+                     << endl;
+                population_size = 2 * sample_size - population_size;
+                log_multivariate.set_population_size(population_size);
+            };
+
             for (auto &block : blocks) {
                 assert(!block.haplotype_vector.empty());
                 block.forward(nuc_matrix);
@@ -508,7 +541,13 @@ class Population {
 
     void burn_in(unsigned burn_in_length) {
         cout << "Burn-in for " << burn_in_length << " generations." << endl;
-        run_forward(burn_in_length);
+        for (unsigned gen{1}; gen <= burn_in_length; gen++) {
+            for (auto &block : blocks) {
+                assert(!block.haplotype_vector.empty());
+                block.forward(nuc_matrix);
+            }
+            check_consistency();
+        }
         cout << "Burn-in completed." << endl;
     }
 
@@ -517,7 +556,8 @@ class Population {
 
         for (auto const &block : blocks) {
             double dn{0}, d0{0};
-            tie(dn, d0) = predicted_dn_d0(block.aa_fitness_profiles, nuc_matrix);
+            tie(dn, d0) =
+                predicted_dn_d0(block.aa_fitness_profiles, nuc_matrix, 4 * population_size);
             sub_flow += dn;
             mut_flow += d0;
         }
@@ -796,6 +836,10 @@ class Population {
 
         trace.add("taxon_name", node_name);
         trace.add("#generations_from_root", time_from_root);
+        trace.add("population_size", population_size);
+        trace.add("generation_time_in_year", generation_time);
+        trace.add("mutation_rate_per_generation", nuc_matrix.mutation_rate);
+        log_multivariate.add_to_trace(trace);
         trace.add("dN", stats.dn);
         trace.add("dS", stats.ds);
         trace.add("dN_sample", stats.dn_sample);
@@ -845,7 +889,8 @@ class Population {
             double theta = 4 * block.population_size * p.mutation_rate;
 
             for (auto const &aa_fitness_profil : block.aa_fitness_profiles) {
-                array<double, 64> codon_freqs = codon_frequencies(aa_fitness_profil, p);
+                array<double, 64> codon_freqs =
+                    codon_frequencies(aa_fitness_profil, p, 4 * population_size);
 
                 double x = 0.0;
                 double x_max = 1.0;
@@ -880,6 +925,7 @@ class Population {
                                     } else {
                                         double s = aa_fitness_profil[aa_to];
                                         s -= aa_fitness_profil[aa_from];
+                                        s *= 4 * population_size;
                                         if (fabs(s) <= Codon::epsilon) {
                                             pij *= 1 - x;
                                         } else {
@@ -937,7 +983,8 @@ class Population {
         average(stats_vector);
         double total_time = time_elapsed.mutation + time_elapsed.selection +
                             time_elapsed.extinction + time_elapsed.fixation +
-                            time_elapsed.exportation;
+                            time_elapsed.exportation + time_elapsed.correlation +
+                            time_elapsed.matrix + time_elapsed.exp + time_elapsed.normal;
         cout << setprecision(3) << total_time / 1e9 << "s total time" << endl;
         cout << 100 * time_elapsed.mutation / total_time
              << "% of time spent in calculating mutation (" << time_elapsed.mutation / 1e9 << "s)"
@@ -954,6 +1001,15 @@ class Population {
         cout << 100 * time_elapsed.exportation / total_time
              << "% of time spent in exportationing vcf (" << time_elapsed.exportation / 1e9 << "s)"
              << endl;
+        cout << 100 * time_elapsed.correlation / total_time
+             << "% of time spent in the correlation (" << time_elapsed.correlation / 1e9 << "s)"
+             << endl;
+        cout << 100 * time_elapsed.normal / total_time << "% of time spent in the normal draw ("
+             << time_elapsed.normal / 1e9 << "s)" << endl;
+        cout << 100 * time_elapsed.matrix / total_time << "% of time spent in the matrix * ("
+             << time_elapsed.matrix / 1e9 << "s)" << endl;
+        cout << 100 * time_elapsed.exp / total_time << "% of time spent in the exp ("
+             << time_elapsed.exp / 1e9 << "s)" << endl;
     }
 };
 
@@ -1021,7 +1077,7 @@ class SimuPolyArgParse : public SimuArgParse {
         "p", "sample_size", "Sample size", false, 20, "unsigned", cmd};
     TCLAP::ValueArg<double> beta{
         "b", "beta", "Effective population size (relative)", false, 1.0, "double", cmd};
-    SwitchArg linked{"l", "linked", "Sites are genetically linked", cmd, true};
+    SwitchArg linked{"l", "linked", "Sites are genetically linked", cmd, false};
 };
 
 int main(int argc, char *argv[]) {
@@ -1050,15 +1106,18 @@ int main(int argc, char *argv[]) {
     bool linked_sites{args.linked.getValue()};
 
 
-    vector<array<double, 20>> fitness_profiles = open_preferences(preferences_path, beta);
+    vector<array<double, 20>> fitness_profiles =
+        open_preferences(preferences_path, beta / (4 * pop_size));
+
     Tree tree(newick_path);
     tree.set_root_age(root_age);
 
     unsigned burn_in = 100 * pop_size;
     NucleotideRateMatrix nuc_matrix(nuc_matrix_path, mu, true);
 
-    RootVector root_vector(pop_size, generation_time);
-    CorrelationMatrix correlation_matrix(correlation_path, root_vector);
+    LogMultivariate log_multivariate(pop_size, generation_time, mu);
+    CorrelationMatrix correlation_matrix(correlation_path);
+    correlation_matrix /= root_age;
 
     Trace parameters;
     parameters.add("output_path", output_path);
@@ -1085,8 +1144,8 @@ int main(int argc, char *argv[]) {
     parameters.write_tsv(output_path + ".parameters");
 
     init_alignments(output_path, tree.nb_leaves(), fitness_profiles.size() * 3);
-    Population root_population(fitness_profiles, pop_size, sample_size, generation_time,
-        linked_sites, nuc_matrix, correlation_matrix);
+    Population root_population(fitness_profiles, sample_size, log_multivariate, linked_sites,
+        nuc_matrix, correlation_matrix);
     root_population.burn_in(burn_in);
 
     Process simu_process(tree, root_population);

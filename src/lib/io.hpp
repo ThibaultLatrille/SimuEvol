@@ -9,7 +9,7 @@ void init_alignments(std::string const &output_path, int nb_leaves, int nb_sites
     // .ali format
     std::ofstream ali_file;
     ali_file.open(output_path + ".ali");
-    ali_file << nb_leaves << " " << nb_sites * 3 << std::endl;
+    ali_file << nb_leaves << " " << nb_sites << std::endl;
     ali_file.close();
 
     // .ali format
