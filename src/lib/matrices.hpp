@@ -14,6 +14,15 @@ typedef Eigen::VectorXd EVector;
 
 int to_int(char c) { return c - '0'; }
 
+double GetEntropy(const Vector4x1 &profile) {
+    double tot = 0;
+    for (unsigned int i = 0; i < profile.size(); i++) {
+        tot -= (profile[i] < 1e-6) ? 0 : profile[i] * log(profile[i]);
+    }
+    return tot;
+}
+
+
 class NucleotideRateMatrix : public Matrix4x4 {
   public:
     // Mutation
@@ -97,11 +106,6 @@ class NucleotideRateMatrix : public Matrix4x4 {
                 if (std::abs(diff) > 1e-6) { reversible = false; }
             }
         }
-        if (reversible) {
-            std::cout << "The nucleotide rate matrix is time-reversible." << std::endl;
-        } else {
-            std::cerr << "The nucleotide rate matrix is not time-reversible." << std::endl;
-        }
         return reversible;
     }
 
@@ -130,7 +134,16 @@ class NucleotideRateMatrix : public Matrix4x4 {
                 }
             }
         }
-        trace.add("NucleotideMatrixReversible", is_reversible());
+        bool reversible = is_reversible();
+        trace.add("NucleotideMatrixReversible", reversible);
+
+        trace.add("NucStatEntropy", GetEntropy(nuc_frequencies));
+        if (reversible) {
+            std::cout << "The nucleotide rate matrix is time-reversible." << std::endl;
+        } else {
+            std::cerr << "The nucleotide rate matrix is not time-reversible." << std::endl;
+        }
+
     }
 };
 
@@ -155,7 +168,7 @@ class LogMultivariate : public Vector3x1 {
 
     void add_to_trace(Trace &trace) const {
         for (int i = 0; i < dimensions; i++) {
-            trace.add("logmultivariate_" + std::to_string(i), (*this).coeffRef(i));
+            trace.add("LogMultivariate_" + std::to_string(i), (*this).coeffRef(i));
         }
     }
 };
@@ -204,7 +217,7 @@ class CorrelationMatrix : public Matrix3x3 {
         for (int i = 0; i < dimensions; i++) {
             for (int j = 0; j <= i; j++) {
                 trace.add(
-                    "cov_" + std::to_string(i) + "_" + std::to_string(j), (*this).coeffRef(i, j));
+                    "Covariance_" + std::to_string(i) + "_" + std::to_string(j), (*this).coeffRef(i, j));
             }
         }
     }

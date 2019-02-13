@@ -94,6 +94,7 @@ struct TimeElapsed {
 };
 
 TimeElapsed time_elapsed;
+Trace trace_nodes;
 Trace trace;
 
 struct SummaryStatistics {
@@ -120,8 +121,8 @@ double average(vector<SummaryStatistics> const &vector_stats,
 }
 
 void average(vector<SummaryStatistics> const &vector_stats) {
-    cout << "dN=" << average(vector_stats, [](SummaryStatistics stat) { return stat.dn; }) << endl;
-    cout << "dS=" << average(vector_stats, [](SummaryStatistics stat) { return stat.ds; }) << endl;
+    cout << "DN=" << average(vector_stats, [](SummaryStatistics stat) { return stat.dn; }) << endl;
+    cout << "DS=" << average(vector_stats, [](SummaryStatistics stat) { return stat.ds; }) << endl;
     cout << "omega=" << average(vector_stats, [](SummaryStatistics stat) { return stat.omega; })
          << endl;
     cout << "Sample omega="
@@ -458,8 +459,8 @@ class Population {
     unsigned sample_size{0};
 
     LogMultivariate log_multivariate;
-    unsigned population_size;
-    double generation_time;
+    unsigned population_size{0};
+    double generation_time{0};
     NucleotideRateMatrix nuc_matrix;
 
     CorrelationMatrix const &cor_matrix;
@@ -568,7 +569,7 @@ class Population {
         TimeVar t_start = timeNow();
 
         SummaryStatistics stats;
-        // Predicted dN/dS and %AT
+        // Predicted DN/DS and %AT
         theoretical_dnds(stats);
 
         double at_sites_obs{0};
@@ -648,7 +649,7 @@ class Population {
             shuffle(haplotypes_sample.begin(), haplotypes_sample.end(), generator);
             haplotypes_sample.resize(2 * sample_size);
 
-            // dN/dS computed using one individual of the sample
+            // DN/DS computed using one individual of the sample
             uniform_int_distribution<unsigned> chosen_distr(0, 2 * sample_size - 1);
             unsigned chosen = chosen_distr(generator);
             for (auto const &change :
@@ -840,13 +841,13 @@ class Population {
         trace.add("generation_time_in_year", generation_time);
         trace.add("mutation_rate_per_generation", nuc_matrix.mutation_rate);
         log_multivariate.add_to_trace(trace);
-        trace.add("dN", stats.dn);
-        trace.add("dS", stats.ds);
-        trace.add("dN_sample", stats.dn_sample);
-        trace.add("dS_sample", stats.ds_sample);
-        trace.add("dN/dS", stats.omega);
-        trace.add("dN/dS_sample", stats.omega_sample);
-        trace.add("dN/dS_predicted", stats.omega_predicted);
+        trace.add("DN", stats.dn);
+        trace.add("DS", stats.ds);
+        trace.add("DN_sample", stats.dn_sample);
+        trace.add("DS_sample", stats.ds_sample);
+        trace.add("DN/DS", stats.omega);
+        trace.add("DN/DS_sample", stats.omega_sample);
+        trace.add("PredictedDNDS", stats.omega_predicted);
         trace.add("pN_sample", stats.pn_sample);
         trace.add("pS_sample", stats.ps_sample);
         trace.add("pN/pS_sample", stats.pnps_sample);
@@ -868,6 +869,17 @@ class Population {
         trace.add("E[SFSs]", mean(sfs_syn));
 
         time_elapsed.exportation += duration(timeNow() - t_start);
+    }
+    void node_trace(Tree::NodeIndex node, Tree &tree) const {
+        tree.set_tag(node, "population_size", to_string(population_size));
+        tree.set_tag(node, "generation_time_in_year", to_string(generation_time));
+        tree.set_tag(node, "mutation_rate_per_generation", to_string(nuc_matrix.mutation_rate));
+        trace_nodes.add("taxon_name", tree.node_name(node));
+        trace_nodes.add("index", to_string(node));
+        trace_nodes.add("#generations_from_root", time_from_root);
+        trace_nodes.add("population_size", population_size);
+        trace_nodes.add("generation_time_in_year", generation_time);
+        trace_nodes.add("mutation_rate_per_generation", nuc_matrix.mutation_rate);
     }
 
     vector<double> theoretial_sfs(
@@ -1020,17 +1032,23 @@ vector<SummaryStatistics> Population::stats_vector{};
 class Process {
   private:
     static double years_computed;
-    const Tree &tree;
+    Tree &tree;
     vector<Population *> populations;  // Vector of sequence DNA.
 
   public:
     // Constructor
-    Process(const Tree &intree, Population &root_pop) : tree{intree}, populations() {
+    Process(Tree &intree, Population &root_pop) : tree{intree}, populations() {
         populations.resize(tree.nb_nodes());
         populations[tree.root()] = &root_pop;
     }
 
-    void run(string &output_filename) { run_recursive(tree.root(), output_filename); }
+    void run(string &output_filename) {
+        run_recursive(tree.root(), output_filename);
+        ofstream nhx;
+        nhx.open(output_filename + ".nhx");
+        nhx << tree.as_string() << endl;
+        nhx.close();
+    }
 
 
     // Recursively iterate through the subtree.
@@ -1042,8 +1060,9 @@ class Process {
         cout << years_computed << " years computed ("
              << static_cast<int>(100 * years_computed / tree.total_length()) << "%)." << endl;
 
-        string name = tree.node_name(node);
+        populations[node]->node_trace(node, tree);
         if (tree.is_leaf(node)) {
+            string name = tree.node_name(node);
             // If the node is a leaf, output the DNA sequence and name.
             write_sequence(output_filename, name, populations[node]->get_dna_str());
             populations[node]->output_vcf(output_filename, name);
@@ -1152,6 +1171,7 @@ int main(int argc, char *argv[]) {
     simu_process.run(output_path);
 
     trace.write_tsv(output_path);
+    trace_nodes.write_tsv(output_path + ".nodes");
 
     Population::avg_summary_statistics();
 

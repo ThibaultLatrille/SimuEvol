@@ -8,6 +8,9 @@
 // a tree with both a vector of parents and a vector of children
 class Tree {
   public:
+    using Tag = std::unordered_map<std::string, std::string>;
+    using TagName = std::string;
+    using TagValue = std::string;
     using NodeIndex = int;  // guaranteed to be [0... nb_nodes() - 1] U {no_parent}
     const NodeIndex no_parent{-1};
     using BranchIndex = int;  // guaranteed to be [0... nb_nodes() - 2]
@@ -21,7 +24,10 @@ class Tree {
             parent_.push_back(input_tree.parent(node));
             children_.emplace_back(
                 input_tree.children(node).begin(), input_tree.children(node).end());
-            name_.push_back(input_tree.tag(node, "name"));
+            auto node_name = input_tree.tag(node, "name");
+            if (node_name.empty()) { node_name = std::to_string(node); }
+            name_.push_back(node_name);
+            tags_.push_back(Tag());
             std::string length = input_tree.tag(node, "length");
             if (length.empty()) {
                 length_.push_back(0.0);
@@ -88,6 +94,31 @@ class Tree {
         max_distance_ = root_age;
     };
 
+    void set_tag(NodeIndex node, TagName tag, TagValue value) { tags_.at(node)[tag] = value; }
+
+    std::string recursive_string(NodeIndex node) const {
+        std::string newick;
+
+        if (not children(node).empty()) {
+            // It's an internal node
+            newick += "(";
+            for (auto const child : children(node)) { newick += recursive_string(child) + ","; };
+            newick.pop_back();
+            newick += ")";
+        }
+        newick += name_.at(node);
+        newick += ":" + std::to_string(length_.at(node));
+
+        if (not tags_.at(node).empty()) {
+            newick += "[&&NHX";
+            for (auto& it : tags_.at(node)) { newick += ":" + it.first + "=" + it.second; }
+            newick += "]";
+        }
+        return newick;
+    }
+
+    std::string as_string() const { return recursive_string(root()) + "; "; }
+
     BranchIndex branch_index(NodeIndex i) const { return i - 1; }
     NodeIndex node_index(BranchIndex i) const { return i + 1; }
 
@@ -95,6 +126,7 @@ class Tree {
     std::vector<NodeIndex> parent_;
     std::vector<std::set<NodeIndex>> children_;
     std::vector<std::string> name_;
+    std::vector<Tag> tags_;
     std::vector<double> length_;
     NodeIndex root_{0};
     int nb_leaves_{0};

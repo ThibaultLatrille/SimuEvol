@@ -38,7 +38,7 @@ license and that you accept its terms.*/
   ~*~ Pure interfaces ~*~
 ==================================================================================================*/
 class AnnotatedTree {
-  public:
+public:
     using NodeIndex = int;
     using TagName = std::string;
     using TagValue = std::string;
@@ -50,11 +50,15 @@ class AnnotatedTree {
     virtual std::size_t nb_nodes() const = 0;
     virtual TagValue tag(NodeIndex, TagName) const = 0;
 
+    virtual std::string as_string() const = 0;
+    virtual std::vector<std::string> descendant_leaves(NodeIndex) const = 0;
+    virtual bool operator==(const AnnotatedTree& other) const = 0;
+
     virtual ~AnnotatedTree() = default;
 };
 
 class TreeParser {
-  public:
+public:
     virtual const AnnotatedTree& get_tree() const = 0;
     virtual ~TreeParser() = default;
 };
@@ -64,7 +68,7 @@ class TreeParser {
   ~*~ Implementations ~*~
 ==================================================================================================*/
 class DoubleListAnnotatedTree : public AnnotatedTree {
-  public:
+public:
     using Node = std::unordered_map<std::string, std::string>;
 
     std::vector<Node> nodes_;
@@ -81,7 +85,7 @@ class DoubleListAnnotatedTree : public AnnotatedTree {
     // invariant: node with index root is only node with parent -1
     NodeIndex root_;
 
-  public:
+public:
     const ChildrenList& children(NodeIndex node) const final { return children_.at(node); }
 
     NodeIndex parent(NodeIndex node) const final { return parent_.at(node); }
@@ -96,6 +100,97 @@ class DoubleListAnnotatedTree : public AnnotatedTree {
         } else {
             return "";
         }
+    }
+
+    std::string recursive_string(NodeIndex node) const {
+        std::string newick;
+
+        if (not children(node).empty()) {
+            // It's an internal node
+            newick += "(";
+            for (auto const child : children(node)) {
+                newick += recursive_string(child) + ",";
+            };
+            newick.pop_back();
+            newick += ")";
+        }
+        auto node_annotation = nodes_.at(node);
+        if (node_annotation.count("name") != 0) {
+            newick += nodes_.at(node).at("name");
+            node_annotation.erase("name");
+        }
+        if (node_annotation.count("length") != 0) {
+            newick += ":" + nodes_.at(node).at("length");
+            node_annotation.erase("length");
+        }
+        if (not node_annotation.empty()) {
+            newick += "[&&NHX";
+            for (auto& it : node_annotation) {
+                newick += ":" + it.first + "=" + it.second;
+            }
+            newick += "]";
+        }
+        return newick;
+    }
+
+    std::string as_string() const final { return recursive_string(root()) + "; "; }
+
+    std::vector<std::string> descendant_leaves(NodeIndex node) const final {
+        std::vector<std::string> leaves(0);
+        if (children(node).empty()) {
+            leaves.emplace_back(tag(node, "name"));
+        } else {
+            for (auto const& child : children(node)) {
+                auto v2 = descendant_leaves(child);
+                if (not v2.empty()) {
+                    leaves.insert(leaves.end(), v2.begin(), v2.end());
+                }
+            }
+        }
+        return leaves;
+    }
+
+    int recursive_diff(NodeIndex node, const AnnotatedTree& other, NodeIndex other_node) const {
+        int diff = 0;
+
+        if (children(node).size() != other.children(other_node).size()) {
+            diff++;
+        } else {
+            for (auto const& child : children(node)) {
+                auto child_leaves = descendant_leaves(child);
+                std::sort(child_leaves.begin(), child_leaves.end());
+                bool no_counterpart = true;
+                for (auto const& other_child : other.children(other_node)) {
+                    auto other_leaves = other.descendant_leaves(other_child);
+                    std::sort(other_leaves.begin(), other_leaves.end());
+
+                    if (tag(child, "name") == other.tag(other_child, "name") and
+                        tag(child, "length") == other.tag(other_child, "length") and
+                        child_leaves == other_leaves) {
+                        no_counterpart = false;
+                        diff += recursive_diff(child, other, other_child);
+                    }
+                }
+                if (no_counterpart) {
+                    diff++;
+                }
+            }
+        }
+
+        for (auto& it : nodes_.at(node)) {
+            if (it.second != other.tag(other_node, it.first)) {
+                diff++;
+            };
+        }
+
+        return diff;
+    }
+
+    bool operator==(const AnnotatedTree& other) const final {
+        if (nb_nodes() != other.nb_nodes()) {
+            return false;
+        };
+        return recursive_diff(root(), other, other.root()) == 0;
     }
 };
 
@@ -121,14 +216,26 @@ class NHXParser : public TreeParser {
         Invalid
     };
     std::map<TokenType, std::string> token_names{{OpenParenthesis, "OpenParenthesis"},
-        {CloseParenthesis, "CloseParenthesis"}, {Colon, "Colon"}, {Semicolon, "Semicolon"},
-        {Comma, "Comma"}, {Equal, "Equal"}, {NHXOpen, "NHXOpen"}, {CommentOpen, "CommentOpen"},
-        {BracketClose, "BracketClose"}, {Identifier, "Identifier"}, {Invalid, "Invalid"}};
+                                                 {CloseParenthesis, "CloseParenthesis"},
+                                                 {Colon, "Colon"},
+                                                 {Semicolon, "Semicolon"},
+                                                 {Comma, "Comma"},
+                                                 {Equal, "Equal"},
+                                                 {NHXOpen, "NHXOpen"},
+                                                 {CommentOpen, "CommentOpen"},
+                                                 {BracketClose, "BracketClose"},
+                                                 {Identifier, "Identifier"},
+                                                 {Invalid, "Invalid"}};
     std::map<TokenType, std::regex> token_regexes{{OpenParenthesis, std::regex("\\(")},
-        {CloseParenthesis, std::regex("\\)")}, {Colon, std::regex(":")},
-        {Semicolon, std::regex(";")}, {Comma, std::regex(",")}, {Equal, std::regex("=")},
-        {NHXOpen, std::regex("\\[&&NHX:")}, {CommentOpen, std::regex("\\[")},
-        {BracketClose, std::regex("\\]")}, {Identifier, std::regex("[a-zA-Z0-9._-]+")}};
+                                                  {CloseParenthesis, std::regex("\\)")},
+                                                  {Colon, std::regex(":")},
+                                                  {Semicolon, std::regex(";")},
+                                                  {Comma, std::regex(",")},
+                                                  {Equal, std::regex("=")},
+                                                  {NHXOpen, std::regex("\\[&&NHX:")},
+                                                  {CommentOpen, std::regex("\\[")},
+                                                  {BracketClose, std::regex("\\]")},
+                                                  {Identifier, std::regex("[a-zA-Z0-9._-]+")}};
     using Token = std::pair<TokenType, std::string>;  // first: index of token, second: token value
 
     // input/output
@@ -167,7 +274,9 @@ class NHXParser : public TreeParser {
 
     // lexer
     void find_token() {
-        while (std::isspace(*it)) { it++; }
+        while (std::isspace(*it)) {
+            it++;
+        }
         int token_number{0};
         for (auto token_regex : token_regexes) {
             std::smatch m;
@@ -175,8 +284,8 @@ class NHXParser : public TreeParser {
             if (r and m.prefix() == "") {
                 if (token_regex.first == CommentOpen) {  // support of comments
                     std::string comment_close{"]"};
-                    it = std::search(
-                             it, scit(input.end()), comment_close.begin(), comment_close.end()) +
+                    it = std::search(it, scit(input.end()), comment_close.begin(),
+                                     comment_close.end()) +
                          1;
                     find_token();
                     return;
@@ -189,8 +298,8 @@ class NHXParser : public TreeParser {
             token_number++;
         }
         next_token = Token{Invalid, it == scit(input.end())
-                                        ? "end of input"
-                                        : ("token starting with " + std::string(it, it + 1))};
+                                    ? "end of input"
+                                    : ("token starting with " + std::string(it, it + 1))};
     }
 
     // parser
@@ -198,7 +307,9 @@ class NHXParser : public TreeParser {
         tree.nodes_.emplace_back();
         tree.parent_.push_back(parent);
         tree.children_.emplace_back();
-        if (parent != -1) { tree.children_.at(parent).push_back(number); }
+        if (parent != -1) {
+            tree.children_.at(parent).push_back(number);
+        }
 
         find_token();
         switch (next_token.first) {
@@ -206,22 +317,36 @@ class NHXParser : public TreeParser {
                 tree.nodes_[number]["name"] = next_token.second;
                 node_name(number, parent);
                 break;
-            case Colon: node_length(number, parent); break;
-            case NHXOpen: data(number, parent); break;
+            case Colon:
+                node_length(number, parent);
+                break;
+            case NHXOpen:
+                data(number, parent);
+                break;
             case OpenParenthesis:
                 next_node++;
                 node_nothing(next_node, number);
                 break;
-            default: node_end(parent);
+            default:
+                node_end(parent);
         }
     }
 
     void node_name(int number, int parent) {
         find_token();
         switch (next_token.first) {
-            case Colon: node_length(number, parent); break;
-            case NHXOpen: data(number, parent); break;
-            default: node_end(parent);
+            case Colon:
+                node_length(number, parent);
+                break;
+            case NHXOpen:
+                data(number, parent);
+                break;
+            case Identifier:
+                tree.nodes_[number]["name"] = next_token.second;
+                node_name(number, parent);
+                break;
+            default:
+                node_end(parent);
         }
     }
 
@@ -230,8 +355,11 @@ class NHXParser : public TreeParser {
 
         find_token();
         switch (next_token.first) {
-            case NHXOpen: data(number, parent); break;
-            default: node_end(parent);
+            case NHXOpen:
+                data(number, parent);
+                break;
+            default:
+                node_end(parent);
         }
     }
 
@@ -242,11 +370,15 @@ class NHXParser : public TreeParser {
                 node_nothing(next_node, parent);
                 break;
             case CloseParenthesis: {
-                if (parent != -1) { node_name(parent, tree.parent_.at(parent)); }
+                if (parent != -1) {
+                    node_name(parent, tree.parent_.at(parent));
+                }
                 break;
             }
-            case Semicolon: break;
-            default: error("Error: unexpected " + next_token.second + '\n');
+            case Semicolon:
+                break;
+            default:
+                error("Error: unexpected " + next_token.second + '\n');
         }
     }
 
@@ -268,14 +400,16 @@ class NHXParser : public TreeParser {
         }
     }
 
-  public:
+public:
     NHXParser(std::istream& is) {
         tree = DoubleListAnnotatedTree();
         tree.root_ = 0;
         input = std::string(std::istreambuf_iterator<char>(is), {});
         it = input.begin();
 
-        if (input.length() == 0) { throw NHXParserException("Error: empty input stream!\n"); }
+        if (input.length() == 0) {
+            throw NHXParserException("Error: empty input stream!\n");
+        }
 
         node_nothing(0, -1);
     }

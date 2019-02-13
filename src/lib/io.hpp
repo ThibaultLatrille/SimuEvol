@@ -39,6 +39,12 @@ std::string join(std::vector<std::string> const &v, char sep) {
         [sep](const std::string &acc, std::string b) { return acc + sep + b; });
 };
 
+std::string d_to_string(double val){
+    std::ostringstream so;
+    so << std::scientific << val;
+    return so.str();
+}
+
 class Trace {
   private:
     std::unordered_map<std::string, size_t> header_to_index;
@@ -77,7 +83,7 @@ class Trace {
     void add(std::string const &key, unsigned val) { add(key, std::to_string(val)); }
     void add(std::string const &key, long val) { add(key, std::to_string(val)); }
     void add(std::string const &key, size_t val) { add(key, std::to_string(val)); }
-    void add(std::string const &key, double val) { add(key, std::to_string(val)); }
+    void add(std::string const &key, double val) { add(key, d_to_string(val));}
 
     void write_tsv(std::string const &output_filename) {
         std::ofstream tsv_file;
@@ -88,5 +94,6 @@ class Trace {
             assert(row.size() == header_to_count.size());
             tsv_file << join(row, '\t') << std::endl;
         }
+        tsv_file.close();
     }
 };
