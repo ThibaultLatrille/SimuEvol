@@ -872,8 +872,8 @@ class Population {
     }
     void node_trace(Tree::NodeIndex node, Tree &tree) const {
         tree.set_tag(node, "population_size", to_string(population_size));
-        tree.set_tag(node, "generation_time_in_year", to_string(generation_time));
-        tree.set_tag(node, "mutation_rate_per_generation", to_string(nuc_matrix.mutation_rate));
+        tree.set_tag(node, "generation_time_in_year", d_to_string(generation_time));
+        tree.set_tag(node, "mutation_rate_per_generation", d_to_string(nuc_matrix.mutation_rate));
         trace_nodes.add("taxon_name", tree.node_name(node));
         trace_nodes.add("index", to_string(node));
         trace_nodes.add("#generations_from_root", time_from_root);
