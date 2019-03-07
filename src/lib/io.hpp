@@ -5,7 +5,7 @@
 #include <numeric>
 #include <unordered_map>
 
-void init_alignments(std::string const &output_path, int nb_leaves, int nb_sites) {
+void init_alignments(std::string const &output_path, unsigned nb_leaves, unsigned nb_sites) {
     // .ali format
     std::ofstream ali_file;
     ali_file.open(output_path + ".ali");
@@ -72,10 +72,7 @@ class Trace {
             data.resize(nb_row);
             data.back().resize(nb_col);
         }
-        size_t row = header_to_count[key];
-        size_t col = header_to_index[key];
-        data.at(row);
-        data.at(row).at(col) = val;
+        data.at(header_to_count[key]).at(header_to_index[key]) = val;
     }
 
     void add(std::string const &key, bool val) { add(key, std::to_string(val)); }
