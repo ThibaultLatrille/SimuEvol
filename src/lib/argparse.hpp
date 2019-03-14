@@ -19,12 +19,22 @@ class SimuArgParse : public OutputArgParse {
   public:
     explicit SimuArgParse(TCLAP::CmdLine& cmd) : OutputArgParse(cmd) {}
 
+    TCLAP::ValueArg<std::string> correlation_path{
+        "c", "correlation_matrix", "input correlation matrix path", false, "", "string", cmd};
+    TCLAP::ValueArg<double> mu{
+        "m", "mu", "Mutation rate (at the root)", false, 1e-8, "double", cmd};
+    TCLAP::ValueArg<double> root_age{
+        "a", "root_age", "Age of the root", false, 50e6, "double", cmd};
+    TCLAP::ValueArg<double> generation_time{"g", "generation_time",
+        "Number of year between generations (at the root)", false, 40, "double", cmd};
     TCLAP::ValueArg<std::string> nuc_matrix_path{
         "q", "nuc_matrix", "input nucleotide matrix preferences path", false, "", "string", cmd};
     TCLAP::ValueArg<std::string> preferences_path{
         "f", "preferences", "input site-specific preferences path", true, "", "string", cmd};
     TCLAP::ValueArg<std::string> newick_path{
         "t", "newick", "input newick tree path", true, "", "string", cmd};
+    TCLAP::ValueArg<double> beta{
+        "b", "beta", "Stringency parameter of the fitness profiles", false, 1.0, "double", cmd};
 };
 
 std::vector<std::array<double, 20>> open_preferences(
@@ -33,12 +43,22 @@ std::vector<std::array<double, 20>> open_preferences(
 
     std::ifstream input_stream(file_name);
     if (!input_stream)
-        std::cerr << "Preferences file " << file_name << "doesn't exist" << std::endl;
+        std::cerr << "Preferences file " << file_name << " doesn't exist" << std::endl;
 
     std::string line;
 
     // skip the header of the file
     getline(input_stream, line);
+    char sep{' '};
+    long nbr_col = 0;
+    for (char sep_test : std::vector<char>({' ', ',', '\t'})) {
+        long n = std::count(line.begin(), line.end(), sep_test);
+        if (n > nbr_col) {
+            sep = sep_test;
+            nbr_col = n + 1;
+        }
+    }
+    nbr_col -= 20;
 
     while (getline(input_stream, line)) {
         std::array<double, 20> fitness_profil{0};
@@ -46,8 +66,10 @@ std::vector<std::array<double, 20>> open_preferences(
         istringstream line_stream(line);
         unsigned counter{0};
 
-        while (getline(line_stream, word, ' ')) {
-            if (counter > 2) { fitness_profil[counter - 3] = beta * std::log(stod(word)); }
+        while (getline(line_stream, word, sep)) {
+            if (counter > nbr_col) {
+                fitness_profil[counter - (nbr_col + 1)] = beta * std::log(stod(word));
+            }
             counter++;
         }
 

@@ -16,6 +16,6 @@ include_directories("src")
 include_directories("src/lib")
 include_directories("utils")
 
-add_executable(SimuEvol src/simu_evol.cpp )
+add_executable(SimuDiv src/simu_div.cpp )
 add_executable(SimuPoly src/simu_poly.cpp)
 add_executable(SimuRelax src/simu_relax.cpp)

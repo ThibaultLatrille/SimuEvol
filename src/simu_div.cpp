@@ -368,15 +368,12 @@ class SimuEvolArgParse : public SimuArgParse {
   public:
     explicit SimuEvolArgParse(CmdLine &cmd) : SimuArgParse(cmd) {}
 
-    TCLAP::ValueArg<double> mu{"m", "mu", "Mutation rate", false, 2.5, "double", cmd};
-    TCLAP::ValueArg<double> beta{
-        "b", "beta", "Effective population size (relative)", false, 1.0, "double", cmd};
     TCLAP::ValueArg<double> selection{"s", "selection",
         "Selection coefficient given the current amino-acid", false, 0.0, "double", cmd};
     TCLAP::ValueArg<double> shuffle_proba{"p", "shuffle_proba",
         "Probability to randomize the fitness landscape (once a substitution occured)", false, 0.0,
         "double", cmd};
-    SwitchArg shuffle_all{"a", "shuffle_all",
+    SwitchArg shuffle_all{"r", "shuffle_all",
         "All sites are affected by the random shuffling (instead of just the one where the "
         "substitution occured)",
         cmd, false};
@@ -391,8 +388,14 @@ int main(int argc, char *argv[]) {
     string newick_path{args.newick_path.getValue()};
     string nuc_matrix_path{args.nuc_matrix_path.getValue()};
     string output_path{args.output_path.getValue()};
+    string correlation_path{args.correlation_path.getValue()};
     double mu{args.mu.getValue()};
     assert(mu > 0.0);
+    double root_age{args.root_age.getValue()};
+    assert(root_age > 0.0);
+    double generation_time{args.generation_time.getValue()};
+    assert(generation_time > 0.0);
+    assert(generation_time < root_age);
     double beta{args.beta.getValue()};
     assert(beta > 0.0);
     double s{args.selection.getValue()};

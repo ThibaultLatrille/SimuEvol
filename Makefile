@@ -38,8 +38,8 @@ test: all
 	@rm -rf test
 	@mkdir test
 	@echo "\n\e[35m\e[1m== SimuPoly run ===============================================================\e[0m"
-	build/SimuPoly --preferences data/preferences/gal4.txt --newick data/trees/mammal_subtree.tre --nuc_matrix data/matrices/nucleotide_GTR.tsv --correlation_matrix data/matrices/correlation3x3.tsv --output test/SimuPoly_gal4
+	build/SimuPoly --preferences data/preferences/gal4.prefs --newick data/trees/mammal_subtree.tre --nuc_matrix data/matrices/nucleotide_GTR.tsv --correlation_matrix data/matrices/correlation3x3.tsv --output test/SimuPoly_gal4
 	@echo "\n\e[35m\e[1m== SimuEvol run ===============================================================\e[0m"
-	build/SimuEvol --preferences data/preferences/gal4.txt --newick data/trees/gal4.newick --nuc_matrix data/matrices/nucleotide_GTR.tsv --output test/SimuEvol_gal4
+	build/SimuDiv --preferences data/preferences/gal4.prefs --newick data/trees/gal4.newick --nuc_matrix data/matrices/nucleotide_GTR.tsv --output test/SimuEvol_gal4
 	@echo "\n\e[35m\e[1m== SimuRelax run ===============================================================\e[0m"
 	build/SimuRelax --output test/SimuRelax_run

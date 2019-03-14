@@ -143,7 +143,6 @@ class NucleotideRateMatrix : public Matrix4x4 {
         } else {
             std::cerr << "The nucleotide rate matrix is not time-reversible." << std::endl;
         }
-
     }
 };
 
@@ -216,16 +215,16 @@ class CorrelationMatrix : public Matrix3x3 {
     void add_to_trace(Trace &trace) const {
         for (int i = 0; i < dimensions; i++) {
             for (int j = 0; j <= i; j++) {
-                trace.add(
-                    "Covariance_" + std::to_string(i) + "_" + std::to_string(j), (*this).coeffRef(i, j));
+                trace.add("Covariance_" + std::to_string(i) + "_" + std::to_string(j),
+                    (*this).coeffRef(i, j));
             }
         }
     }
 };
 
 // Method computing the equilibrium frequencies for one site.
-std::array<double, 64> codon_frequencies(
-    std::array<double, 20> const &aa_fitness_profil, NucleotideRateMatrix const &nuc_matrix, double scale = 1.0) {
+std::array<double, 64> codon_frequencies(std::array<double, 20> const &aa_fitness_profil,
+    NucleotideRateMatrix const &nuc_matrix, double scale = 1.0) {
     std::array<double, 64> codon_frequencies{0};
     // For each site of the vector of the site frequencies.
     for (char codon{0}; codon < 64; codon++) {
@@ -250,7 +249,8 @@ std::array<double, 64> codon_frequencies(
     return codon_frequencies;
 };
 
-double rate_fixation(std::array<double, 20> const &preferences, char codon_from, char codon_to, double scale = 1.0) {
+double rate_fixation(
+    std::array<double, 20> const &preferences, char codon_from, char codon_to, double scale = 1.0) {
     double rate_fix = 1.0;
     // Selective strength between the mutated and original amino-acids.
     double s{0.};
@@ -299,6 +299,36 @@ std::tuple<double, double> predicted_dn_d0(
                         d0 += codon_freqs[codon_from] * mutation_rate_matrix(n_from, n_to);
                     }
                 }
+            }
+        }
+    }
+    return std::make_tuple(dn, d0);
+}
+
+// Theoretical computation of the predicted omega
+std::tuple<double, double> flow_dn_d0(
+    std::vector<std::array<double, 20>> const &aa_fitness_profiles,
+    std::vector<char> const &codon_seq, NucleotideRateMatrix const &mutation_rate_matrix,
+    double scale = 1.0) {
+    assert(aa_fitness_profiles.size() == codon_seq.size());
+    double dn{0.}, d0{0.};
+    // For all site of the sequence.
+    for (size_t site{0}; site < aa_fitness_profiles.size(); site++) {
+        // For all possible neighbors.
+        for (auto &neighbor : Codon::codon_to_neighbors_array[codon_seq[site]]) {
+            // Codon after mutation, Nucleotide original and Nucleotide after mutation.
+            char codon_to{0}, n_from{0}, n_to{0};
+            std::tie(codon_to, n_from, n_to) = neighbor;
+
+            // If the mutated amino-acid is a stop codon, the rate of fixation is 0.
+            // Else, if the mutated and original amino-acids are non-synonymous, we
+            // compute the rate of fixation. Note that, if the mutated and original
+            // amino-acids are synonymous, the rate of fixation is 1.
+            if (Codon::codon_to_aa_array[codon_to] != 20 and
+                Codon::codon_to_aa_array[codon_seq[site]] != Codon::codon_to_aa_array[codon_to]) {
+                dn += mutation_rate_matrix(n_from, n_to) *
+                      rate_fixation(aa_fitness_profiles[site], codon_seq[site], codon_to, scale);
+                d0 += mutation_rate_matrix(n_from, n_to);
             }
         }
     }
