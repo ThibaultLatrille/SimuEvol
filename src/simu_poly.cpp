@@ -15,7 +15,7 @@ using namespace std;
 
 typedef chrono::high_resolution_clock::time_point TimeVar;
 
-string info =
+static string info =
     "##FILTER=<ID=s50,Description=\"The alternative is the major allele\">\n"
     "##FILTER=<ID=s100,Description=\"The reference has not been sampled\">\n"
     "##INFO=<ID=REFCODON,Number=1,Type=String,Description=\"Codon of the reference\">\n"
@@ -28,11 +28,11 @@ string info =
     "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
     "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
 
-unsigned long binomial_coefficient(unsigned long n, unsigned long k) {
+u_long binomial_coefficient(u_long n, u_long k) {
     assert(0 <= k);
     assert(k <= n);
-    unsigned long i;
-    unsigned long b;
+    u_long i;
+    u_long b;
     if (0 == k || n == k) { return 1; }
     if (k > (n - k)) { k = n - k; }
     if (1 == k) { return n; }
@@ -45,24 +45,24 @@ unsigned long binomial_coefficient(unsigned long n, unsigned long k) {
     return b;
 }
 
-unsigned pow_int(unsigned x, unsigned p) {
+u_long pow_int(u_long x, u_long p) {
     if (p == 0) return 1;
     if (p == 1) return x;
 
-    unsigned tmp = pow_int(x, p / 2);
+    u_long tmp = pow_int(x, p / 2);
     if (p % 2 == 0)
         return tmp * tmp;
     else
         return x * tmp * tmp;
 }
 
-string join(vector<unsigned> &v, char sep) {
+string join(vector<u_long> &v, char sep) {
     return accumulate(v.begin() + 1, v.end(), to_string(v[0]),
         [sep](const string &acc, int b) { return acc + sep + to_string(b); });
 };
 
 struct Change {
-    unsigned site;
+    u_long site;
     char codon_from{-1};
     char codon_to{-1};
 };
@@ -77,10 +77,10 @@ bool is_synonymous(const Change &change) {
 
 class Events {
   public:
-    unsigned non_syn_mut{0};
-    unsigned syn_mut{0};
-    unsigned non_syn_fix{0};
-    unsigned syn_fix{0};
+    u_long non_syn_mut{0};
+    u_long syn_mut{0};
+    u_long non_syn_fix{0};
+    u_long syn_fix{0};
     std::vector<double> delta_f{};
 
     explicit Events() = default;
@@ -131,29 +131,29 @@ class Events {
         }
     }
 
-    unsigned fixations() const { return non_syn_fix + syn_fix; }
+    u_long fixations() const { return non_syn_fix + syn_fix; }
 
-    unsigned mutations() const { return non_syn_mut + syn_mut; }
+    u_long mutations() const { return non_syn_mut + syn_mut; }
 };
 
 class Polymorphism {
   private:
-    unsigned sample_size;
-    unsigned seq_size;
+    u_long sample_size;
+    u_long seq_size;
     double inv_harmonic_sum;
     double inv_choice;
 
   public:
-    unsigned pairwise_syn{0};
-    unsigned pairwise_non_syn{0};
-    unsigned non_syn_nbr{0};
-    unsigned syn_nbr{0};
-    unsigned complex_sites{0};
+    u_long pairwise_syn{0};
+    u_long pairwise_non_syn{0};
+    u_long non_syn_nbr{0};
+    u_long syn_nbr{0};
+    u_long complex_sites{0};
 
-    explicit Polymorphism(unsigned sample_size_, unsigned seq_size_)
+    explicit Polymorphism(u_long sample_size_, u_long seq_size_)
         : sample_size{sample_size_}, seq_size{seq_size_} {
         double harmonic_sum = 0;
-        for (unsigned i = 1; i < 2 * sample_size; i++) { harmonic_sum += 1.0 / i; }
+        for (u_long i = 1; i < 2 * sample_size; i++) { harmonic_sum += 1.0 / i; }
         inv_harmonic_sum = 1.0 / harmonic_sum;
         inv_choice = 2.0 / (2 * sample_size * (2 * sample_size - 1));
     };
@@ -212,13 +212,12 @@ struct TimeElapsed {
 TimeElapsed timer;
 Trace tracer_nodes;
 Trace tracer_leaves;
-Trace tracer_changes;
 
 class Haplotype {
   public:
     // The nbr_copies of sites in the sequence (each position is a codon, thus the DNA sequence is 3
     // times greater).
-    unsigned nbr_copies{0};
+    u_long nbr_copies{0};
     double fitness{0.0};
     set<Change> set_change;
 
@@ -226,10 +225,10 @@ class Haplotype {
 
     // Constructor of Reference_seq.
     // size: the size of the DNA sequence.
-    Haplotype(unsigned const nbr_copies, double const fitness)
+    Haplotype(u_long const nbr_copies, double const fitness)
         : nbr_copies{nbr_copies}, fitness{fitness} {};
 
-    void check_consistency(unsigned nbr_sites) const {
+    void check_consistency(u_long nbr_sites) const {
         for (auto &change : set_change) {
             assert(Codon::codon_to_aa_array[change.codon_to] != 20);
             assert(Codon::codon_to_aa_array[change.codon_from] != 20);
@@ -247,19 +246,19 @@ class Haplotype {
     } GreaterThan;
 };
 
-// Class representing a genetically linked sequences (blocks are unlinked between them)
+// Class representing a genetically linked sequences (exons are unlinked between them)
 class Block {
   public:
     // Block
-    unsigned const &population_size;
-    unsigned position;
+    u_long const &population_size;
+    u_long position;
 
     // Selection
     vector<array<double, 20>> aa_fitness_profiles;
 
     // Reference sequence
-    unsigned nbr_sites;
-    unsigned nbr_nucleotides;
+    u_long nbr_sites;
+    u_long nbr_nucleotides;
     vector<char> codon_seq;
 
     // Haplotypes
@@ -269,22 +268,22 @@ class Block {
     Events events{Events()};
 
     // Statics variables (shared by all instances)
-    static unsigned nbr_mutations, nbr_fixations;
+    static u_long nbr_mutations, nbr_fixations;
 
     explicit Block() = default;
 
     // Constructor
-    explicit Block(vector<array<double, 20>> const &fitness_profiles, const unsigned &position,
-        unsigned &population_size, NucleotideRateMatrix const &nuc_matrix)
+    explicit Block(vector<array<double, 20>> const &fitness_profiles, const u_long &position,
+        u_long &population_size, NucleotideRateMatrix const &nuc_matrix)
         : population_size{population_size},
           position{position},
           aa_fitness_profiles{fitness_profiles},
-          nbr_sites{unsigned(fitness_profiles.size())},
-          nbr_nucleotides{unsigned(3 * fitness_profiles.size())},
+          nbr_sites{u_long(fitness_profiles.size())},
+          nbr_nucleotides{u_long(3 * fitness_profiles.size())},
           codon_seq(fitness_profiles.size(), 0),
           haplotype_vector{} {
         // Draw codon from codon frequencies
-        for (unsigned site{0}; site < nbr_sites; site++) {
+        for (u_long site{0}; site < nbr_sites; site++) {
             array<double, 64> codon_freqs =
                 codon_frequencies(aa_fitness_profiles[site], nuc_matrix, 4 * population_size);
             discrete_distribution<char> freq_codon_distr(codon_freqs.begin(), codon_freqs.end());
@@ -300,7 +299,7 @@ class Block {
         assert(haplotype_vector.size() <= 2 * population_size);
         assert(!haplotype_vector.empty());
 
-        unsigned nbr_copies{0};
+        u_long nbr_copies{0};
         for (auto &haplotype : haplotype_vector) {
             haplotype.check_consistency(nbr_sites);
             nbr_copies += haplotype.nbr_copies;
@@ -315,39 +314,39 @@ class Block {
         fixation();
     }
 
-    discrete_distribution<unsigned> haplotype_freq_distr() const {
-        vector<unsigned> nbr_copies(haplotype_vector.size(), 0);
+    discrete_distribution<u_long> haplotype_freq_distr() const {
+        vector<u_long> nbr_copies(haplotype_vector.size(), 0);
         std::transform(haplotype_vector.begin(), haplotype_vector.end(), nbr_copies.begin(),
             [](const Haplotype &h) { return h.nbr_copies; });
 
-        discrete_distribution<unsigned> haplotype_distr(nbr_copies.begin(), nbr_copies.end());
+        discrete_distribution<u_long> haplotype_distr(nbr_copies.begin(), nbr_copies.end());
         return haplotype_distr;
     }
 
     void mutation(NucleotideRateMatrix const &p) {
         TimeVar t_start = timeNow();
 
-        binomial_distribution<unsigned> binomial_distr(
+        binomial_distribution<u_long> binomial_distr(
             2 * population_size * nbr_nucleotides, p.max_sum_mutation_rates);
-        unsigned binomial_draw = binomial_distr(generator);
+        u_long binomial_draw = binomial_distr(generator);
 
         if (binomial_draw > 0) {
-            set<tuple<unsigned, unsigned, unsigned>> coordinates_set{};
-            unsigned nbr_draws{0};
+            set<tuple<u_long, u_long, u_long>> coordinates_set{};
+            u_long nbr_draws{0};
 
-            discrete_distribution<unsigned> haplotype_distr{};
+            discrete_distribution<u_long> haplotype_distr{};
             if (haplotype_vector.size() > 1) { haplotype_distr = haplotype_freq_distr(); }
 
             while (nbr_draws < binomial_draw) {
-                unsigned haplotype_draw = 0;
+                u_long haplotype_draw = 0;
 
                 if (haplotype_vector.size() > 1) { haplotype_draw = haplotype_distr(generator); }
 
-                uniform_int_distribution<unsigned> copy_and_site_distr(
+                uniform_int_distribution<u_long> copy_and_site_distr(
                     0, haplotype_vector[haplotype_draw].nbr_copies * nbr_nucleotides - 1);
-                unsigned copy_and_site_draw = copy_and_site_distr(generator);
-                unsigned nuc_site = copy_and_site_draw % nbr_nucleotides;
-                unsigned copy = copy_and_site_draw / nbr_nucleotides;
+                u_long copy_and_site_draw = copy_and_site_distr(generator);
+                u_long nuc_site = copy_and_site_draw % nbr_nucleotides;
+                u_long copy = copy_and_site_draw / nbr_nucleotides;
 
                 auto coordinate = make_tuple(haplotype_draw, copy, nuc_site);
                 if (coordinates_set.count(coordinate) == 0) {
@@ -358,13 +357,13 @@ class Block {
 
             auto iter = coordinates_set.begin();
             while (iter != coordinates_set.end()) {
-                unsigned i_hap = get<0>(*iter);
-                unsigned copy_id = get<1>(*iter);
+                u_long i_hap = get<0>(*iter);
+                u_long copy_id = get<1>(*iter);
                 bool at_least_one_mutation{false};
                 Haplotype haplotype{};
                 while (true) {
-                    unsigned site = get<2>(*iter);
-                    unsigned codon_site = site / 3;
+                    u_long site = get<2>(*iter);
+                    u_long codon_site = site / 3;
                     auto nuc_position = static_cast<char>(site % 3);
 
                     char codon_from{0};
@@ -434,10 +433,10 @@ class Block {
                 [](const Haplotype &h) { return (1.0 + h.fitness) * h.nbr_copies; });
 
             double fit_tot = accumulate(fitnesses.begin(), fitnesses.end(), 0.0);
-            unsigned children_tot = 2 * population_size;
+            u_long children_tot = 2 * population_size;
 
             for (size_t i_hap{0}; i_hap < haplotype_vector.size() - 1; i_hap++) {
-                haplotype_vector[i_hap].nbr_copies = binomial_distribution<unsigned>(
+                haplotype_vector[i_hap].nbr_copies = binomial_distribution<u_long>(
                     children_tot, fitnesses[i_hap] / fit_tot)(generator);
                 children_tot -= haplotype_vector[i_hap].nbr_copies;
                 fit_tot -= fitnesses[i_hap];
@@ -473,7 +472,7 @@ class Block {
     void fixation() {
         TimeVar t_start = timeNow();
         set<Change> current_change_set = haplotype_vector[0].set_change;
-        unsigned i_hap{1};
+        u_long i_hap{1};
         while (!current_change_set.empty() and i_hap < haplotype_vector.size()) {
             set<Change> intersect;
             set_intersection(current_change_set.begin(), current_change_set.end(),
@@ -521,10 +520,10 @@ class Population {
 
     // Blocks
     vector<Block> blocks;
-    unsigned sample_size{0};
+    u_long sample_size{0};
 
     LogMultivariate log_multivariate;
-    unsigned population_size{0};
+    u_long population_size{0};
     double generation_time{0};
     NucleotideRateMatrix nuc_matrix;
 
@@ -532,9 +531,9 @@ class Population {
 
     explicit Population() = default;
 
-    Population(vector<array<double, 20>> const &fitness_profiles, unsigned sample_size,
-        LogMultivariate &log_multi, unsigned exon_size,
-        NucleotideRateMatrix const &nucleotide_matrix, CorrelationMatrix const &cor_matrix)
+    Population(vector<array<double, 20>> const &fitness_profiles, u_long sample_size,
+        LogMultivariate &log_multi, u_long exon_size, NucleotideRateMatrix const &nucleotide_matrix,
+        CorrelationMatrix const &cor_matrix)
         : blocks{},
           sample_size{sample_size},
           log_multivariate{log_multi},
@@ -559,13 +558,13 @@ class Population {
         if (dv.rem != 0) { cout << "Last exon is " << dv.rem << " sites long." << endl; }
     }
 
-    unsigned nbr_sites() const {
-        unsigned sites = 0;
+    u_long nbr_sites() const {
+        u_long sites = 0;
         for (auto const &block : blocks) { sites += block.nbr_sites; }
         return sites;
     }
 
-    unsigned nbr_nucleotides() const { return 3 * nbr_sites(); }
+    u_long nbr_nucleotides() const { return 3 * nbr_sites(); }
 
     void check_consistency() const {
         for (auto const &block : blocks) { block.check_consistency(); }
@@ -611,9 +610,9 @@ class Population {
         check_consistency();
     }
 
-    void burn_in(unsigned burn_in_length) {
+    void burn_in(u_long burn_in_length) {
         cout << "Burn-in for " << burn_in_length << " generations." << endl;
-        for (unsigned gen{1}; gen <= burn_in_length; gen++) {
+        for (u_long gen{1}; gen <= burn_in_length; gen++) {
             for (auto &block : blocks) {
                 assert(!block.haplotype_vector.empty());
                 block.forward(nuc_matrix);
@@ -625,7 +624,7 @@ class Population {
 
     double theoretical_theta() const { return 4 * population_size * nuc_matrix.mutation_rate; };
 
-    double theoretical_dnds(unsigned pop_size) const {
+    double theoretical_dnds(u_long pop_size) const {
         double sub_flow{0.}, mut_flow{0.};
 
         for (auto const &block : blocks) {
@@ -637,7 +636,7 @@ class Population {
         return sub_flow / mut_flow;
     };
 
-    double flow_dnds(unsigned pop_size) const {
+    double flow_dnds(u_long pop_size) const {
         double sub_flow{0.}, mut_flow{0.};
 
         for (auto const &block : blocks) {
@@ -650,8 +649,8 @@ class Population {
         return sub_flow / mut_flow;
     };
 
-    void node_trace(
-        string &output_filename, Tree::NodeIndex node, Tree &tree, Population const *parent) const {
+    void node_trace(string const &output_filename, Tree::NodeIndex node, Tree &tree,
+        Population const *parent) const {
         TimeVar t_start = timeNow();
 
         string node_name = tree.node_name(node);
@@ -702,7 +701,7 @@ class Population {
             out += "\n##reference=" + get_dna_str();
             out += "\n" + info;
 
-            for (unsigned indiv{1}; indiv <= sample_size; indiv++) {
+            for (u_long indiv{1}; indiv <= sample_size; indiv++) {
                 out += "\tId";
                 out += to_string(indiv);
             }
@@ -711,10 +710,10 @@ class Population {
                 Polymorphism exon_poly(sample_size, block.nbr_nucleotides);
 
                 // Draw the sample of individuals
-                vector<unsigned> haplotypes_sample(2 * block.population_size, 0);
-                unsigned sum_copies = 0;
-                for (unsigned i_hap{0}; i_hap < block.haplotype_vector.size(); i_hap++) {
-                    for (unsigned copy_id{0}; copy_id < block.haplotype_vector[i_hap].nbr_copies;
+                vector<u_long> haplotypes_sample(2 * block.population_size, 0);
+                u_long sum_copies = 0;
+                for (u_long i_hap{0}; i_hap < block.haplotype_vector.size(); i_hap++) {
+                    for (u_long copy_id{0}; copy_id < block.haplotype_vector[i_hap].nbr_copies;
                          copy_id++) {
                         assert(sum_copies + copy_id < 2 * block.population_size);
                         haplotypes_sample[sum_copies + copy_id] = i_hap;
@@ -726,8 +725,8 @@ class Population {
 
                 /*
                 // DN/DS computed using one individual of the sample
-                uniform_int_distribution<unsigned> chosen_distr(0, 2 * sample_size - 1);
-                unsigned chosen = chosen_distr(generator);
+                uniform_int_distribution<u_long> chosen_distr(0, 2 * sample_size - 1);
+                u_long chosen = chosen_distr(generator);
                 for (auto const &change :
                     block.haplotype_vector[haplotypes_sample[chosen]].set_change) {
                     if (is_synonymous(change)) {
@@ -738,8 +737,8 @@ class Population {
                 }
                 */
 
-                for (unsigned site{0}; site < block.nbr_sites; site++) {
-                    map<tuple<char, char>, unsigned> codon_from_to_copy{};
+                for (u_long site{0}; site < block.nbr_sites; site++) {
+                    map<tuple<char, char>, u_long> codon_from_to_copy{};
                     for (auto const &i_hap : haplotypes_sample) {
                         char codon_to = block.codon_seq[site];
 
@@ -766,7 +765,7 @@ class Population {
                         char codon_from = get<0>(codon_from_to_copy.begin()->first);
                         char codon_to = get<1>(codon_from_to_copy.begin()->first);
                         if (codon_to != codon_from) {
-                            unsigned alt_freq = codon_from_to_copy.begin()->second;
+                            u_long alt_freq = codon_from_to_copy.begin()->second;
                             char position{0};
                             while (position < 3) {
                                 if (Codon::codon_to_nuc(codon_from, position) !=
@@ -816,10 +815,10 @@ class Population {
                             }
 
                             line += "\tGT";
-                            for (unsigned indiv{0}; indiv < sample_size; indiv++) {
+                            for (u_long indiv{0}; indiv < sample_size; indiv++) {
                                 line += "\t";
-                                for (unsigned ploidy{0}; ploidy < 2; ploidy++) {
-                                    unsigned i_hap = haplotypes_sample[indiv * 2 + ploidy];
+                                for (u_long ploidy{0}; ploidy < 2; ploidy++) {
+                                    u_long i_hap = haplotypes_sample[indiv * 2 + ploidy];
                                     auto it = block.haplotype_vector[i_hap].set_change.find(
                                         Change{block.position + site});
                                     char nuc{0};
@@ -841,11 +840,11 @@ class Population {
                 }
 
                 // Theta pairwise computed on the sample
-                for (unsigned i{0}; i < 2 * sample_size; i++) {
-                    for (unsigned j{i + 1}; j < 2 * sample_size; j++) {
+                for (u_long i{0}; i < 2 * sample_size; i++) {
+                    for (u_long j{i + 1}; j < 2 * sample_size; j++) {
                         if (i != j) {
-                            unsigned hap_i = haplotypes_sample[i];
-                            unsigned hap_j = haplotypes_sample[j];
+                            u_long hap_i = haplotypes_sample[i];
+                            u_long hap_j = haplotypes_sample[j];
                             auto it_first = block.haplotype_vector[hap_i].set_change.begin();
                             auto end_first = block.haplotype_vector[hap_i].set_change.end();
                             auto it_second = block.haplotype_vector[hap_j].set_change.begin();
@@ -914,14 +913,14 @@ class Population {
     }
 
     vector<double> theoretial_sfs(
-        NucleotideRateMatrix const &p, unsigned nbr_sample, bool synonymous) {
-        unsigned precision = 8;
-        unsigned nbr_points = pow_int(2, precision) + 1;
+        NucleotideRateMatrix const &p, u_long nbr_sample, bool synonymous) {
+        u_long precision = 8;
+        u_long nbr_points = pow_int(2, precision) + 1;
 
-        vector<unsigned> sample_range(nbr_sample - 1, 0);
+        vector<u_long> sample_range(nbr_sample - 1, 0);
         iota(sample_range.begin(), sample_range.end(), 1);
 
-        vector<unsigned long> binom_coeff(sample_range.size(), 0);
+        vector<u_long> binom_coeff(sample_range.size(), 0);
         vector<double> sample_sfs(sample_range.size(), 0);
 
         for (size_t index{0}; index < sample_range.size(); index++) {
@@ -942,7 +941,7 @@ class Population {
                 vector<double> x_array(nbr_points, 0);
                 vector<double> y_array(nbr_points, 0);
 
-                for (unsigned point{0}; point < nbr_points; point++) {
+                for (u_long point{0}; point < nbr_points; point++) {
                     x += h;
                     x_array[point] = x;
 
@@ -986,7 +985,7 @@ class Population {
                     y_array[point] = res;
 
                     for (size_t index{0}; index < sample_range.size(); index++) {
-                        unsigned a = sample_range[index];
+                        u_long a = sample_range[index];
                         double y = y_array[point] * pow(x, a - 1) * pow(1 - x, nbr_sample - a - 1);
                         sample_sfs[index] += binom_coeff[index] * h * y;
                     }
@@ -1003,7 +1002,7 @@ class Population {
 
         // For each site of the sequence.
         for (auto const &block : blocks) {
-            for (unsigned site{0}; site < block.nbr_sites; site++) {
+            for (u_long site{0}; site < block.nbr_sites; site++) {
                 // Assert there is no stop in the sequence.
                 assert(Codon::codon_to_aa_array[block.codon_seq[site]] != 20);
 
@@ -1039,7 +1038,7 @@ class Population {
 };
 
 // Initialize static variables
-unsigned Block::nbr_mutations = 0, Block::nbr_fixations = 0;
+u_long Block::nbr_mutations = 0, Block::nbr_fixations = 0;
 
 class Process {
   private:
@@ -1065,16 +1064,10 @@ class Process {
 
 
     // Recursively iterate through the subtree.
-    void run_recursive(Tree::NodeIndex node, string &output_filename) {
+    void run_recursive(Tree::NodeIndex node, string const &output_filename) {
         // Substitutions of the DNA sequence is generated.
 
         if (!tree.is_root(node)) {
-            if (populations[tree.parent(node)]->population_size == 500) {
-                populations[node]->log_multivariate.set_population_size(1000);
-            } else {
-                populations[node]->log_multivariate.set_population_size(500);
-            }
-
             populations[node]->run_forward(tree.node_length(node), tree);
 
             years_computed += tree.node_length(node);
@@ -1101,16 +1094,10 @@ class SimuPolyArgParse : public SimuArgParse {
   public:
     explicit SimuPolyArgParse(CmdLine &cmd) : SimuArgParse(cmd) {}
 
-
-    TCLAP::ValueArg<unsigned> pop_size{
-        "n", "pop_size", "Population size (at the root)", false, 500, "unsigned", cmd};
-    TCLAP::ValueArg<unsigned> sample_size{
-        "p", "sample_size", "Sample size (at the leaves)", false, 20, "unsigned", cmd};
-    TCLAP::ValueArg<unsigned> exons{"s", "exon_size",
-        "Number of codon sites per exon (default 0 means the size of the fitness profiles "
-        "provided, "
-        "thus assuming complete linkage between sites)",
-        false, 0, "unsigned", cmd};
+    TCLAP::ValueArg<u_long> pop_size{
+        "n", "pop_size", "Population size (at the root)", false, 500, "u_long", cmd};
+    TCLAP::ValueArg<u_long> sample_size{
+        "p", "sample_size", "Sample size (at the leaves)", false, 20, "u_long", cmd};
 };
 
 int main(int argc, char *argv[]) {
@@ -1132,22 +1119,22 @@ int main(int argc, char *argv[]) {
     assert(generation_time < root_age);
     double beta{args.beta.getValue()};
     assert(beta > 0.0);
-    unsigned pop_size{args.pop_size.getValue()};
-    unsigned sample_size{args.sample_size.getValue()};
+    u_long pop_size{args.pop_size.getValue()};
+    u_long sample_size{args.sample_size.getValue()};
     assert(sample_size <= pop_size);
     assert(sample_size > 0);
 
     vector<array<double, 20>> fitness_profiles =
         open_preferences(preferences_path, beta / (4 * pop_size));
-    unsigned nbr_sites = fitness_profiles.size();
-    unsigned exon_size{args.exons.getValue()};
+    u_long nbr_sites = fitness_profiles.size();
+    u_long exon_size{args.exons.getValue()};
     if (exon_size == 0) { exon_size = nbr_sites; }
     assert(0 <= exon_size and exon_size <= nbr_sites);
 
     Tree tree(newick_path);
     tree.set_root_age(root_age);
 
-    unsigned burn_in = 100 * pop_size;
+    u_long burn_in = 100 * pop_size;
     NucleotideRateMatrix nuc_matrix(nuc_matrix_path, mu, true);
 
     LogMultivariate log_multivariate(pop_size, generation_time, mu);

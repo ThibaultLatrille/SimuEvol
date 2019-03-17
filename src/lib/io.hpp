@@ -5,7 +5,7 @@
 #include <numeric>
 #include <unordered_map>
 
-void init_alignments(std::string const &output_path, unsigned nb_leaves, unsigned nb_sites) {
+void init_alignments(std::string const &output_path, u_long nb_leaves, u_long nb_sites) {
     // .ali format
     std::ofstream ali_file;
     ali_file.open(output_path + ".ali");
@@ -77,9 +77,9 @@ class Trace {
 
     void add(std::string const &key, bool val) { add(key, std::to_string(val)); }
     void add(std::string const &key, int val) { add(key, std::to_string(val)); }
-    void add(std::string const &key, unsigned val) { add(key, std::to_string(val)); }
+    void add(std::string const &key, u_long val) { add(key, std::to_string(val)); }
     void add(std::string const &key, long val) { add(key, std::to_string(val)); }
-    void add(std::string const &key, size_t val) { add(key, std::to_string(val)); }
+    void add(std::string const &key, unsigned val) { add(key, std::to_string(val)); }
     void add(std::string const &key, double val) { add(key, d_to_string(val));}
 
     void write_tsv(std::string const &output_filename) {

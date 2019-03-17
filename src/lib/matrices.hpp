@@ -16,7 +16,7 @@ int to_int(char c) { return c - '0'; }
 
 double GetEntropy(const Vector4x1 &profile) {
     double tot = 0;
-    for (unsigned int i = 0; i < profile.size(); i++) {
+    for (Eigen::Index i = 0; i < profile.size(); i++) {
         tot -= (profile[i] < 1e-6) ? 0 : profile[i] * log(profile[i]);
     }
     return tot;
@@ -150,18 +150,27 @@ class LogMultivariate : public Vector3x1 {
     int dimensions = 3;
 
   public:
-    explicit LogMultivariate(unsigned population_size, double generation_time, double mu)
+    explicit LogMultivariate(u_long population_size, double generation_time, double mu)
         : Vector3x1(Vector3x1::Zero()) {
         set_population_size(population_size);
         set_generation_time(generation_time);
         set_mu(mu);
     }
 
-    void set_population_size(unsigned population_size) { (*this)(0) = std::log(population_size); }
+    explicit LogMultivariate(double beta, double generation_time, double mu)
+        : Vector3x1(Vector3x1::Zero()) {
+        set_beta(beta);
+        set_generation_time(generation_time);
+        set_mu(mu);
+    }
+
+    void set_population_size(u_long population_size) { (*this)(0) = std::log(population_size); }
+    void set_beta(double beta) { (*this)(0) = std::log(beta); }
     void set_generation_time(double generation_time) { (*this)(1) = std::log(generation_time); }
     void set_mu(double mu) { (*this)(2) = std::log(mu); }
 
-    unsigned population_size() { return static_cast<unsigned>(std::exp((*this)(0))); }
+    u_long population_size() { return static_cast<u_long>(std::exp((*this)(0))); }
+    double beta() { return std::exp((*this)(0)); }
     double generation_time() { return std::exp((*this)(1)); }
     double mu() { return std::exp((*this)(2)); }
 

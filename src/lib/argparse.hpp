@@ -35,6 +35,10 @@ class SimuArgParse : public OutputArgParse {
         "t", "newick", "input newick tree path", true, "", "string", cmd};
     TCLAP::ValueArg<double> beta{
         "b", "beta", "Stringency parameter of the fitness profiles", false, 1.0, "double", cmd};
+    TCLAP::ValueArg<u_long> exons{"s", "exon_size",
+        "Number of codon sites per exon (default 0 means the size of the fitness profiles "
+        "provided, thus assuming complete linkage between sites)",
+        false, 0, "u_long", cmd};
 };
 
 std::vector<std::array<double, 20>> open_preferences(
@@ -50,9 +54,9 @@ std::vector<std::array<double, 20>> open_preferences(
     // skip the header of the file
     getline(input_stream, line);
     char sep{' '};
-    long nbr_col = 0;
+    u_long nbr_col = 0;
     for (char sep_test : std::vector<char>({' ', ',', '\t'})) {
-        long n = std::count(line.begin(), line.end(), sep_test);
+        u_long n = static_cast<u_long>(std::count(line.begin(), line.end(), sep_test));
         if (n > nbr_col) {
             sep = sep_test;
             nbr_col = n + 1;
@@ -64,7 +68,7 @@ std::vector<std::array<double, 20>> open_preferences(
         std::array<double, 20> fitness_profil{0};
         std::string word;
         istringstream line_stream(line);
-        unsigned counter{0};
+        u_long counter{0};
 
         while (getline(line_stream, word, sep)) {
             if (counter > nbr_col) {
