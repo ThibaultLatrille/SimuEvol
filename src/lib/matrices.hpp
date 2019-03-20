@@ -233,7 +233,7 @@ class CorrelationMatrix : public Matrix3x3 {
 
 // Method computing the equilibrium frequencies for one site.
 std::array<double, 64> codon_frequencies(std::array<double, 20> const &aa_fitness_profil,
-    NucleotideRateMatrix const &nuc_matrix, double scale = 1.0) {
+    NucleotideRateMatrix const &nuc_matrix, double beta) {
     std::array<double, 64> codon_frequencies{0};
     // For each site of the vector of the site frequencies.
     for (char codon{0}; codon < 64; codon++) {
@@ -246,7 +246,7 @@ std::array<double, 64> codon_frequencies(std::array<double, 20> const &aa_fitnes
 
         if (Codon::codon_to_aa_array[codon] != 20) {
             codon_frequencies[codon] =
-                codon_freq * exp(aa_fitness_profil[Codon::codon_to_aa_array[codon]] * scale);
+                codon_freq * exp(aa_fitness_profil[Codon::codon_to_aa_array[codon]] * beta);
         } else {
             codon_frequencies[codon] = 0.;
         }
@@ -259,7 +259,7 @@ std::array<double, 64> codon_frequencies(std::array<double, 20> const &aa_fitnes
 };
 
 double rate_fixation(
-    std::array<double, 20> const &preferences, char codon_from, char codon_to, double scale = 1.0) {
+    std::array<double, 20> const &preferences, char codon_from, char codon_to, double scale) {
     double rate_fix = 1.0;
     // Selective strength between the mutated and original amino-acids.
     double s{0.};
@@ -278,11 +278,11 @@ double rate_fixation(
 }
 
 // Theoretical computation of the predicted omega
-std::tuple<double, double> predicted_dn_d0(
+std::tuple<double, double> predicted_dn_dn0(
     std::vector<std::array<double, 20>> const &aa_fitness_profiles,
-    NucleotideRateMatrix const &mutation_rate_matrix, double scale = 1.0) {
+    NucleotideRateMatrix const &mutation_rate_matrix, double scale) {
     // For all site of the sequence.
-    double dn{0.}, d0{0.};
+    double dn{0.}, dn0{0.};
     for (auto const &aa_fitness_profile : aa_fitness_profiles) {
         // Codon original before substitution.
         std::array<double, 64> codon_freqs =
@@ -303,24 +303,25 @@ std::tuple<double, double> predicted_dn_d0(
                     if (Codon::codon_to_aa_array[codon_to] != 20 and
                         Codon::codon_to_aa_array[codon_from] !=
                             Codon::codon_to_aa_array[codon_to]) {
-                        dn += codon_freqs[codon_from] * mutation_rate_matrix(n_from, n_to) *
-                              rate_fixation(aa_fitness_profile, codon_from, codon_to, scale);
-                        d0 += codon_freqs[codon_from] * mutation_rate_matrix(n_from, n_to);
+                        double rate = codon_freqs[codon_from] * mutation_rate_matrix(n_from, n_to);
+                        dn0 += rate;
+                        rate *= rate_fixation(aa_fitness_profile, codon_from, codon_to, scale);
+                        dn += rate;
                     }
                 }
             }
         }
     }
-    return std::make_tuple(dn, d0);
+    return std::make_tuple(dn, dn0);
 }
 
 // Theoretical computation of the predicted omega
-std::tuple<double, double> flow_dn_d0(
+std::tuple<double, double> flow_dn_dn0(
     std::vector<std::array<double, 20>> const &aa_fitness_profiles,
     std::vector<char> const &codon_seq, NucleotideRateMatrix const &mutation_rate_matrix,
     double scale = 1.0) {
     assert(aa_fitness_profiles.size() == codon_seq.size());
-    double dn{0.}, d0{0.};
+    double dn{0.}, dn0{0.};
     // For all site of the sequence.
     for (size_t site{0}; site < aa_fitness_profiles.size(); site++) {
         // For all possible neighbors.
@@ -335,20 +336,12 @@ std::tuple<double, double> flow_dn_d0(
             // amino-acids are synonymous, the rate of fixation is 1.
             if (Codon::codon_to_aa_array[codon_to] != 20 and
                 Codon::codon_to_aa_array[codon_seq[site]] != Codon::codon_to_aa_array[codon_to]) {
-                dn += mutation_rate_matrix(n_from, n_to) *
-                      rate_fixation(aa_fitness_profiles[site], codon_seq[site], codon_to, scale);
-                d0 += mutation_rate_matrix(n_from, n_to);
+                double rate = mutation_rate_matrix(n_from, n_to);
+                dn0 += rate;
+                rate *= rate_fixation(aa_fitness_profiles[site], codon_seq[site], codon_to, scale);
+                dn += rate;
             }
         }
     }
-    return std::make_tuple(dn, d0);
-}
-
-// Theoretical computation of the predicted omega
-double predicted_omega(std::vector<std::array<double, 20>> const &aa_fitness_profiles,
-    NucleotideRateMatrix const &mutation_rate_matrix) {
-    // For all site of the sequence.
-    double dn{0.}, d0{0.};
-    std::tie(dn, d0) = predicted_dn_d0(aa_fitness_profiles, mutation_rate_matrix);
-    return dn / d0;
+    return std::make_tuple(dn, dn0);
 }

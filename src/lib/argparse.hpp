@@ -34,7 +34,7 @@ class SimuArgParse : public OutputArgParse {
     TCLAP::ValueArg<std::string> newick_path{
         "t", "newick", "input newick tree path", true, "", "string", cmd};
     TCLAP::ValueArg<double> beta{
-        "b", "beta", "Stringency parameter of the fitness profiles", false, 1.0, "double", cmd};
+        "b", "beta", "Stringency parameter of the fitness profiles", false, 0.0, "double", cmd};
     TCLAP::ValueArg<u_long> exons{"s", "exon_size",
         "Number of codon sites per exon (default 0 means the size of the fitness profiles "
         "provided, thus assuming complete linkage between sites)",
