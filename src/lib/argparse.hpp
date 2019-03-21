@@ -39,6 +39,8 @@ class SimuArgParse : public OutputArgParse {
         "Number of codon sites per exon (default 0 means the size of the fitness profiles "
         "provided, thus assuming complete linkage between sites)",
         false, 0, "u_long", cmd};
+    TCLAP::SwitchArg branch_wise_correlation{"", "branch_wise_correlation",
+        "The Correlated parameters are determined branch-wise", cmd, false};
 };
 
 std::vector<std::array<double, 20>> open_preferences(

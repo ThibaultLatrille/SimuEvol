@@ -542,31 +542,33 @@ class Population {
   public:
     // TimeElapsed
     double time_from_root{0};
-
     // Exons
     vector<Exon> exons;
-    u_long sample_size{0};
 
+    u_long sample_size{0};
     LogMultivariate log_multivariate;
+
     u_long population_size{0};
     double generation_time{0};
     NucleotideRateMatrix nuc_matrix;
+    EMatrix const &transform_matrix;
+    bool branch_wise{};
 
-    CorrelationMatrix const &cor_matrix;
     vector<Substitution> substitutions;
 
     explicit Population() = default;
 
     Population(vector<array<double, 20>> const &fitness_profiles, u_long sample_size,
         LogMultivariate &log_multi, u_long exon_size, NucleotideRateMatrix const &nucleotide_matrix,
-        CorrelationMatrix const &cor_matrix)
+        EMatrix const &transform_matrix, bool branch_wise)
         : exons{},
           sample_size{sample_size},
           log_multivariate{log_multi},
           population_size{log_multivariate.population_size()},
           generation_time{log_multivariate.generation_time()},
           nuc_matrix{nucleotide_matrix},
-          cor_matrix{cor_matrix} {
+          transform_matrix{transform_matrix},
+          branch_wise{branch_wise} {
         auto dv = std::div(static_cast<int>(fitness_profiles.size()), exon_size);
         if (dv.rem != 0) { dv.quot++; }
         exons.reserve(dv.quot);
@@ -604,35 +606,46 @@ class Population {
                    [](Substitution const &s) { return s.is_dummy(); }) == 1);
     };
 
+    EVector delta_log_multivariate(double distance) {
+        TimeVar t_start = timeNow();
+        EVector normal_vector = EVector::Zero(log_multivariate.dimensions);
+        for (int dim = 0; dim < log_multivariate.dimensions; dim++) {
+            normal_vector(dim) = normal_distrib(generator);
+        }
+        timer.correlation += duration(timeNow() - t_start);
+        return sqrt(distance) * (transform_matrix * normal_vector);
+    }
+
+    void update_brownian(EVector const &delta) {
+        TimeVar t_start = timeNow();
+        log_multivariate += delta;
+
+        population_size = log_multivariate.population_size();
+        generation_time = log_multivariate.generation_time();
+        nuc_matrix.set_mutation_rate(log_multivariate.mu());
+
+        if (population_size < sample_size) {
+            cerr << "The population size (" << population_size
+                 << ") became lower than sample size (" << sample_size << ")" << endl;
+            population_size = 2 * sample_size - population_size;
+            log_multivariate.set_population_size(population_size);
+        };
+        timer.correlation += duration(timeNow() - t_start);
+    }
+
     void run_forward(double t_max, Tree const &tree) {
         double time_current = 0.0;
-        Eigen::SelfAdjointEigenSolver<EMatrix> eigen_solver(cor_matrix);
-        EMatrix transform =
-            eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
-        EVector sampled_vector = EVector::Zero(cor_matrix.dimensions);
+        EVector delta;
 
+        if (branch_wise) {
+            delta = delta_log_multivariate(t_max / tree.max_distance_to_root());
+            update_brownian(delta / 2);
+        }
         while (time_current < t_max) {
-            TimeVar t_start = timeNow();
-            double ratio = sqrt(generation_time / tree.max_distance_to_root());
-            for (int dim = 0; dim < cor_matrix.dimensions; dim++) {
-                sampled_vector(dim) = normal_distrib(generator);
+            if (!branch_wise) {
+                delta = delta_log_multivariate(generation_time / tree.max_distance_to_root());
+                update_brownian(delta);
             }
-            log_multivariate += ratio * (transform * sampled_vector);
-
-            population_size = log_multivariate.population_size();
-            generation_time = log_multivariate.generation_time();
-            nuc_matrix.set_mutation_rate(log_multivariate.mu());
-
-            if (population_size < sample_size) {
-                cerr << "The population size (" << population_size
-                     << ") became lower than sample size (" << sample_size << ") at "
-                     << 100 * time_from_root / tree.max_distance_to_root()
-                     << "% of the root to leaf distance." << endl;
-                population_size = 2 * sample_size - population_size;
-                log_multivariate.set_population_size(population_size);
-            };
-            timer.correlation += duration(timeNow() - t_start);
-
             for (auto &exon : exons) {
                 assert(!exon.haplotype_vector.empty());
                 exon.forward(nuc_matrix, time_current, substitutions);
@@ -642,11 +655,11 @@ class Population {
         }
         substitutions.back().time_event = t_max;
         if (substitutions.size() > 1) {
-            substitutions.back().time_between_event =
-                t_max - substitutions.rbegin()[1].time_event;
+            substitutions.back().time_between_event = t_max - substitutions.rbegin()[1].time_event;
         } else {
             substitutions.back().time_between_event = t_max;
         }
+        if (branch_wise) { update_brownian(delta / 2); }
         check_consistency();
     }
 
@@ -1217,6 +1230,7 @@ int main(int argc, char *argv[]) {
     assert(generation_time < root_age);
     double beta{args.beta.getValue()};
     assert(beta >= 0.0);
+    bool branch_wise_correlation{args.branch_wise_correlation.getValue()};
     u_long pop_size{args.pop_size.getValue()};
     u_long sample_size{args.sample_size.getValue()};
     assert(sample_size <= pop_size);
@@ -1263,8 +1277,12 @@ int main(int argc, char *argv[]) {
     parameters.write_tsv(output_path + ".parameters");
 
     init_alignments(output_path, tree.nb_leaves(), nbr_sites * 3);
-    Population root_population(
-        fitness_profiles, sample_size, log_multivariate, exon_size, nuc_matrix, correlation_matrix);
+    Eigen::SelfAdjointEigenSolver<EMatrix> eigen_solver(correlation_matrix);
+    EMatrix transform_matrix =
+        eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
+
+    Population root_population(fitness_profiles, sample_size, log_multivariate, exon_size,
+        nuc_matrix, transform_matrix, branch_wise_correlation);
     root_population.burn_in(burn_in);
 
     Process simu_process(tree, root_population);

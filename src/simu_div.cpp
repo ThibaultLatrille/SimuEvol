@@ -195,13 +195,11 @@ class Exon {
                     }
                 }
             }
-
             codon_seq[site] = codon_to;
-
+            time_start += time_draw;
         } else {
             substitutions_vec.emplace_back(Substitution(0, -1, -1, time_end - time_start,
                 non_syn_sub_flow, non_syn_mut_flow, syn_mut_flow));
-
             time_start = time_end;
         }
         return time_start;
@@ -234,19 +232,20 @@ class Sequence {
     double generation_time{0};
     NucleotideRateMatrix nuc_matrix;
 
-    CorrelationMatrix const &cor_matrix;
+    EMatrix const &transform_matrix;
+    bool branch_wise;
     vector<Substitution> substitutions;
 
     Sequence(vector<array<double, 20>> const &fitness_profiles, LogMultivariate &log_multi,
-        u_long exon_size, NucleotideRateMatrix nucleotide_matrix,
-        CorrelationMatrix const &cor_matrix, double const s, double const proba_permutation,
-        bool const all_sites)
+        u_long exon_size, NucleotideRateMatrix nucleotide_matrix, EMatrix const &transform_matrix,
+        bool branch_wise, double const s, double const proba_permutation, bool const all_sites)
         : exons{},
           log_multivariate{log_multi},
           beta{log_multivariate.beta()},
           generation_time{log_multivariate.generation_time()},
           nuc_matrix{move(nucleotide_matrix)},
-          cor_matrix{cor_matrix} {
+          transform_matrix{transform_matrix},
+          branch_wise{branch_wise} {
         auto dv = std::div(static_cast<long>(fitness_profiles.size()), exon_size);
         if (dv.rem != 0) { dv.quot++; }
         exons.reserve(dv.quot);
@@ -291,32 +290,44 @@ class Sequence {
         }
     }
 
+    EVector delta_log_multivariate(double distance) const {
+        EVector normal_vector = EVector::Zero(log_multivariate.dimensions);
+        for (int dim = 0; dim < log_multivariate.dimensions; dim++) {
+            normal_vector(dim) = normal_distrib(generator);
+        }
+        return sqrt(distance) * (transform_matrix * normal_vector);
+    }
+
+    void update_brownian(EVector const &delta) {
+        log_multivariate += delta;
+
+        beta = log_multivariate.beta();
+        generation_time = log_multivariate.generation_time();
+        nuc_matrix.set_mutation_rate(log_multivariate.mu() / generation_time);
+    }
+
     void run_forward(double t_max, Tree const &tree) {
-        double time_current = 0.0;
-        Eigen::SelfAdjointEigenSolver<EMatrix> eigen_solver(cor_matrix);
-        EMatrix transform =
-            eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
-        EVector sampled_vector = EVector::Zero(cor_matrix.dimensions);
-
-        double step_in_year = time_grid_step;
-
-        while (time_current < t_max) {
-            if (time_current + step_in_year >= t_max) { step_in_year = t_max - time_current; }
-            double ratio = sqrt(step_in_year / tree.max_distance_to_root());
-            for (int dim = 0; dim < cor_matrix.dimensions; dim++) {
-                sampled_vector(dim) = normal_distrib(generator);
-            }
-            log_multivariate += ratio * (transform * sampled_vector);
-
-            beta = log_multivariate.beta();
-            generation_time = log_multivariate.generation_time();
-            nuc_matrix.set_mutation_rate(log_multivariate.mu() / generation_time);
-
+        if (branch_wise) {
+            EVector delta = delta_log_multivariate(t_max / tree.max_distance_to_root());
+            update_brownian(delta / 2);
             for (auto &exon : exons) {
-                exon.run_substitutions(nuc_matrix, beta, time_current, time_current + step_in_year, substitutions);
+                exon.run_substitutions(nuc_matrix, beta, 0.0, t_max, substitutions);
             }
-            time_current += step_in_year;
-            time_from_root += step_in_year;
+            update_brownian(delta / 2);
+            time_from_root += t_max;
+        } else {
+            double time_current = 0.0;
+            double step_in_year = time_grid_step;
+            while (time_current < t_max) {
+                if (time_current + step_in_year > t_max) { step_in_year = t_max - time_current; }
+                update_brownian(delta_log_multivariate(step_in_year / tree.max_distance_to_root()));
+                for (auto &exon : exons) {
+                    exon.run_substitutions(
+                        nuc_matrix, beta, time_current, time_current + step_in_year, substitutions);
+                }
+                time_current += step_in_year;
+                time_from_root += step_in_year;
+            }
         }
     }
 
@@ -595,6 +606,7 @@ int main(int argc, char *argv[]) {
     time_grid_step = root_age / nbr_grid_step;
     double beta{args.beta.getValue()};
     assert(beta >= 0.0);
+    bool branch_wise_correlation{args.branch_wise_correlation.getValue()};
     double s{args.selection.getValue()};
     double p{args.shuffle_proba.getValue()};
     assert(p >= 0.0);
@@ -640,8 +652,12 @@ int main(int argc, char *argv[]) {
     parameters.write_tsv(output_path + ".parameters");
 
     init_alignments(output_path, tree.nb_leaves(), nbr_sites * 3);
+    Eigen::SelfAdjointEigenSolver<EMatrix> eigen_solver(correlation_matrix);
+    EMatrix transform_matrix =
+        eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
+
     Sequence root_sequence(fitness_profiles, log_multivariate, exon_size, nuc_matrix,
-        correlation_matrix, s, p, all_sites);
+        transform_matrix, branch_wise_correlation, s, p, all_sites);
     root_sequence.at_equilibrium();
     root_sequence.write_matrices(output_path);
 

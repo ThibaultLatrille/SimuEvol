@@ -147,9 +147,9 @@ class NucleotideRateMatrix : public Matrix4x4 {
 };
 
 class LogMultivariate : public Vector3x1 {
-    int dimensions = 3;
+public:
 
-  public:
+    int dimensions = 3;
     explicit LogMultivariate(u_long population_size, double generation_time, double mu)
         : Vector3x1(Vector3x1::Zero()) {
         set_population_size(population_size);
