@@ -287,7 +287,7 @@ class Exon {
     vector<Haplotype> haplotype_vector;
 
     // Keep track of mutations and fixations
-    Events events{Events()};
+    Events events{};
 
     // Statics variables (shared by all instances)
     static u_long nbr_mutations, nbr_fixations;
@@ -704,22 +704,34 @@ class Population {
     };
 
     double count_based_dn_dn0() const {
+        double dn{0}, dn0{0}, time_total{0};
+        for (auto const &substitution : substitutions) {
+            if (substitution.is_non_synonymous()) { dn++; }
+            time_total += substitution.time_between_event;
+            dn0 += substitution.non_syn_mut_flow * substitution.time_between_event;
+        }
+        return time_total * dn / dn0;
+    }
+
+    double event_based_dn_dn0() const {
         double dn{0}, dn0{0};
         for (auto const &substitution : substitutions) {
             if (substitution.is_non_synonymous()) { dn++; }
-            dn0 += substitution.non_syn_mut_flow * substitution.time_between_event;
+            dn0 += substitution.non_syn_mut_flow;
         }
         return dn / dn0;
     }
 
     // Simulated omega from the substitutions
     double event_based_dn_ds() const {
-        double dn{0}, ds{0};
+        double dn{0}, ds{0}, dn0{0}, ds0{0};
         for (auto const &substitution : substitutions) {
+            dn0 += substitution.non_syn_mut_flow;
+            ds0 += substitution.syn_mut_flow;
             if (substitution.is_synonymous()) {
-                ds += 1.0 / substitution.syn_mut_flow;
+                ds++;
             } else if (substitution.is_non_synonymous()) {
-                dn += 1.0 / substitution.non_syn_mut_flow;
+                dn++;
             }
         }
         if (ds == .0) {
@@ -779,6 +791,7 @@ class Population {
                 d_to_string(predicted_dn_dn0(avg_nuc_matrix, avg_pop_size)));
             tree.set_tag(node, "Branch_dNdN0_sequence_wise_predicted",
                 d_to_string(sequence_wise_predicted_dn_dn0(*parent, avg_nuc_matrix, avg_pop_size)));
+            tree.set_tag(node, "Branch_dNdN0_event_based", d_to_string(event_based_dn_dn0()));
             tree.set_tag(node, "Branch_dNdN0_count_based", d_to_string(count_based_dn_dn0()));
             tree.set_tag(node, "Branch_dNdS_event_based", d_to_string(event_based_dn_ds()));
             tree.set_tag(node, "Branch_dNdS_count_based", d_to_string(count_based_dn_ds()));

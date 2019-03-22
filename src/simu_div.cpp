@@ -377,12 +377,14 @@ class Sequence {
 
     // Simulated omega from the substitutions
     double event_based_dn_ds() const {
-        double dn{0}, ds{0};
+        double dn{0}, ds{0}, dn0{0}, ds0{0};
         for (auto const &substitution : substitutions) {
+            dn0 += substitution.non_syn_mut_flow;
+            ds0 += substitution.syn_mut_flow;
             if (substitution.is_synonymous()) {
-                ds += 1.0 / substitution.syn_mut_flow;
+                ds++;
             } else if (substitution.is_non_synonymous()) {
-                dn += 1.0 / substitution.non_syn_mut_flow;
+                dn++;
             }
         }
         if (ds == .0) {
@@ -438,8 +440,8 @@ class Sequence {
                 d_to_string(predicted_dn_dn0(avg_nuc_matrix, avg_beta)));
             tree.set_tag(node, "Branch_dNdN0_sequence_wise_predicted",
                 d_to_string(sequence_wise_predicted_dn_dn0(*parent, avg_nuc_matrix, avg_beta)));
-            tree.set_tag(node, "Branch_dNdN0_count_based", d_to_string(count_based_dn_dn0()));
             tree.set_tag(node, "Branch_dNdN0_flow_based", d_to_string(flow_based_dn_dn0()));
+            tree.set_tag(node, "Branch_dNdN0_count_based", d_to_string(count_based_dn_dn0()));
             tree.set_tag(node, "Branch_dNdS_event_based", d_to_string(event_based_dn_ds()));
             tree.set_tag(node, "Branch_dNdS_count_based", d_to_string(count_based_dn_ds()));
         }
@@ -554,10 +556,10 @@ class Process {
         long nbr_non_syn{0}, nbr_syn{0};
 
         for (auto const seq : sequences) {
-            long syn = count_if(seq->substitutions.begin(), seq->substitutions.end(),
+            nbr_syn += count_if(seq->substitutions.begin(), seq->substitutions.end(),
                 [](Substitution const &s) { return s.is_synonymous(); });
-            nbr_syn += syn;
-            nbr_non_syn += seq->substitutions.size() - syn;
+            nbr_non_syn += count_if(seq->substitutions.begin(), seq->substitutions.end(),
+                [](Substitution const &s) { return s.is_non_synonymous(); });
         }
 
         return make_tuple(nbr_non_syn, nbr_syn);
