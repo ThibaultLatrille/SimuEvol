@@ -173,12 +173,6 @@ public:
     double beta() { return std::exp((*this)(0)); }
     double generation_time() { return std::exp((*this)(1)); }
     double mu() { return std::exp((*this)(2)); }
-
-    void add_to_trace(Trace &trace) const {
-        for (int i = 0; i < dimensions; i++) {
-            trace.add("LogMultivariate_" + std::to_string(i), (*this).coeffRef(i));
-        }
-    }
 };
 
 class CorrelationMatrix : public Matrix3x3 {

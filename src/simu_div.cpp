@@ -425,21 +425,20 @@ class Sequence {
 
         if (!tree.is_root(node)) {
             assert(parent != nullptr);
-            double avg_beta = (parent->beta + beta) / 2;
-            NucleotideRateMatrix avg_nuc_matrix{nuc_matrix};
-            avg_nuc_matrix += parent->nuc_matrix;
-            avg_nuc_matrix /= 2;
+            LogMultivariate half = log_multivariate;
+            half += parent->log_multivariate;
+            half /= 2;
+            NucleotideRateMatrix avg_nuc_matrix = nuc_matrix;
+            avg_nuc_matrix.set_mutation_rate(half.mu() / half.generation_time());
 
-            tree.set_tag(node, "Branch_population_size", to_string(avg_beta));
-            tree.set_tag(node, "Branch_generation_time_in_year",
-                d_to_string((generation_time + parent->generation_time) / 2));
-            tree.set_tag(node, "Branch_mutation_rate",
-                d_to_string((nuc_matrix.mutation_rate + parent->nuc_matrix.mutation_rate) / 2));
-            tree.set_tag(node, "Branch_LogNe", to_string(log10(avg_beta)));
+            tree.set_tag(node, "Branch_population_size", to_string(half.beta()));
+            tree.set_tag(node, "Branch_generation_time_in_year", to_string(half.generation_time()));
+            tree.set_tag(node, "Branch_mutation_rate", to_string(half.mu()));
+            tree.set_tag(node, "Branch_LogNe", to_string(log10(half.beta())));
             tree.set_tag(node, "Branch_dNdN0_predicted",
-                d_to_string(predicted_dn_dn0(avg_nuc_matrix, avg_beta)));
+                d_to_string(predicted_dn_dn0(avg_nuc_matrix, half.beta())));
             tree.set_tag(node, "Branch_dNdN0_sequence_wise_predicted",
-                d_to_string(sequence_wise_predicted_dn_dn0(*parent, avg_nuc_matrix, avg_beta)));
+                d_to_string(sequence_wise_predicted_dn_dn0(*parent, avg_nuc_matrix, half.beta())));
             tree.set_tag(node, "Branch_dNdN0_flow_based", d_to_string(flow_based_dn_dn0()));
             tree.set_tag(node, "Branch_dNdN0_count_based", d_to_string(count_based_dn_dn0()));
             tree.set_tag(node, "Branch_dNdS_event_based", d_to_string(event_based_dn_ds()));
