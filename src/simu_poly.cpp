@@ -28,39 +28,6 @@ static string info =
     "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
     "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
 
-u_long binomial_coefficient(u_long n, u_long k) {
-    assert(0 <= k);
-    assert(k <= n);
-    u_long i;
-    u_long b;
-    if (0 == k || n == k) { return 1; }
-    if (k > (n - k)) { k = n - k; }
-    if (1 == k) { return n; }
-    b = 1;
-    for (i = 1; i <= k; ++i) {
-        b *= (n - (k - i));
-        assert(b > 0); /* Overflow */
-        b /= i;
-    }
-    return b;
-}
-
-u_long pow_int(u_long x, u_long p) {
-    if (p == 0) return 1;
-    if (p == 1) return x;
-
-    u_long tmp = pow_int(x, p / 2);
-    if (p % 2 == 0)
-        return tmp * tmp;
-    else
-        return x * tmp * tmp;
-}
-
-string join(vector<u_long> &v, char sep) {
-    return accumulate(v.begin() + 1, v.end(), to_string(v[0]),
-        [sep](const string &acc, int b) { return acc + sep + to_string(b); });
-};
-
 struct Change {
     u_long site;
     char codon_from{-1};
@@ -1034,89 +1001,6 @@ class Population {
         for (auto &exon : exons) { exon.events.clear(); }
         substitutions.clear();
         substitutions.emplace_back(Substitution());
-    }
-
-    vector<double> theoretial_sfs(
-        NucleotideRateMatrix const &p, u_long nbr_sample, bool synonymous) {
-        u_long precision = 8;
-        u_long nbr_points = pow_int(2, precision) + 1;
-
-        vector<u_long> sample_range(nbr_sample - 1, 0);
-        iota(sample_range.begin(), sample_range.end(), 1);
-
-        vector<u_long> binom_coeff(sample_range.size(), 0);
-        vector<double> sample_sfs(sample_range.size(), 0);
-
-        for (size_t index{0}; index < sample_range.size(); index++) {
-            binom_coeff[index] = binomial_coefficient(nbr_sample, sample_range[index]);
-        }
-
-        for (auto const &exon : exons) {
-            double theta = 4 * exon.population_size * p.mutation_rate;
-
-            for (auto const &aa_fitness_profil : exon.aa_fitness_profiles) {
-                array<double, 64> codon_freqs =
-                    codon_frequencies(aa_fitness_profil, p, 4 * population_size);
-
-                double x = 0.0;
-                double x_max = 1.0;
-                double h = (x_max - x) / (nbr_points - 1);
-
-                vector<double> x_array(nbr_points, 0);
-                vector<double> y_array(nbr_points, 0);
-
-                for (u_long point{0}; point < nbr_points; point++) {
-                    x += h;
-                    x_array[point] = x;
-
-                    double res = 0;
-                    for (char codon_from{0}; codon_from < 64; codon_from++) {
-                        if (Codon::codon_to_aa_array[codon_from] != 20) {
-                            double tmp_res = 0;
-
-                            for (auto &neighbor : Codon::codon_to_neighbors_array[codon_from]) {
-                                char codon_to{0}, n_from{0}, n_to{0};
-                                tie(codon_to, n_from, n_to) = neighbor;
-                                assert(n_from != n_to);
-
-                                char aa_from = Codon::codon_to_aa_array[codon_from];
-                                char aa_to = Codon::codon_to_aa_array[codon_to];
-
-                                if (((synonymous) and (aa_from == aa_to)) or
-                                    ((!synonymous) and (aa_from != aa_to))) {
-                                    double pij = theta;
-
-                                    if (synonymous) {
-                                        pij *= 1 - x;
-                                    } else {
-                                        double s = aa_fitness_profil[aa_to];
-                                        s -= aa_fitness_profil[aa_from];
-                                        s *= 4 * population_size;
-                                        if (fabs(s) <= Codon::epsilon) {
-                                            pij *= 1 - x;
-                                        } else {
-                                            pij *= (1 - exp(-s * (1 - x))) / (1 - exp(-s));
-                                        }
-                                    }
-                                    pij *= p(n_from, n_to);
-                                    tmp_res += pij;
-                                }
-                            }
-                            res += codon_freqs[codon_from] * tmp_res;
-                        }
-                    }
-
-                    y_array[point] = res;
-
-                    for (size_t index{0}; index < sample_range.size(); index++) {
-                        u_long a = sample_range[index];
-                        double y = y_array[point] * pow(x, a - 1) * pow(1 - x, nbr_sample - a - 1);
-                        sample_sfs[index] += binom_coeff[index] * h * y;
-                    }
-                }
-            }
-        }
-        return sample_sfs;
     }
 
     // Method returning the DNA string corresponding to the codon sequence.
