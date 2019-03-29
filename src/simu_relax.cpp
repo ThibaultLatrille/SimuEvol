@@ -260,6 +260,10 @@ int main(int argc, char *argv[]) {
     SimuEvolArgParse args(cmd);
     cmd.parse(argc, argv);
 
+    u_long arg_seed = args.seed.getValue();
+    cout << "Random generator seed: " << arg_seed << endl;
+    generator.seed(arg_seed);
+
     string output_path{args.output_path.getValue()};
 
     u_long pop_size{args.pop_size.getValue()};
@@ -306,6 +310,7 @@ int main(int argc, char *argv[]) {
 
     ofstream tsv;
     tsv.open(output_path + ".tsv");
+    tsv << "seed\t" << arg_seed << endl;
     tsv << "pop_size\t" << pop_size << endl;
     tsv << "chromosomes\t" << Being::k << endl;
     tsv << "mu\t" << Being::mu << endl;

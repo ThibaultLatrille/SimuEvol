@@ -419,7 +419,7 @@ class Sequence {
         Sequence const *parent) const {
         string node_name = tree.node_name(node);
 
-        tree.set_tag(node, "population_size", to_string(beta));
+        tree.set_tag(node, "population_size", d_to_string(beta));
         tree.set_tag(node, "generation_time_in_year", d_to_string(generation_time));
         tree.set_tag(node, "mutation_rate", d_to_string(nuc_matrix.mutation_rate));
 
@@ -431,10 +431,10 @@ class Sequence {
             NucleotideRateMatrix avg_nuc_matrix = nuc_matrix;
             avg_nuc_matrix.set_mutation_rate(half.mu() / half.generation_time());
 
-            tree.set_tag(node, "Branch_population_size", to_string(half.beta()));
-            tree.set_tag(node, "Branch_generation_time_in_year", to_string(half.generation_time()));
-            tree.set_tag(node, "Branch_mutation_rate", to_string(half.mu()));
-            tree.set_tag(node, "Branch_LogNe", to_string(log10(half.beta())));
+            tree.set_tag(node, "Branch_population_size", d_to_string(half.beta()));
+            tree.set_tag(node, "Branch_generation_time_in_year", d_to_string(half.generation_time()));
+            tree.set_tag(node, "Branch_mutation_rate", d_to_string(half.mu()));
+            tree.set_tag(node, "Branch_LogNe", d_to_string(log10(half.beta())));
             tree.set_tag(node, "Branch_dNdN0_predicted",
                 d_to_string(predicted_dn_dn0(avg_nuc_matrix, half.beta())));
             tree.set_tag(node, "Branch_dNdN0_sequence_wise_predicted",
@@ -590,6 +590,10 @@ int main(int argc, char *argv[]) {
     SimuEvolArgParse args(cmd);
     cmd.parse(argc, argv);
 
+    u_long arg_seed = args.seed.getValue();
+    cout << "Random generator seed: " << arg_seed << endl;
+    generator.seed(arg_seed);
+
     string preferences_path{args.preferences_path.getValue()};
     string newick_path{args.newick_path.getValue()};
     string nuc_matrix_path{args.nuc_matrix_path.getValue()};
@@ -629,6 +633,7 @@ int main(int argc, char *argv[]) {
     CorrelationMatrix correlation_matrix(correlation_path);
 
     Trace parameters;
+    parameters.add("seed", arg_seed);
     parameters.add("output_path", output_path);
     parameters.add("tree_path", newick_path);
     parameters.add("#tree_nodes", tree.nb_nodes());

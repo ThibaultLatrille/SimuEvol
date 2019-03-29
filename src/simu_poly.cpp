@@ -217,11 +217,12 @@ class Haplotype {
     Haplotype(u_long const nbr_copies, double const fitness)
         : nbr_copies{nbr_copies}, fitness{fitness} {};
 
-    void check_consistency(u_long nbr_sites) const {
+    bool check_consistency(u_long nbr_sites) const {
         for (auto &change : set_change) {
-            assert(Codon::codon_to_aa_array[change.codon_to] != 20);
-            assert(Codon::codon_to_aa_array[change.codon_from] != 20);
+            if (Codon::codon_to_aa_array[change.codon_to] == 20) { return false; }
+            if (Codon::codon_to_aa_array[change.codon_from] == 20) { return false; }
         }
+        return true;
     }
 
     static struct {
@@ -280,20 +281,19 @@ class Exon {
         }
 
         haplotype_vector.emplace_back(Haplotype(2 * population_size, 0.0));
-        check_consistency();
-        assert(!haplotype_vector.empty());
+        assert(check_consistency());
     }
 
-    void check_consistency() const {
-        assert(haplotype_vector.size() <= 2 * population_size);
-        assert(!haplotype_vector.empty());
+    bool check_consistency() const {
+        if (haplotype_vector.size() > 2 * population_size) { return false; }
+        if (haplotype_vector.empty()) { return false; }
 
         u_long nbr_copies{0};
         for (auto &haplotype : haplotype_vector) {
-            haplotype.check_consistency(nbr_sites);
+            if (!haplotype.check_consistency(nbr_sites)) { return false; }
             nbr_copies += haplotype.nbr_copies;
         }
-        assert(nbr_copies == 2 * population_size);
+        return nbr_copies == 2 * population_size;
     }
 
     void forward(
@@ -562,15 +562,19 @@ class Population {
 
     u_long nbr_nucleotides() const { return 3 * nbr_sites(); }
 
-    void check_consistency() const {
-        for (auto const &exon : exons) { exon.check_consistency(); }
-        for (size_t i = 1; i < substitutions.size(); ++i) {
-            assert(abs(substitutions[i].time_between_event -
-                       (substitutions[i].time_event - substitutions[i - 1].time_event)) < 1e-6);
+    bool check_consistency() const {
+        for (auto const &exon : exons) {
+            if (!exon.check_consistency()) { return false; }
         }
-        assert(!substitutions.empty());
-        assert(count_if(substitutions.begin(), substitutions.end(),
-                   [](Substitution const &s) { return s.is_dummy(); }) == 1);
+        for (size_t i = 1; i < substitutions.size(); ++i) {
+            if (abs(substitutions[i].time_between_event -
+                    (substitutions[i].time_event - substitutions[i - 1].time_event)) > 1e-6) {
+                return false;
+            }
+        }
+        if (substitutions.empty()) { return false; }
+        return count_if(substitutions.begin(), substitutions.end(),
+                   [](Substitution const &s) { return s.is_dummy(); }) == 1;
     };
 
     EVector delta_log_multivariate(double distance) {
@@ -627,7 +631,7 @@ class Population {
             substitutions.back().time_between_event = t_max;
         }
         if (branch_wise) { update_brownian(delta / 2); }
-        check_consistency();
+        assert(check_consistency());
     }
 
     void burn_in(u_long burn_in_length) {
@@ -637,7 +641,7 @@ class Population {
                 assert(!exon.haplotype_vector.empty());
                 exon.forward(nuc_matrix, 0, substitutions);
             }
-            check_consistency();
+            assert(check_consistency());
         }
         cout << "Burn-in completed." << endl;
     }
@@ -750,9 +754,10 @@ class Population {
             avg_nuc_matrix.set_mutation_rate(half.mu());
 
             tree.set_tag(node, "Branch_population_size", to_string(half.population_size()));
-            tree.set_tag(node, "Branch_generation_time_in_year", to_string(half.population_size()));
+            tree.set_tag(
+                node, "Branch_generation_time_in_year", d_to_string(half.generation_time()));
             tree.set_tag(node, "Branch_mutation_rate_per_generation", d_to_string(half.mu()));
-            tree.set_tag(node, "Branch_LogNe", to_string(log10(half.population_size())));
+            tree.set_tag(node, "Branch_LogNe", d_to_string(log10(half.population_size())));
             tree.set_tag(node, "Branch_dNdN0_predicted",
                 d_to_string(predicted_dn_dn0(avg_nuc_matrix, half.population_size())));
             tree.set_tag(node, "Branch_dNdN0_sequence_wise_predicted",
@@ -1113,6 +1118,10 @@ int main(int argc, char *argv[]) {
     SimuPolyArgParse args(cmd);
     cmd.parse(argc, argv);
 
+    u_long arg_seed = args.seed.getValue();
+    cout << "Random generator seed: " << arg_seed << endl;
+    generator.seed(arg_seed);
+
     string preferences_path{args.preferences_path.getValue()};
     string newick_path{args.newick_path.getValue()};
     string nuc_matrix_path{args.nuc_matrix_path.getValue()};
@@ -1150,6 +1159,7 @@ int main(int argc, char *argv[]) {
     CorrelationMatrix correlation_matrix(correlation_path);
 
     Trace parameters;
+    parameters.add("seed", arg_seed);
     parameters.add("output_path", output_path);
     parameters.add("tree_path", newick_path);
     parameters.add("#tree_nodes", tree.nb_nodes());

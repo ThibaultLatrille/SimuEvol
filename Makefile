@@ -17,6 +17,13 @@ coverage:
 	@cd build ; cmake -DCOVERAGE_MODE=ON ..
 	@make --no-print-directory test
 
+.PHONY: debug
+debug:
+	@rm -rf build
+	@mkdir build
+	@cd build ; cmake -DDEBUG_MODE=ON ..
+	@make --no-print-directory
+
 .PHONY: clean
 clean:
 	@rm -rf build
@@ -34,7 +41,7 @@ format:
 # ==============================================================================================================
 
 .PHONY: test
-test: all
+test: debug
 	@rm -rf test
 	@mkdir test
 	@echo "\n\e[35m\e[1m== SimuDiv run ===============================================================\e[0m"

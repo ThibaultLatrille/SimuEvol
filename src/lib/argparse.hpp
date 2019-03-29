@@ -13,6 +13,7 @@ class OutputArgParse {
     explicit OutputArgParse(TCLAP::CmdLine& cmd) : cmd{cmd} {}
 
     TCLAP::ValueArg<std::string> output_path{"o", "output", "output path", true, "", "string", cmd};
+    TCLAP::ValueArg<u_long> seed{"", "seed", "Random number generation seed", false, 0, "u_long", cmd};
 };
 
 class SimuArgParse : public OutputArgParse {
