@@ -45,8 +45,8 @@ test: debug
 	@rm -rf test
 	@mkdir test
 	@echo "\n\e[35m\e[1m== SimuDiv run ===============================================================\e[0m"
-	build/SimuDiv --preferences data/preferences/gal4.prefs --newick data/trees/mammal_subtree.tre --nuc_matrix data/matrices/nucleotide_GTR.tsv --correlation_matrix data/matrices/correlation3x3_zero.tsv --output test/SimuDiv_gal4
+	build/SimuDiv --preferences data/preferences/gal4.prefs --newick data/trees/mammal_subtree.tre --nuc_matrix data/matrices/nucleotide_GTR.tsv --correlation_matrix data/matrices/correlation3x3_zero.tsv --branch_wise_correlation --output test/SimuDiv_gal4
 	@echo "\n\e[35m\e[1m== SimuPoly run ===============================================================\e[0m"
-	build/SimuPoly --preferences data/preferences/gal4.prefs --newick data/trees/mammal_subtree.tre --nuc_matrix data/matrices/nucleotide_GTR.tsv --correlation_matrix data/matrices/correlation3x3_zero.tsv --output test/SimuPoly_gal4
+	build/SimuPoly --preferences data/preferences/gal4.prefs --newick data/trees/mammal_subtree.tre --nuc_matrix data/matrices/nucleotide_GTR.tsv --correlation_matrix data/matrices/correlation3x3_zero.tsv --branch_wise_correlation --output test/SimuPoly_gal4
 	@echo "\n\e[35m\e[1m== SimuRelax run ===============================================================\e[0m"
 	build/SimuRelax --output test/SimuRelax_run

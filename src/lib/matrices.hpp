@@ -72,12 +72,6 @@ class NucleotideRateMatrix : public Matrix4x4 {
                   << nuc_frequencies.transpose() << std::endl;
 
         if (normalize) { normalize_matrix(); }
-
-        (*this) *= mutation_rate;
-
-        std::cout << "The nucleotide rate matrix (" << Codon::nucleotides << ") is:\n"
-                  << *this << std::endl;
-
         sum_mutation_rates = -(*this).diagonal();
         max_sum_mutation_rates = sum_mutation_rates.maxCoeff();
 
@@ -89,6 +83,11 @@ class NucleotideRateMatrix : public Matrix4x4 {
             }
             mutation_distr[nuc_from] = std::discrete_distribution<char>(rates.begin(), rates.end());
         }
+
+        (*this) *= mutation_rate;
+
+        std::cout << "The nucleotide rate matrix (" << Codon::nucleotides << ") is:\n"
+                  << *this << std::endl;
     }
 
     void set_mutation_rate(double mu) {
@@ -147,9 +146,11 @@ class NucleotideRateMatrix : public Matrix4x4 {
 };
 
 class LogMultivariate : public Vector3x1 {
-public:
-
+  public:
     int dimensions = 3;
+
+    explicit LogMultivariate() : Vector3x1(Vector3x1::Zero()) {}
+
     explicit LogMultivariate(u_long population_size, double generation_time, double mu)
         : Vector3x1(Vector3x1::Zero()) {
         set_population_size(population_size);
@@ -178,6 +179,8 @@ public:
 class CorrelationMatrix : public Matrix3x3 {
   public:
     int dimensions = 3;
+
+    explicit CorrelationMatrix() : Matrix3x3(Matrix3x3::Zero()){}
 
     explicit CorrelationMatrix(std::string const &input_filename) : Matrix3x3(Matrix3x3::Zero()) {
         std::ifstream input_stream(input_filename);
