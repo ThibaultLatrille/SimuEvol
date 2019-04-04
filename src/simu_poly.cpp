@@ -29,7 +29,7 @@ static string info =
     "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
 
 bool is_synonymous(char codon_from, char codon_to) {
-    return Codon::codon_to_aa_array[codon_from] == Codon::codon_to_aa_array[codon_to];
+    return Codon::codon_to_aa_array.at(codon_from) == Codon::codon_to_aa_array.at(codon_to);
 }
 
 typedef binomial_distribution<u_long> BinomialDistr;
@@ -59,21 +59,21 @@ class Events {
     }
 
     void add_to_trace(Trace &trace) const {
-        trace.add("Branch_dS", this->ds());
-        trace.add("Branch_dN", this->dn());
-        trace.add("Branch_dNdS", this->dnds());
-        trace.add("Branch_#mutations", this->mutations());
-        trace.add("Branch_#fixations", this->fixations());
-        trace.add("Branch_#non_synonymous_mutations", this->non_syn_mut);
-        trace.add("Branch_#synonymous_mutations", this->syn_mut);
-        trace.add("Branch_#non_synonymous_fixations", this->non_syn_fix);
-        trace.add("Branch_#synonymous_fixations", this->syn_fix);
+        trace.add("Branch_dS", ds());
+        trace.add("Branch_dN", dn());
+        trace.add("Branch_dNdS", dnds());
+        trace.add("Branch_#mutations", mutations());
+        trace.add("Branch_#fixations", fixations());
+        trace.add("Branch_#non_synonymous_mutations", non_syn_mut);
+        trace.add("Branch_#synonymous_mutations", syn_mut);
+        trace.add("Branch_#non_synonymous_fixations", non_syn_fix);
+        trace.add("Branch_#synonymous_fixations", syn_fix);
     }
 
     void add_to_tree(Tree &tree, Tree::NodeIndex node) const {
-        tree.set_tag(node, "Branch_dS", d_to_string(this->ds()));
-        tree.set_tag(node, "Branch_dN", d_to_string(this->dn()));
-        tree.set_tag(node, "Branch_dNdS", d_to_string(this->dnds()));
+        tree.set_tag(node, "Branch_dS", d_to_string(ds()));
+        tree.set_tag(node, "Branch_dN", d_to_string(dn()));
+        tree.set_tag(node, "Branch_dNdS", d_to_string(dnds()));
     }
 
   private:
@@ -96,25 +96,41 @@ class Events {
 
 class Substitution {
   public:
-    char codon_from{-1};
-    char codon_to{-1};
-    double time_event{0};
-    double time_between_event{0};
-    u_long non_syn_mut_flow{0};
-    u_long syn_mut_flow{0};
-    double delta_log_fitness{0.0};
+    Substitution(char codon_from, char codon_to, double time_event, double time_between,
+        u_long non_syn_mut_flow, u_long syn_mut_flow, double delta_logfitness,
+        double mean_logfitness)
+        : codon_from{codon_from},
+          codon_to{codon_to},
+          time_event{time_event},
+          time_between{time_between},
+          non_syn_mut_flow{non_syn_mut_flow},
+          syn_mut_flow{syn_mut_flow},
+          delta_logfitness{delta_logfitness},
+          mean_logfitness{mean_logfitness} {}
 
-    explicit Substitution() = default;
+    bool is_synonymous() const { return ::is_synonymous(codon_from, codon_to); }
 
-    bool is_synonymous() const {
-        return (-1 != codon_to and ::is_synonymous(codon_from, codon_to));
+    bool is_non_synonymous() const { return !::is_synonymous(codon_from, codon_to); }
+
+    void add_to_trace(Trace &trace) const {
+        trace.add("codon_from", Codon::codon_string(codon_from));
+        trace.add("codon_to", Codon::codon_string(codon_to));
+        trace.add("aa_from", Codon::codon_aa_string(codon_from));
+        trace.add("aa_to", Codon::codon_aa_string(codon_to));
+        trace.add("synonymous", is_synonymous());
+        trace.add("selection_coefficient", delta_logfitness);
+        trace.add("mean_fitness", mean_logfitness);
+        trace.add("time_event", time_event);
+        trace.add("time_between", time_between);
     }
-
-    bool is_non_synonymous() const {
-        return (-1 != codon_to and not::is_synonymous(codon_from, codon_to));
-    }
-
-    bool is_dummy() const { return codon_from == -1 and codon_to == -1; }
+    char codon_from;
+    char codon_to;
+    double time_event;
+    double time_between;
+    u_long non_syn_mut_flow;
+    u_long syn_mut_flow;
+    double delta_logfitness;
+    double mean_logfitness;
 };
 
 class Polymorphism {
@@ -148,21 +164,21 @@ class Polymorphism {
     }
 
     void add_to_trace(Trace &trace) const {
-        trace.add("theta_watterson_non_syn", this->theta_watterson_non_syn());
-        trace.add("theta_watterson_syn", this->theta_watterson_syn());
-        trace.add("theta_watterson", this->theta_watterson());
-        trace.add("theta_pairwise_non_syn", this->theta_pairwise_non_syn());
-        trace.add("theta_pairwise_syn", this->theta_pairwise_syn());
-        trace.add("theta_pairwise", this->theta_pairwise());
+        trace.add("theta_watterson_non_syn", theta_watterson_non_syn());
+        trace.add("theta_watterson_syn", theta_watterson_syn());
+        trace.add("theta_watterson", theta_watterson());
+        trace.add("theta_pairwise_non_syn", theta_pairwise_non_syn());
+        trace.add("theta_pairwise_syn", theta_pairwise_syn());
+        trace.add("theta_pairwise", theta_pairwise());
     }
 
     void add_to_tree(Tree &tree, Tree::NodeIndex node) const {
-        tree.set_tag(node, "theta_watterson_non_syn", d_to_string(this->theta_watterson_non_syn()));
-        tree.set_tag(node, "theta_watterson_syn", d_to_string(this->theta_watterson_syn()));
-        tree.set_tag(node, "theta_watterson", d_to_string(this->theta_watterson()));
-        tree.set_tag(node, "theta_pairwise_non_syn", d_to_string(this->theta_pairwise_non_syn()));
-        tree.set_tag(node, "theta_pairwise_syn", d_to_string(this->theta_pairwise_syn()));
-        tree.set_tag(node, "theta_pairwise", d_to_string(this->theta_pairwise()));
+        tree.set_tag(node, "theta_watterson_non_syn", d_to_string(theta_watterson_non_syn()));
+        tree.set_tag(node, "theta_watterson_syn", d_to_string(theta_watterson_syn()));
+        tree.set_tag(node, "theta_watterson", d_to_string(theta_watterson()));
+        tree.set_tag(node, "theta_pairwise_non_syn", d_to_string(theta_pairwise_non_syn()));
+        tree.set_tag(node, "theta_pairwise_syn", d_to_string(theta_pairwise_syn()));
+        tree.set_tag(node, "theta_pairwise", d_to_string(theta_pairwise()));
     }
 
   private:
@@ -193,6 +209,7 @@ struct TimeElapsed {
 TimeElapsed timer;
 Trace tracer_nodes;
 Trace tracer_leaves;
+Trace tracer_substitutions;
 
 class Haplotype {
   public:
@@ -211,7 +228,7 @@ class Haplotype {
 
     bool check_consistency(u_long nbr_sites) const {
         for (auto &diff : diff_sites) {
-            if (Codon::codon_to_aa_array[diff.second] == 20) { return false; }
+            if (Codon::codon_to_aa_array.at(diff.second) == 20) { return false; }
         }
         return true;
     }
@@ -231,7 +248,6 @@ class Haplotype {
 class Exon {
   public:
     // Exon
-    u_long const &population_size;
     u_long position;
 
     // Selection
@@ -252,10 +268,9 @@ class Exon {
     static u_long nbr_mutations, nbr_fixations;
 
     // Constructor
-    explicit Exon(vector<array<double, 20>> const &fitness_profiles, const u_long &position,
-        u_long &population_size, NucleotideRateMatrix const &nuc_matrix)
-        : population_size{population_size},
-          position{position},
+    explicit Exon(vector<array<double, 20>> const &fitness_profiles, u_long const &position,
+        u_long const &population_size, NucleotideRateMatrix const &nuc_matrix)
+        : position{position},
           aa_fitness_profiles{fitness_profiles},
           nbr_sites{u_long(fitness_profiles.size())},
           nbr_nucleotides{u_long(3 * fitness_profiles.size())},
@@ -264,16 +279,16 @@ class Exon {
         // Draw codon from codon frequencies
         for (u_long site{0}; site < nbr_sites; site++) {
             array<double, 64> codon_freqs =
-                codon_frequencies(aa_fitness_profiles[site], nuc_matrix, 4 * population_size);
+                codon_frequencies(aa_fitness_profiles.at(site), nuc_matrix, 4 * population_size);
             discrete_distribution<char> freq_codon_distr(codon_freqs.begin(), codon_freqs.end());
             codon_seq[site] = freq_codon_distr(generator);
         }
 
         haplotype_vector.emplace_back(Haplotype(2 * population_size, 0.0));
-        assert(check_consistency());
+        assert(check_consistency(population_size));
     }
 
-    bool check_consistency() const {
+    bool check_consistency(u_long const &population_size) const {
         if (haplotype_vector.size() > 2 * population_size) { return false; }
         if (haplotype_vector.empty()) { return false; }
 
@@ -285,12 +300,13 @@ class Exon {
         return nbr_copies == 2 * population_size;
     }
 
-    void forward(NucleotideRateMatrix const &nuc_matrix, BinomialDistr &binomial_distrib,
-        double time_current, vector<Substitution> &subs) {
-        mutation(nuc_matrix, binomial_distrib, subs);
-        selection_and_drift();
+    void forward(NucleotideRateMatrix const &nuc_matrix, u_long const &population_size,
+        BinomialDistr &binomial_distrib, double time_current, vector<Substitution> &substitutions,
+        u_long &non_syn_mutations, u_long &syn_mutations, bool trace) {
+        mutation(nuc_matrix, binomial_distrib, non_syn_mutations, syn_mutations, trace);
+        selection_and_drift(population_size);
         extinction();
-        fixation(time_current, subs);
+        fixation(time_current, substitutions, non_syn_mutations, syn_mutations, trace);
     }
 
     u_long random_nuc_site() const {
@@ -298,7 +314,7 @@ class Exon {
     }
 
     void mutation(NucleotideRateMatrix const &p, BinomialDistr &binomial_distrib,
-        vector<Substitution> &subs) {
+        u_long &non_syn_mutations, u_long &syn_mutations, bool trace) {
         TimeVar t_start = timeNow();
 
         // Randomly choose the number of mutations at this generation (for this exon)
@@ -323,7 +339,7 @@ class Exon {
 
             // Early continue (next iteration) if the selected haplotype is not held by any
             // individual
-            if (haplotype_vector[hap_id].nbr_copies == 0) { continue; }
+            if (haplotype_vector.at(hap_id).nbr_copies == 0) { continue; }
 
             // Randomly choose the site
             u_long nuc_site = random_nuc_site();
@@ -332,15 +348,15 @@ class Exon {
 
             // The corresponding codon given the selected haplotype and site
             char codon_from{0};
-            if (haplotype_vector[hap_id].diff_sites.count(codon_site) > 0) {
-                codon_from = haplotype_vector[hap_id].diff_sites.at(codon_site);
+            if (haplotype_vector.at(hap_id).diff_sites.count(codon_site) > 0) {
+                codon_from = haplotype_vector.at(hap_id).diff_sites.at(codon_site);
             } else {
-                codon_from = codon_seq[codon_site];
+                codon_from = codon_seq.at(codon_site);
             }
 
             // The selected nucleotide
-            array<char, 3> triplet_nuc = Codon::codon_to_triplet_array[codon_from];
-            char nuc_from = triplet_nuc[nuc_pos];
+            array<char, 3> triplet_nuc = Codon::codon_to_triplet_array.at(codon_from);
+            char nuc_from = triplet_nuc.at(nuc_pos);
 
             // Early continue (next iteration) if the rate away from this nucleotide is too low
             // (random uniform) compared to the maximum rate away
@@ -352,47 +368,46 @@ class Exon {
             if (no_mutation) { continue; }
 
             // Randomly choose the target nucleotide
-            triplet_nuc[nuc_pos] = p.mutation_distr[nuc_from](generator);
-            char codon_to = Codon::triplet_to_codon(triplet_nuc[0], triplet_nuc[1], triplet_nuc[2]);
-            if (Codon::codon_to_aa_array[codon_to] == 20) { continue; }
+            triplet_nuc[nuc_pos] = p.mutation_distr.at(nuc_from)(generator);
+            char codon_to =
+                Codon::triplet_to_codon(triplet_nuc.at(0), triplet_nuc.at(1), triplet_nuc.at(2));
+            if (Codon::codon_to_aa_array.at(codon_to) == 20) { continue; }
 
-            // Depending on whether the selected haplotype is already different at this site
-            Haplotype haplotype = haplotype_vector[hap_id];
-            if (haplotype.diff_sites.count(codon_site) > 0) {
-                if (codon_seq[codon_site] == codon_to) {
-                    haplotype.diff_sites.erase(codon_site);
-                } else {
-                    haplotype.diff_sites[codon_site] = codon_to;
-                }
+            // Depending on whether the mutation is back to the reference sequence
+            Haplotype haplotype = haplotype_vector.at(hap_id);
+            if (codon_to == codon_seq.at(codon_site)) {
+                assert(haplotype.diff_sites.count(codon_site) > 0);
+                haplotype.diff_sites.erase(codon_site);
             } else {
                 haplotype.diff_sites[codon_site] = codon_to;
             }
 
             // Update the fitness of the new haplotype
-            haplotype.fitness -=
-                aa_fitness_profiles[codon_site][Codon::codon_to_aa_array[codon_from]];
-            haplotype.fitness +=
-                aa_fitness_profiles[codon_site][Codon::codon_to_aa_array[codon_to]];
-
-            // Track the created mutation
-            if (is_synonymous(codon_from, codon_to)) {
-                events.syn_mut++;
-                subs.back().syn_mut_flow++;
-            } else {
-                events.non_syn_mut++;
-                subs.back().non_syn_mut_flow++;
-            }
-            nbr_mutations++;
+            double df =
+                aa_fitness_profiles.at(codon_site).at(Codon::codon_to_aa_array.at(codon_to)) -
+                aa_fitness_profiles.at(codon_site).at(Codon::codon_to_aa_array.at(codon_from));
+            haplotype.fitness += df;
 
             // Update the vector of haplotypes
-            haplotype_vector[hap_id].nbr_copies--;
+            haplotype_vector.at(hap_id).nbr_copies--;
             haplotype.nbr_copies = 1;
             haplotype_vector.push_back(haplotype);
+
+            // Track the created mutation
+            if (!trace) { continue; }
+            if (is_synonymous(codon_from, codon_to)) {
+                syn_mutations++;
+                events.syn_mut++;
+            } else {
+                non_syn_mutations++;
+                events.non_syn_mut++;
+            }
+            nbr_mutations++;
         }
         timer.mutation += duration(timeNow() - t_start);
     }
 
-    void selection_and_drift() {
+    void selection_and_drift(u_long const &population_size) {
         TimeVar t_start = timeNow();
         // Early break if only 1 haplotype
         if (haplotype_vector.size() == 1) { return; }
@@ -401,15 +416,15 @@ class Exon {
         vector<double> fitnesses(haplotype_vector.size(), 0);
         std::transform(haplotype_vector.begin(), haplotype_vector.end(), fitnesses.begin(),
             [](const Haplotype &h) { return (1.0 + h.fitness) * h.nbr_copies; });
+        double fit_tot = accumulate(fitnesses.begin(), fitnesses.end(), 0.0);
 
         // Random draws from the multinomial distribution
-        double fit_tot = accumulate(fitnesses.begin(), fitnesses.end(), 0.0);
         u_long children_tot = 2 * population_size;
         for (size_t i_hap{0}; i_hap < haplotype_vector.size() - 1; i_hap++) {
-            haplotype_vector[i_hap].nbr_copies =
-                binomial_distribution<u_long>(children_tot, fitnesses[i_hap] / fit_tot)(generator);
-            children_tot -= haplotype_vector[i_hap].nbr_copies;
-            fit_tot -= fitnesses[i_hap];
+            haplotype_vector.at(i_hap).nbr_copies = binomial_distribution<u_long>(
+                children_tot, fitnesses.at(i_hap) / fit_tot)(generator);
+            children_tot -= haplotype_vector.at(i_hap).nbr_copies;
+            fit_tot -= fitnesses.at(i_hap);
         }
         assert(children_tot <= 2 * population_size);
         assert(children_tot >= 0);
@@ -439,8 +454,11 @@ class Exon {
         timer.extinction += duration(timeNow() - t_start);
     }
 
-    void fixation(double time_current, vector<Substitution> &subs) {
+    void fixation(double time_current, vector<Substitution> &substitutions,
+        u_long &non_syn_mutations, u_long &syn_mutations, bool trace) {
         TimeVar t_start = timeNow();
+
+        // ! Copy before the loop is necessary, since it can be updated during the loop
         auto diffs = haplotype_vector.begin()->diff_sites;
 
         // For each site (different to the reference) of the most common haplotype
@@ -448,48 +466,70 @@ class Exon {
             u_long site = diff.first;
             char codon_to = diff.second;
             bool polymorphic_site = false;
+            set<char> poly_codons{codon_to};
             for (size_t hap_id{1}; hap_id < haplotype_vector.size(); hap_id++) {
-                if (haplotype_vector[hap_id].diff_sites.count(site) == 0) {
-                    // In this case we have at least 2 different codons at this site
+                if (haplotype_vector.at(hap_id).diff_sites.count(site) == 0) {
+                    // In the case the site of this haplotype is the same than the reference
                     polymorphic_site = true;
                     break;
-                } else if (haplotype_vector[hap_id].diff_sites.at(site) != codon_to) {
-                    // In this case we have at least 3 different codons at this site
-                    cerr << "Ouuuppppss... we have a complex site \n";
-                    polymorphic_site = true;
-                    break;
+                } else {
+                    // In the case the site of this haplotype is different from the reference
+                    poly_codons.insert(haplotype_vector.at(hap_id).diff_sites.at(site));
                 }
             }
 
             // Early continue (next iteration) if the site is polymorphic
             if (polymorphic_site) { continue; }
 
-            char codon_from = codon_seq[site];
+            char codon_from = codon_seq.at(site);
+            if (poly_codons.size() > 1) {
+                // In the case the reference codon is not present in the alternative haplotypes,
+                // but they are several alternative codons, we have to find the most common.
+                unordered_map<char, u_long> codon_copies{};
+                for (auto codon : poly_codons) { codon_copies[codon] = 0; }
+                for (auto const &haplotype : haplotype_vector) {
+                    codon_copies.at(haplotype.diff_sites.at(site)) += haplotype.nbr_copies;
+                }
+                codon_to = std::max_element(codon_copies.begin(), codon_copies.end(),
+                    [](auto const &p1, auto const &p2) { return p1.second < p2.second; })
+                               ->first;
+            }
             codon_seq[site] = codon_to;
 
             // Update the vector of haplotypes
-            double df = aa_fitness_profiles[site][codon_to] - aa_fitness_profiles[site][codon_from];
+            double df = aa_fitness_profiles.at(site).at(Codon::codon_to_aa_array.at(codon_to)) -
+                        aa_fitness_profiles.at(site).at(Codon::codon_to_aa_array.at(codon_from));
+
+            double mean_fitness = 0;
             for (auto &haplotype : haplotype_vector) {
+                mean_fitness += haplotype.fitness;
                 haplotype.fitness -= df;
-                haplotype.diff_sites.erase(site);
+                if (haplotype.diff_sites.at(site) == codon_to) { haplotype.diff_sites.erase(site); }
             }
+            mean_fitness /= haplotype_vector.size();
 
             // Track the created substitution
+            if (!trace) { continue; }
             if (is_synonymous(codon_from, codon_to)) {
                 events.syn_fix++;
             } else {
                 events.non_syn_fix++;
             }
             nbr_fixations++;
-            subs.back().codon_to = codon_to;
-            subs.back().time_event = time_current;
-            subs.back().delta_log_fitness = df;
-            if (subs.size() > 1) {
-                subs.back().time_between_event = time_current - subs.rbegin()[1].time_event;
-            } else {
-                subs.back().time_between_event = time_current;
+            double t_between = time_current;
+            if (!substitutions.empty()) {
+                t_between -= substitutions.back().time_event;
+                if (substitutions.back().time_event == time_current) {
+                    non_syn_mutations = substitutions.back().non_syn_mut_flow;
+                    non_syn_mutations = substitutions.back().syn_mut_flow;
+                }
             }
-            subs.emplace_back(Substitution());
+            auto sub = Substitution(codon_from, codon_to, time_current, t_between,
+                non_syn_mutations, syn_mutations, df, mean_fitness);
+            non_syn_mutations = 0;
+            syn_mutations = 0;
+            sub.add_to_trace(tracer_substitutions);
+            substitutions.emplace_back(sub);
         }
         timer.fixation += duration(timeNow() - t_start);
     }
@@ -511,7 +551,8 @@ class Population {
     EMatrix const &transform_matrix;
     bool branch_wise{};
 
-    vector<Substitution> substitutions;
+    vector<Substitution> substitutions{};
+    u_long non_syn_mutations{0}, syn_mutations{0};
 
     mutable MapBinomialDistr binomial_distribs;
 
@@ -542,7 +583,6 @@ class Population {
         cout << exons.size() << " exons created." << endl;
         if (dv.rem != 0) { cout << "Last exon is " << dv.rem << " sites long." << endl; }
         update_binomial_distribs();
-        substitutions.emplace_back(Substitution());
     }
 
     void update_binomial_distribs() const {
@@ -566,17 +606,15 @@ class Population {
 
     bool check_consistency() const {
         for (auto const &exon : exons) {
-            if (!exon.check_consistency()) { return false; }
+            if (!exon.check_consistency(population_size)) { return false; }
         }
         for (size_t i = 1; i < substitutions.size(); ++i) {
-            if (abs(substitutions[i].time_between_event -
-                    (substitutions[i].time_event - substitutions[i - 1].time_event)) > 1e-6) {
+            if (abs(substitutions.at(i).time_between -
+                    (substitutions.at(i).time_event - substitutions.at(i - 1).time_event)) > 1e-6) {
                 return false;
             }
         }
-        if (substitutions.empty()) { return false; }
-        return count_if(substitutions.begin(), substitutions.end(),
-                   [](Substitution const &s) { return s.is_dummy(); }) == 1;
+        return true;
     };
 
     EVector delta_log_multivariate(double distance) {
@@ -621,17 +659,11 @@ class Population {
                 update_brownian(delta);
             }
             for (auto &exon : exons) {
-                exon.forward(
-                    nuc_matrix, binomial_distribs.at(exon.nbr_sites), time_current, substitutions);
+                exon.forward(nuc_matrix, population_size, binomial_distribs.at(exon.nbr_sites),
+                    time_current, substitutions, non_syn_mutations, syn_mutations, true);
             }
             time_current += generation_time;
             time_from_root += generation_time;
-        }
-        substitutions.back().time_event = t_max;
-        if (substitutions.size() > 1) {
-            substitutions.back().time_between_event = t_max - substitutions.rbegin()[1].time_event;
-        } else {
-            substitutions.back().time_between_event = t_max;
         }
         if (branch_wise) { update_brownian(delta / 2); }
         assert(check_consistency());
@@ -642,10 +674,12 @@ class Population {
         for (u_long gen{1}; gen <= burn_in_length; gen++) {
             for (auto &exon : exons) {
                 assert(!exon.haplotype_vector.empty());
-                exon.forward(nuc_matrix, binomial_distribs.at(exon.nbr_sites), 0, substitutions);
+                exon.forward(nuc_matrix, population_size, binomial_distribs.at(exon.nbr_sites), 0,
+                    substitutions, non_syn_mutations, syn_mutations, false);
             }
             assert(check_consistency());
         }
+        clear_events();
         cout << "Burn-in completed." << endl;
     }
 
@@ -670,7 +704,7 @@ class Population {
         for (size_t i = 0; i < exons.size(); i++) {
             double exon_dn{0}, exon_dn0{0};
             tie(exon_dn, exon_dn0) = ::flow_dn_dn0(
-                exons[i].aa_fitness_profiles, parent.exons[i].codon_seq, rates, 4 * pop_size);
+                exons.at(i).aa_fitness_profiles, parent.exons.at(i).codon_seq, rates, 4 * pop_size);
             dn += exon_dn;
             dn0 += exon_dn0;
         }
@@ -681,8 +715,8 @@ class Population {
         double dn{0}, dn0{0}, time_total{0};
         for (auto const &substitution : substitutions) {
             if (substitution.is_non_synonymous()) { dn++; }
-            time_total += substitution.time_between_event;
-            dn0 += substitution.non_syn_mut_flow * substitution.time_between_event;
+            time_total += substitution.time_between;
+            dn0 += substitution.non_syn_mut_flow * substitution.time_between;
         }
         return time_total * dn / dn0;
     }
@@ -693,7 +727,7 @@ class Population {
             if (substitution.is_non_synonymous()) { dn++; }
             dn0 += substitution.non_syn_mut_flow;
         }
-        return dn / dn0;
+        return 2 * population_size * dn / dn0;
     }
 
     // Simulated omega from the substitutions
@@ -720,8 +754,8 @@ class Population {
     double count_based_dn_ds() const {
         double dn{0}, ds{0}, dn0{0}, ds0{0};
         for (auto const &substitution : substitutions) {
-            dn0 += substitution.non_syn_mut_flow * substitution.time_between_event;
-            ds0 += substitution.syn_mut_flow * substitution.time_between_event;
+            dn0 += substitution.non_syn_mut_flow * substitution.time_between;
+            ds0 += substitution.syn_mut_flow * substitution.time_between;
             if (substitution.is_synonymous()) {
                 ds++;
             } else if (substitution.is_non_synonymous()) {
@@ -780,7 +814,7 @@ class Population {
 
         if (!tree.is_leaf(node)) { return; }
         // If the node is a leaf, output the DNA sequence and name.
-        write_sequence(output_filename, node_name, this->get_dna_str());
+        write_sequence(output_filename, node_name, get_dna_str());
 
         // VCF file on the sample
         Polymorphism exome_poly(sample_size, nbr_nucleotides());
@@ -805,39 +839,25 @@ class Population {
             Polymorphism exon_poly(sample_size, exon.nbr_nucleotides);
 
             // Draw the sample of individuals
-            vector<u_long> haplotypes_sample(2 * exon.population_size, 0);
+            vector<u_long> haplotypes_sample(2 * population_size, 0);
             u_long sum_copies = 0;
             for (u_long i_hap{0}; i_hap < exon.haplotype_vector.size(); i_hap++) {
-                for (u_long copy_id{0}; copy_id < exon.haplotype_vector[i_hap].nbr_copies;
+                for (u_long copy_id{0}; copy_id < exon.haplotype_vector.at(i_hap).nbr_copies;
                      copy_id++) {
-                    assert(sum_copies + copy_id < 2 * exon.population_size);
+                    assert(sum_copies + copy_id < 2 * population_size);
                     haplotypes_sample[sum_copies + copy_id] = i_hap;
                 }
-                sum_copies += exon.haplotype_vector[i_hap].nbr_copies;
+                sum_copies += exon.haplotype_vector.at(i_hap).nbr_copies;
             }
             shuffle(haplotypes_sample.begin(), haplotypes_sample.end(), generator);
             haplotypes_sample.resize(2 * sample_size);
 
-            /*
-            // DN/DS computed using one individual of the sample
-            uniform_int_distribution<u_long> chosen_distr(0, 2 * sample_size - 1);
-            u_long chosen = chosen_distr(generator);
-            for (auto const &change :
-                exon.haplotype_vector[haplotypes_sample[chosen]].diff_sites) {
-                if (is_synonymous(change)) {
-                    table.syn_fix++;
-                } else {
-                    table.non_syn_fix++;
-                }
-            }
-            */
-
             for (u_long site{0}; site < exon.nbr_sites; site++) {
                 map<tuple<char, char>, u_long> codon_from_to_copy{};
                 for (auto const &i_hap : haplotypes_sample) {
-                    if (exon.haplotype_vector[i_hap].diff_sites.count(site) > 0) {
-                        char codon_from = exon.codon_seq[site];
-                        char codon_to = exon.haplotype_vector[i_hap].diff_sites.at(site);
+                    if (exon.haplotype_vector.at(i_hap).diff_sites.count(site) > 0) {
+                        char codon_from = exon.codon_seq.at(site);
+                        char codon_to = exon.haplotype_vector.at(i_hap).diff_sites.at(site);
                         assert(codon_from != codon_to);
                         codon_from_to_copy[make_tuple(codon_from, codon_to)]++;
                     }
@@ -887,8 +907,7 @@ class Population {
                     line += to_string(alt_freq);
                     line += ";SYN=";
 
-                    if (Codon::codon_to_aa_array[codon_from] ==
-                        Codon::codon_to_aa_array[codon_to]) {
+                    if (is_synonymous(codon_from, codon_to)) {
                         exon_poly.syn_nbr++;
                         line += "TRUE";
                     } else {
@@ -902,11 +921,11 @@ class Population {
                         for (u_long ploidy{0}; ploidy < 2; ploidy++) {
                             u_long i_hap = haplotypes_sample[indiv * 2 + ploidy];
                             char nuc{0};
-                            if (exon.haplotype_vector[i_hap].diff_sites.count(site) > 0) {
-                                char codon = exon.haplotype_vector[i_hap].diff_sites.at(site);
+                            if (exon.haplotype_vector.at(i_hap).diff_sites.count(site) > 0) {
+                                char codon = exon.haplotype_vector.at(i_hap).diff_sites.at(site);
                                 nuc = Codon::codon_to_nuc(codon, nuc_pos);
                             } else {
-                                nuc = Codon::codon_to_nuc(exon.codon_seq[site], nuc_pos);
+                                nuc = Codon::codon_to_nuc(exon.codon_seq.at(site), nuc_pos);
                             }
                             line += nuc;
                             if (ploidy == 0) { line += "|"; }
@@ -922,21 +941,21 @@ class Population {
             for (u_long i{0}; i < 2 * sample_size; i++) {
                 for (u_long j{i + 1}; j < 2 * sample_size; j++) {
                     if (i != j) {
-                        u_long hap_i = haplotypes_sample[i];
-                        u_long hap_j = haplotypes_sample[j];
-                        auto it_first = exon.haplotype_vector[hap_i].diff_sites.begin();
-                        auto end_first = exon.haplotype_vector[hap_i].diff_sites.end();
-                        auto it_second = exon.haplotype_vector[hap_j].diff_sites.begin();
-                        auto end_second = exon.haplotype_vector[hap_j].diff_sites.end();
+                        u_long hap_i = haplotypes_sample.at(i);
+                        u_long hap_j = haplotypes_sample.at(j);
+                        auto it_first = exon.haplotype_vector.at(hap_i).diff_sites.begin();
+                        auto end_first = exon.haplotype_vector.at(hap_i).diff_sites.end();
+                        auto it_second = exon.haplotype_vector.at(hap_j).diff_sites.begin();
+                        auto end_second = exon.haplotype_vector.at(hap_j).diff_sites.end();
                         while (it_first != end_first and it_second != end_second) {
                             char codon_from{-1};
                             char codon_to{-1};
                             if (it_second == end_second or (*it_first) < (*it_second)) {
-                                codon_from = exon.codon_seq[it_first->first];
+                                codon_from = exon.codon_seq.at(it_first->first);
                                 codon_to = it_first->second;
                                 it_first++;
                             } else if (it_first == end_first or (*it_second) < (*it_first)) {
-                                codon_from = exon.codon_seq[it_second->first];
+                                codon_from = exon.codon_seq.at(it_second->first);
                                 codon_to = it_second->second;
                                 it_second++;
                             } else if ((*it_first) == (*it_second)) {
@@ -954,16 +973,6 @@ class Population {
                     }
                 }
             }
-
-
-            /*
-            exon_poly.mean_fitness +=
-            accumulate(exon.haplotype_vector.begin(), exon.haplotype_vector.end(), 0.0,
-                [](double acc, Haplotype const &h) {
-                    return acc + h.nbr_copies * h.fitness;
-                }) /
-            exon.population_size;
-            */
 
             tracer_leaves.add("taxon_name", node_name);
             tracer_leaves.add("exon_id", exon.position);
@@ -993,7 +1002,8 @@ class Population {
     void clear_events() {
         for (auto &exon : exons) { exon.events.clear(); }
         substitutions.clear();
-        substitutions.emplace_back(Substitution());
+        non_syn_mutations = 0;
+        syn_mutations = 0;
     }
 
     // Method returning the DNA string corresponding to the codon sequence.
@@ -1005,12 +1015,12 @@ class Population {
         for (auto const &exon : exons) {
             for (u_long site{0}; site < exon.nbr_sites; site++) {
                 // Assert there is no stop in the sequence.
-                assert(Codon::codon_to_aa_array[exon.codon_seq[site]] != 20);
+                assert(Codon::codon_to_aa_array.at(exon.codon_seq.at(site)) != 20);
 
                 // Translate the site to a triplet of DNA nucleotides
-                array<char, 3> triplet = Codon::codon_to_triplet_array[exon.codon_seq[site]];
+                array<char, 3> triplet = Codon::codon_to_triplet_array.at(exon.codon_seq.at(site));
                 for (char nuc_pos{0}; nuc_pos < 3; nuc_pos++) {
-                    dna_str += Codon::nucleotides[triplet[nuc_pos]];
+                    dna_str += Codon::nucleotides.at(triplet.at(nuc_pos));
                 }
             }
         }
@@ -1031,7 +1041,7 @@ class Population {
              << timer.extinction / 1e9 << "s)" << endl;
         cout << 100 * timer.fixation / total_time << "% of time spent in calculating fixation ("
              << timer.fixation / 1e9 << "s)" << endl;
-        cout << 100 * timer.exportation / total_time << "% of time spent in exportationing vcf ("
+        cout << 100 * timer.exportation / total_time << "% of time spent in exporting vcf ("
              << timer.exportation / 1e9 << "s)" << endl;
         cout << 100 * timer.correlation / total_time << "% of time spent in the correlation ("
              << timer.correlation / 1e9 << "s)" << endl;
@@ -1055,7 +1065,7 @@ class Process {
     }
 
     void run(string &output_filename) {
-        populations[tree.root()]->node_trace(output_filename, tree.root(), tree, nullptr);
+        populations.at(tree.root())->node_trace(output_filename, tree.root(), tree, nullptr);
         run_recursive(tree.root(), output_filename);
         ofstream nhx;
         nhx.open(output_filename + ".nhx");
@@ -1069,20 +1079,23 @@ class Process {
         // Substitutions of the DNA sequence is generated.
 
         if (!tree.is_root(node)) {
-            populations[node]->run_forward(tree.node_length(node), tree);
+            populations.at(node)->run_forward(tree.node_length(node), tree);
 
             years_computed += tree.node_length(node);
-            cout << years_computed << " years computed ("
-                 << static_cast<int>(100 * years_computed / tree.total_length()) << "%)." << endl;
+            cout << years_computed << " years computed in total ("
+                 << static_cast<int>(100 * years_computed / tree.total_length()) << "%) at node "
+                 << tree.node_name(node) << " ("
+                 << static_cast<int>(100 * tree.node_length(node) / tree.total_length())
+                 << "%)." << endl;
 
-            populations[node]->node_trace(
-                output_filename, node, tree, populations[tree.parent(node)]);
+            populations.at(node)->node_trace(
+                output_filename, node, tree, populations.at(tree.parent(node)));
         }
 
         // Iterate through the direct children.
         for (auto &child : tree.children(node)) {
-            populations[child] = new Population(*populations[node]);
-            populations[child]->clear_events();
+            populations[child] = new Population(*populations.at(node));
+            populations.at(child)->clear_events();
             run_recursive(child, output_filename);
         }
     }
@@ -1171,6 +1184,7 @@ int main(int argc, char *argv[]) {
     correlation_matrix.add_to_trace(parameters);
     parameters.write_tsv(output_path + ".parameters");
 
+
     init_alignments(output_path, tree.nb_leaves(), nbr_sites * 3);
     Eigen::SelfAdjointEigenSolver<EMatrix> eigen_solver(correlation_matrix);
     EMatrix transform_matrix =
@@ -1185,6 +1199,7 @@ int main(int argc, char *argv[]) {
 
     tracer_leaves.write_tsv(output_path + ".leaves");
     tracer_nodes.write_tsv(output_path + ".nodes");
+    tracer_substitutions.write_tsv(output_path + ".substitutions");
 
     Population::timer_cout();
 

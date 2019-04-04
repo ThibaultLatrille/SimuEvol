@@ -35,7 +35,7 @@ class SimuArgParse : public OutputArgParse {
     TCLAP::ValueArg<std::string> newick_path{
         "t", "newick", "input newick tree path", true, "", "string", cmd};
     TCLAP::ValueArg<double> beta{
-        "b", "beta", "Stringency parameter of the fitness profiles", false, 0.0, "double", cmd};
+        "b", "beta", "Stringency parameter of the fitness profiles", false, 1.0, "double", cmd};
     TCLAP::ValueArg<u_long> exons{"s", "exon_size",
         "Number of codon sites per exon (default 0 means the size of the fitness profiles "
         "provided, thus assuming complete linkage between sites)",
@@ -73,19 +73,21 @@ std::vector<std::array<double, 20>> open_preferences(
         istringstream line_stream(line);
         u_long counter{0};
 
+        double min_val = 0;
         while (getline(line_stream, word, sep)) {
             if (counter > nbr_col) {
-                fitness_profil[counter - (nbr_col + 1)] = beta * std::log(stod(word));
+                double val = std::log(stod(word));
+                if (val < min_val) {min_val = val;}
+                fitness_profil[counter - (nbr_col + 1)] = val;
             }
             counter++;
+        }
+        for (auto &val: fitness_profil){
+            val -= min_val;
+            val *= beta;
         }
 
         fitness_profiles.push_back(fitness_profil);
     }
     return fitness_profiles;
-}
-
-std::string char_to_str(char const& _char) {
-    std::string _str(1, _char);
-    return _str;
 }

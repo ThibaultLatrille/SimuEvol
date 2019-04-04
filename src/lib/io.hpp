@@ -5,6 +5,12 @@
 #include <numeric>
 #include <unordered_map>
 
+
+std::string char_to_str(char const &_char) {
+    std::string _str(1, _char);
+    return _str;
+}
+
 void init_alignments(std::string const &output_path, u_long nb_leaves, u_long nb_sites) {
     // .ali format
     std::ofstream ali_file;
@@ -39,7 +45,7 @@ std::string join(std::vector<std::string> const &v, char sep) {
         [sep](const std::string &acc, std::string b) { return acc + sep + b; });
 };
 
-std::string d_to_string(double val){
+std::string d_to_string(double val) {
     std::ostringstream so;
     so << std::scientific << val;
     return so.str();
@@ -76,11 +82,12 @@ class Trace {
     }
 
     void add(std::string const &key, bool val) { add(key, std::to_string(val)); }
+    void add(std::string const &key, char val) { add(key, char_to_str(val)); }
     void add(std::string const &key, int val) { add(key, std::to_string(val)); }
     void add(std::string const &key, u_long val) { add(key, std::to_string(val)); }
     void add(std::string const &key, long val) { add(key, std::to_string(val)); }
     void add(std::string const &key, unsigned val) { add(key, std::to_string(val)); }
-    void add(std::string const &key, double val) { add(key, d_to_string(val));}
+    void add(std::string const &key, double val) { add(key, d_to_string(val)); }
 
     void write_tsv(std::string const &output_filename) {
         std::ofstream tsv_file;
