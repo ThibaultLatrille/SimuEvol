@@ -297,6 +297,7 @@ class Exon {
             if (!haplotype.check_consistency(nbr_sites)) { return false; }
             nbr_copies += haplotype.nbr_copies;
         }
+        if (nbr_copies != 2 * population_size) { return false; }
         return nbr_copies == 2 * population_size;
     }
 
@@ -409,8 +410,13 @@ class Exon {
 
     void selection_and_drift(u_long const &population_size) {
         TimeVar t_start = timeNow();
+        u_long children_tot = 2 * population_size;
+
         // Early break if only 1 haplotype
-        if (haplotype_vector.size() == 1) { return; }
+        if (haplotype_vector.size() == 1) {
+            haplotype_vector.front().nbr_copies = children_tot;
+            return;
+        }
 
         // The fitness associated to each haplotype (weigthed by the number of copies)
         vector<double> fitnesses(haplotype_vector.size(), 0);
@@ -419,7 +425,6 @@ class Exon {
         double fit_tot = accumulate(fitnesses.begin(), fitnesses.end(), 0.0);
 
         // Random draws from the multinomial distribution
-        u_long children_tot = 2 * population_size;
         for (size_t i_hap{0}; i_hap < haplotype_vector.size() - 1; i_hap++) {
             haplotype_vector.at(i_hap).nbr_copies = binomial_distribution<u_long>(
                 children_tot, fitnesses.at(i_hap) / fit_tot)(generator);
@@ -428,8 +433,7 @@ class Exon {
         }
         assert(children_tot <= 2 * population_size);
         assert(children_tot >= 0);
-        haplotype_vector[haplotype_vector.size() - 1].nbr_copies = children_tot;
-
+        haplotype_vector.back().nbr_copies = children_tot;
         timer.selection += duration(timeNow() - t_start);
     }
 
@@ -486,7 +490,7 @@ class Exon {
                 // In the case the reference codon is not present in the alternative haplotypes,
                 // but they are several alternative codons, we have to find the most common.
                 unordered_map<char, u_long> codon_copies{};
-                for (auto codon : poly_codons) { codon_copies[codon] = 0; }
+                for (char codon : poly_codons) { codon_copies[codon] = 0; }
                 for (auto const &haplotype : haplotype_vector) {
                     codon_copies.at(haplotype.diff_sites.at(site)) += haplotype.nbr_copies;
                 }
@@ -521,7 +525,7 @@ class Exon {
                 t_between -= substitutions.back().time_event;
                 if (substitutions.back().time_event == time_current) {
                     non_syn_mutations = substitutions.back().non_syn_mut_flow;
-                    non_syn_mutations = substitutions.back().syn_mut_flow;
+                    syn_mutations = substitutions.back().syn_mut_flow;
                 }
             }
             auto sub = Substitution(codon_from, codon_to, time_current, t_between,
@@ -645,7 +649,9 @@ class Population {
         timer.correlation += duration(timeNow() - t_start);
     }
 
-    void run_forward(double t_max, Tree const &tree) {
+    void run_and_trace(
+        string const &output_filename, Tree::NodeIndex node, Tree &tree, Population const *parent) {
+        double t_max = tree.node_length(node);
         double time_current = 0.0;
         EVector delta;
 
@@ -662,11 +668,12 @@ class Population {
                 exon.forward(nuc_matrix, population_size, binomial_distribs.at(exon.nbr_sites),
                     time_current, substitutions, non_syn_mutations, syn_mutations, true);
             }
+            assert(check_consistency());
             time_current += generation_time;
             time_from_root += generation_time;
         }
+        node_trace(output_filename, node, tree, parent);
         if (branch_wise) { update_brownian(delta / 2); }
-        assert(check_consistency());
     }
 
     void burn_in(u_long burn_in_length) {
@@ -1079,17 +1086,15 @@ class Process {
         // Substitutions of the DNA sequence is generated.
 
         if (!tree.is_root(node)) {
-            populations.at(node)->run_forward(tree.node_length(node), tree);
+            populations.at(node)->run_and_trace(
+                output_filename, node, tree, populations.at(tree.parent(node)));
 
             years_computed += tree.node_length(node);
             cout << years_computed << " years computed in total ("
                  << static_cast<int>(100 * years_computed / tree.total_length()) << "%) at node "
                  << tree.node_name(node) << " ("
-                 << static_cast<int>(100 * tree.node_length(node) / tree.total_length())
-                 << "%)." << endl;
-
-            populations.at(node)->node_trace(
-                output_filename, node, tree, populations.at(tree.parent(node)));
+                 << static_cast<int>(100 * tree.node_length(node) / tree.total_length()) << "%)."
+                 << endl;
         }
 
         // Iterate through the direct children.
