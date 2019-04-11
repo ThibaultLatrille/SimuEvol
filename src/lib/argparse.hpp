@@ -13,17 +13,18 @@ class OutputArgParse {
     explicit OutputArgParse(TCLAP::CmdLine& cmd) : cmd{cmd} {}
 
     TCLAP::ValueArg<std::string> output_path{"o", "output", "output path", true, "", "string", cmd};
-    TCLAP::ValueArg<u_long> seed{"", "seed", "Random number generation seed", false, 0, "u_long", cmd};
+    TCLAP::ValueArg<u_long> seed{
+        "", "seed", "Random number generation seed", false, 0, "u_long", cmd};
 };
 
 class SimuArgParse : public OutputArgParse {
   public:
     explicit SimuArgParse(TCLAP::CmdLine& cmd) : OutputArgParse(cmd) {}
 
-    TCLAP::ValueArg<std::string> correlation_path{
-        "c", "correlation_matrix", "input correlation matrix path", false, "", "string", cmd};
-    TCLAP::ValueArg<double> mu{
-        "m", "mu", "Mutation rate (at the root)", false, 1e-8, "double", cmd};
+    TCLAP::ValueArg<std::string> precision_path{
+        "c", "precision_matrix", "input precision matrix path", false, "", "string", cmd};
+    TCLAP::ValueArg<double> mutation_rate_per_generation{"m", "mutation_rate_per_generation",
+        "Mutation rate (at the root)", false, 1e-8, "double", cmd};
     TCLAP::ValueArg<double> root_age{
         "a", "root_age", "Age of the root", false, 50e6, "double", cmd};
     TCLAP::ValueArg<double> generation_time{"g", "generation_time",
@@ -42,6 +43,10 @@ class SimuArgParse : public OutputArgParse {
         false, 0, "u_long", cmd};
     TCLAP::SwitchArg branch_wise_correlation{"", "branch_wise_correlation",
         "The Correlated parameters are determined branch-wise", cmd, false};
+
+    TCLAP::SwitchArg fix_pop_size{"", "fix_pop_size", "Population size is fixed", cmd, false};
+    TCLAP::SwitchArg fix_mut_rate{"", "fix_mut_rate", "Mutation rate is fixed", cmd, false};
+    TCLAP::SwitchArg fix_gen_time{"", "fix_gen_time", "Generation time is fixed", cmd, false};
 };
 
 std::vector<std::array<double, 20>> open_preferences(
@@ -75,14 +80,14 @@ std::vector<std::array<double, 20>> open_preferences(
 
         double min_val = 0;
         while (getline(line_stream, word, sep)) {
-            if (counter > nbr_col) {
+            if (counter >= nbr_col) {
                 double val = std::log(stod(word));
-                if (val < min_val) {min_val = val;}
-                fitness_profil[counter - (nbr_col + 1)] = val;
+                if (val < min_val) { min_val = val; }
+                fitness_profil[counter - nbr_col] = val;
             }
             counter++;
         }
-        for (auto &val: fitness_profil){
+        for (auto& val : fitness_profil) {
             val -= min_val;
             val *= beta;
         }

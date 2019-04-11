@@ -65,8 +65,8 @@ class Being {
     Being(Being const &mum, Being const &dad) {
         genome.reserve(2 * k);
         for (u_long i = 0; i < k; ++i) {
-            genome.emplace_back(mum.genome[2 * i + chr_distr(generator)]);
-            genome.emplace_back(dad.genome[2 * i + chr_distr(generator)]);
+            genome.push_back(mum.genome[2 * i + chr_distr(generator)]);
+            genome.push_back(dad.genome[2 * i + chr_distr(generator)]);
         }
         update_fitness();
     };
@@ -130,7 +130,7 @@ class Population {
             u_long mum = parent_distr(generator);
             u_long dad = mum;
             while (dad == mum) { dad = parent_distr(generator); }
-            next_beings.emplace_back(Being(beings[mum], beings[dad]));
+            next_beings.emplace_back(beings[mum], beings[dad]);
         }
         beings = move(next_beings);
     };
@@ -144,7 +144,7 @@ class Population {
             u_long mum = parent_distr(generator);
             u_long dad = mum;
             while (dad == mum) { dad = parent_distr(generator); }
-            next_beings.emplace_back(Being(beings[mum], beings[dad]));
+            next_beings.emplace_back(beings[mum], beings[dad]);
         }
         beings = move(next_beings);
     };
@@ -239,7 +239,7 @@ class SimuEvolArgParse : public OutputArgParse {
     TCLAP::ValueArg<u_long> pop_size{"n", "pop_size", "population size", false, 100, "u_long", cmd};
     TCLAP::ValueArg<u_long> chromosomes{
         "k", "chromosomes", "number of chromosomes per individual", false, 23, "u_long", cmd};
-    TCLAP::ValueArg<double> mu{"m", "mu", "mean number of mutations per individual per generation",
+    TCLAP::ValueArg<double> mu{"m", "mutation_rate_per_generation", "mean number of mutations per individual per generation",
         false, 10, "double", cmd};
     TCLAP::ValueArg<double> radius{"r", "radius",
         "effect of a mutation (radius of the move in the phenotypic space)", false, 1e-2, "double",
@@ -313,7 +313,7 @@ int main(int argc, char *argv[]) {
     tsv << "seed\t" << arg_seed << endl;
     tsv << "pop_size\t" << pop_size << endl;
     tsv << "chromosomes\t" << Being::k << endl;
-    tsv << "mu\t" << Being::mu << endl;
+    tsv << "mutation_rate_per_generation\t" << Being::mu << endl;
     tsv << "radius\t" << Being::r << endl;
     tsv << "complexity\t" << Being::complexity << endl;
     tsv << "pleiotropy\t" << Being::pleiotropy << endl;

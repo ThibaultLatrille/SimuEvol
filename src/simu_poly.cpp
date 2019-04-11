@@ -228,7 +228,10 @@ class Haplotype {
 
     bool check_consistency(u_long nbr_sites) const {
         for (auto &diff : diff_sites) {
-            if (Codon::codon_to_aa_array.at(diff.second) == 20) { return false; }
+            if (Codon::codon_to_aa_array.at(diff.second) == 20) {
+                cerr << "The haplotype contains a stop codon" << endl;
+                return false;
+            }
         }
         return true;
     }
@@ -284,21 +287,33 @@ class Exon {
             codon_seq[site] = freq_codon_distr(generator);
         }
 
-        haplotype_vector.emplace_back(Haplotype(2 * population_size, 0.0));
+        haplotype_vector.emplace_back(2 * population_size, 0.0);
         assert(check_consistency(population_size));
     }
 
     bool check_consistency(u_long const &population_size) const {
-        if (haplotype_vector.size() > 2 * population_size) { return false; }
-        if (haplotype_vector.empty()) { return false; }
+        if (haplotype_vector.size() > 2 * population_size) {
+            cerr << "Too many haplotypes" << endl;
+            return false;
+        }
+        if (haplotype_vector.empty()) {
+            cerr << "No haplotype" << endl;
+            return false;
+        }
 
         u_long nbr_copies{0};
         for (auto &haplotype : haplotype_vector) {
-            if (!haplotype.check_consistency(nbr_sites)) { return false; }
+            if (!haplotype.check_consistency(nbr_sites)) {
+                cerr << "The haplotype is not consistent" << endl;
+                return false;
+            }
             nbr_copies += haplotype.nbr_copies;
         }
-        if (nbr_copies != 2 * population_size) { return false; }
-        return nbr_copies == 2 * population_size;
+        if (nbr_copies != 2 * population_size) {
+            cerr << "The number of copies is not equal to the population size." << endl;
+            return false;
+        }
+        return true;
     }
 
     void forward(NucleotideRateMatrix const &nuc_matrix, u_long const &population_size,
@@ -533,7 +548,7 @@ class Exon {
             non_syn_mutations = 0;
             syn_mutations = 0;
             sub.add_to_trace(tracer_substitutions);
-            substitutions.emplace_back(sub);
+            substitutions.push_back(sub);
         }
         timer.fixation += duration(timeNow() - t_start);
     }
@@ -557,6 +572,7 @@ class Population {
 
     vector<Substitution> substitutions{};
     u_long non_syn_mutations{0}, syn_mutations{0};
+    PieceWiseMultivariate piecewise_multivariate{};
 
     mutable MapBinomialDistr binomial_distribs;
 
@@ -581,7 +597,7 @@ class Population {
             std::vector<array<double, 20>> exon_profiles(
                 fitness_profiles.begin() + begin_exon, fitness_profiles.begin() + end_exon);
 
-            exons.emplace_back(Exon(exon_profiles, begin_exon, population_size, nuc_matrix));
+            exons.emplace_back(exon_profiles, begin_exon, population_size, nuc_matrix);
         }
         assert(nbr_sites() == fitness_profiles.size());
         cout << exons.size() << " exons created." << endl;
@@ -610,11 +626,19 @@ class Population {
 
     bool check_consistency() const {
         for (auto const &exon : exons) {
-            if (!exon.check_consistency(population_size)) { return false; }
+            if (!exon.check_consistency(population_size)) {
+                cerr << "The exon is not consistent" << endl;
+                return false;
+            }
         }
         for (size_t i = 1; i < substitutions.size(); ++i) {
             if (abs(substitutions.at(i).time_between -
                     (substitutions.at(i).time_event - substitutions.at(i - 1).time_event)) > 1e-6) {
+                cerr << "The time between substitutions is not consistent" << endl;
+                return false;
+            }
+            if (substitutions.at(i).time_between < 0.0) {
+                cerr << "The substitutions are not ordered (in increasing time)" << endl;
                 return false;
             }
         }
@@ -623,8 +647,8 @@ class Population {
 
     EVector delta_log_multivariate(double distance) {
         TimeVar t_start = timeNow();
-        EVector normal_vector = EVector::Zero(log_multivariate.dimensions);
-        for (int dim = 0; dim < log_multivariate.dimensions; dim++) {
+        EVector normal_vector = EVector::Zero(dimensions);
+        for (int dim = 0; dim < dimensions; dim++) {
             normal_vector(dim) = normal_distrib(generator);
         }
         timer.correlation += duration(timeNow() - t_start);
@@ -637,7 +661,7 @@ class Population {
 
         population_size = log_multivariate.population_size();
         generation_time = log_multivariate.generation_time();
-        nuc_matrix.set_mutation_rate(log_multivariate.mu());
+        nuc_matrix.set_mutation_rate(log_multivariate.mutation_rate_per_generation());
 
         if (population_size < sample_size) {
             cerr << "The population size (" << population_size
@@ -658,11 +682,13 @@ class Population {
         if (branch_wise) {
             delta = delta_log_multivariate(t_max / tree.max_distance_to_root());
             update_brownian(delta / 2);
+            piecewise_multivariate.AddMultivariate(t_max, log_multivariate);
         }
         while (time_current < t_max) {
             if (!branch_wise) {
                 delta = delta_log_multivariate(generation_time / tree.max_distance_to_root());
                 update_brownian(delta);
+                piecewise_multivariate.AddMultivariate(generation_time, log_multivariate);
             }
             for (auto &exon : exons) {
                 exon.forward(nuc_matrix, population_size, binomial_distribs.at(exon.nbr_sites),
@@ -783,30 +809,22 @@ class Population {
 
         string node_name = tree.node_name(node);
 
-        tree.set_tag(node, "population_size", to_string(population_size));
-        tree.set_tag(node, "generation_time_in_year", d_to_string(generation_time));
-        tree.set_tag(node, "mutation_rate_per_generation", d_to_string(nuc_matrix.mutation_rate));
+        tree.set_tag(node, "population_size", to_string(log_multivariate.population_size()));
+        tree.set_tag(node, "generation_time", d_to_string(log_multivariate.generation_time()));
+        tree.set_tag(node, "mutation_rate_per_generation",
+            d_to_string(log_multivariate.mutation_rate_per_generation()));
 
         if (!tree.is_root(node)) {
             auto sum_events = events();
             sum_events.add_to_tree(tree, node);
-            assert(parent != nullptr);
-            LogMultivariate half = log_multivariate;
-            half += parent->log_multivariate;
-            half /= 2;
-            NucleotideRateMatrix avg_nuc_matrix = nuc_matrix;
-            avg_nuc_matrix.set_mutation_rate(half.mu());
+            auto geom_pop_size = static_cast<u_long>(piecewise_multivariate.GeometricPopSize());
+            piecewise_multivariate.add_to_tree(tree, node, geom_pop_size);
 
-            tree.set_tag(node, "Branch_population_size", to_string(half.population_size()));
-            tree.set_tag(
-                node, "Branch_generation_time_in_year", d_to_string(half.generation_time()));
-            tree.set_tag(node, "Branch_mutation_rate_per_generation", d_to_string(half.mu()));
-            tree.set_tag(node, "Branch_LogNe", d_to_string(log10(half.population_size())));
+            assert(parent != nullptr);
             tree.set_tag(node, "Branch_dNdN0_predicted",
-                d_to_string(predicted_dn_dn0(avg_nuc_matrix, half.population_size())));
+                d_to_string(predicted_dn_dn0(nuc_matrix, geom_pop_size)));
             tree.set_tag(node, "Branch_dNdN0_sequence_wise_predicted",
-                d_to_string(sequence_wise_predicted_dn_dn0(
-                    *parent, avg_nuc_matrix, half.population_size())));
+                d_to_string(sequence_wise_predicted_dn_dn0(*parent, nuc_matrix, geom_pop_size)));
             tree.set_tag(node, "Branch_dNdN0_event_based", d_to_string(event_based_dn_dn0()));
             tree.set_tag(node, "Branch_dNdN0_count_based", d_to_string(count_based_dn_dn0()));
             tree.set_tag(node, "Branch_dNdS_event_based", d_to_string(event_based_dn_ds()));
@@ -1009,6 +1027,7 @@ class Population {
     void clear_events() {
         for (auto &exon : exons) { exon.events.clear(); }
         substitutions.clear();
+        piecewise_multivariate.clear();
         non_syn_mutations = 0;
         syn_mutations = 0;
     }
@@ -1084,6 +1103,7 @@ class Process {
     // Recursively iterate through the subtree.
     void run_recursive(Tree::NodeIndex node, string const &output_filename) {
         // Substitutions of the DNA sequence is generated.
+        populations.at(node)->clear_events();
 
         if (!tree.is_root(node)) {
             populations.at(node)->run_and_trace(
@@ -1099,8 +1119,7 @@ class Process {
 
         // Iterate through the direct children.
         for (auto &child : tree.children(node)) {
-            populations[child] = new Population(*populations.at(node));
-            populations.at(child)->clear_events();
+            populations.at(child) = new Population(*populations.at(node));
             run_recursive(child, output_filename);
         }
     }
@@ -1132,9 +1151,12 @@ int main(int argc, char *argv[]) {
     string newick_path{args.newick_path.getValue()};
     string nuc_matrix_path{args.nuc_matrix_path.getValue()};
     string output_path{args.output_path.getValue()};
-    string correlation_path{args.correlation_path.getValue()};
-    double mu{args.mu.getValue()};
-    assert(mu > 0.0);
+    string precision_path{args.precision_path.getValue()};
+    bool fix_pop_size{args.fix_pop_size.getValue()};
+    bool fix_mut_rate{args.fix_mut_rate.getValue()};
+    bool fix_gen_time{args.fix_gen_time.getValue()};
+    double mutation_rate_per_generation{args.mutation_rate_per_generation.getValue()};
+    assert(mutation_rate_per_generation > 0.0);
     double root_age{args.root_age.getValue()};
     assert(root_age > 0.0);
     double generation_time{args.generation_time.getValue()};
@@ -1159,10 +1181,10 @@ int main(int argc, char *argv[]) {
     tree.set_root_age(root_age);
 
     u_long burn_in = 100 * pop_size;
-    NucleotideRateMatrix nuc_matrix(nuc_matrix_path, mu, true);
+    NucleotideRateMatrix nuc_matrix(nuc_matrix_path, mutation_rate_per_generation, true);
 
-    LogMultivariate log_multivariate(pop_size, generation_time, mu);
-    CorrelationMatrix correlation_matrix(correlation_path);
+    LogMultivariate log_multivariate(pop_size, mutation_rate_per_generation, generation_time);
+    CorrelationMatrix correlation_matrix(precision_path, fix_pop_size, fix_mut_rate, fix_gen_time);
 
     Trace parameters;
     parameters.add("seed", arg_seed);
@@ -1179,13 +1201,16 @@ int main(int argc, char *argv[]) {
     parameters.add("#nucleotidesites", nbr_sites * 3);
     parameters.add("preferences_beta", beta);
     parameters.add("nucleotide_matrix_path", output_path);
-    parameters.add("mutation_rate_per_generation", mu);
+    parameters.add("mutation_rate_per_generation", mutation_rate_per_generation);
     nuc_matrix.add_to_trace(parameters);
     parameters.add("generation_time_in_year", generation_time);
     parameters.add("#generations_burn_in", burn_in);
     parameters.add("population_size", pop_size);
     parameters.add("sample_size", sample_size);
     parameters.add("exon_size", exon_size);
+    parameters.add("fix_pop_size", fix_pop_size);
+    parameters.add("fix_mut_rate", fix_mut_rate);
+    parameters.add("fix_gen_time", fix_gen_time);
     correlation_matrix.add_to_trace(parameters);
     parameters.write_tsv(output_path + ".parameters");
 
@@ -1209,7 +1234,7 @@ int main(int argc, char *argv[]) {
     Population::timer_cout();
 
     cout << "Simulation computed." << endl;
-    cout << nbr_sites * 3 * (mu / generation_time) * tree.total_length()
+    cout << nbr_sites * 3 * (mutation_rate_per_generation / generation_time) * tree.total_length()
          << " expected substitutions." << endl;
     cout << Exon::nbr_fixations << " simulated substitutions." << endl;
     cout << "Statistics summarized in: " << output_path + ".tsv" << endl;

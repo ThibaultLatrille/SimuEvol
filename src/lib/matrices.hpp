@@ -3,6 +3,7 @@
 #include <cassert>
 #include <random>
 #include "Eigen/Dense"
+#include "lib/tree.hpp"
 #include "statistic.hpp"
 
 typedef Eigen::Matrix<double, 3, 3> Matrix3x3;
@@ -145,54 +146,153 @@ class NucleotideRateMatrix : public Matrix4x4 {
     }
 };
 
+static int dim_population_size{0};
+static int dim_mutation_rate_per_generation{1};
+static int dim_generation_time{2};
+static int dimensions{3};
+
 class LogMultivariate : public Vector3x1 {
   public:
-    int dimensions = 3;
-
     explicit LogMultivariate() : Vector3x1(Vector3x1::Zero()) {}
 
-    explicit LogMultivariate(u_long population_size, double generation_time, double mu)
+    explicit LogMultivariate(
+        u_long population_size, double mutation_rate_per_generation, double generation_time)
         : Vector3x1(Vector3x1::Zero()) {
         set_population_size(population_size);
+        set_mutation_rate_per_generation(mutation_rate_per_generation);
         set_generation_time(generation_time);
-        set_mu(mu);
     }
 
-    explicit LogMultivariate(double beta, double generation_time, double mu)
+    explicit LogMultivariate(
+        double beta, double mutation_rate_per_generation, double generation_time)
         : Vector3x1(Vector3x1::Zero()) {
         set_beta(beta);
+        set_mutation_rate_per_generation(mutation_rate_per_generation);
         set_generation_time(generation_time);
-        set_mu(mu);
     }
 
-    void set_population_size(u_long population_size) { (*this)(0) = std::log(population_size); }
-    void set_beta(double beta) { (*this)(0) = std::log(beta); }
-    void set_generation_time(double generation_time) { (*this)(1) = std::log(generation_time); }
-    void set_mu(double mu) { (*this)(2) = std::log(mu); }
+    void set_population_size(u_long population_size) {
+        (*this)(dim_population_size) = std::log(population_size);
+    }
+    void set_beta(double beta) { (*this)(dim_population_size) = std::log(beta); }
+    void set_mutation_rate_per_generation(double mutation_rate_per_generation) {
+        (*this)(dim_mutation_rate_per_generation) = std::log(mutation_rate_per_generation);
+    }
+    void set_generation_time(double generation_time) {
+        (*this)(dim_generation_time) = std::log(generation_time);
+    }
 
-    u_long population_size() { return static_cast<u_long>(std::exp((*this)(0))); }
-    double beta() { return std::exp((*this)(0)); }
-    double generation_time() { return std::exp((*this)(1)); }
-    double mu() { return std::exp((*this)(2)); }
+    u_long population_size() const {
+        return static_cast<u_long>(std::exp((*this)(dim_population_size)));
+    }
+    double beta() const { return std::exp((*this)(dim_population_size)); }
+    double mutation_rate_per_generation() const {
+        return std::exp((*this)(dim_mutation_rate_per_generation));
+    }
+    double generation_time() const { return std::exp((*this)(dim_generation_time)); }
+};
+
+class PieceWiseMultivariate {
+  private:
+    std::vector<double> times;
+    std::vector<LogMultivariate> logmultivariates;
+
+  public:
+    PieceWiseMultivariate() = default;
+    ~PieceWiseMultivariate() = default;
+
+    void AddMultivariate(double time_elapsed, LogMultivariate const &multivariate) {
+        if (!logmultivariates.empty() and logmultivariates.back() == multivariate) {
+            times.back() += time_elapsed;
+        } else {
+            times.push_back(time_elapsed);
+            logmultivariates.push_back(multivariate);
+        }
+    }
+
+    void clear() {
+        times.clear();
+        logmultivariates.clear();
+    }
+
+    double ArithmeticPopSize() const { return ArithmeticDim(dim_population_size); }
+    double ArithmeticMutRate() const { return ArithmeticDim(dim_mutation_rate_per_generation); }
+    double ArithmeticGenTime() const { return ArithmeticDim(dim_generation_time); }
+
+    double GeometricPopSize() const { return GeometricDim(dim_population_size); }
+    double GeometricMutRate() const { return GeometricDim(dim_mutation_rate_per_generation); }
+    double GeometricGenTime() const { return GeometricDim(dim_generation_time); }
+
+    double HarmonicPopSize() const { return HarmonicDim(dim_population_size); }
+
+    double ArithmeticDim(int dim) const {
+        double tot_log{0}, tot_time{0};
+        for (size_t i = 0; i < times.size(); i++) {
+            tot_time += times[i];
+            tot_log += times[i] * exp(logmultivariates[i](dim));
+        }
+        return tot_log / tot_time;
+    }
+
+    double GeometricDim(int dim) const {
+        double tot_log{0}, tot_time{0};
+        for (size_t i = 0; i < times.size(); i++) {
+            tot_time += times[i];
+            tot_log += times[i] * logmultivariates[i](dim);
+        }
+        return exp(tot_log / tot_time);
+    }
+
+    double HarmonicDim(int dim) const {
+        double tot_inv{0}, tot_time{0};
+        for (size_t i = 0; i < times.size(); i++) {
+            tot_time += times[i];
+            tot_inv += times[i] * exp(-logmultivariates[i](dim));
+        }
+        return tot_time / tot_inv;
+    }
+
+    void add_to_tree(Tree &tree, Tree::NodeIndex node, double geom_pop_size) const {
+        tree.set_tag(node, "Branch_population_size", d_to_string(geom_pop_size));
+        tree.set_tag(node, "Branch_LogNe", d_to_string(log10(geom_pop_size)));
+        tree.set_tag(node, "Branch_generation_time", d_to_string(GeometricGenTime()));
+        tree.set_tag(node, "Branch_mutation_rate_per_generation", d_to_string(GeometricMutRate()));
+
+        tree.set_tag(node, "Branch_arithmetic_population_size", d_to_string(ArithmeticPopSize()));
+        tree.set_tag(node, "Branch_arithmetic_generation_time", d_to_string(ArithmeticGenTime()));
+        tree.set_tag(node, "Branch_arithmetic_mutation_rate_per_generation",
+            d_to_string(ArithmeticMutRate()));
+
+        tree.set_tag(node, "Branch_harmonic_population_size", d_to_string(HarmonicPopSize()));
+    }
 };
 
 class CorrelationMatrix : public Matrix3x3 {
   public:
-    int dimensions = 3;
+    Matrix3x3 precision_matrix = Matrix3x3::Zero();
 
-    explicit CorrelationMatrix() : Matrix3x3(Matrix3x3::Zero()){}
+    explicit CorrelationMatrix() : Matrix3x3(Matrix3x3::Zero()) {}
 
-    explicit CorrelationMatrix(std::string const &input_filename) : Matrix3x3(Matrix3x3::Zero()) {
-        std::ifstream input_stream(input_filename);
+    explicit CorrelationMatrix(std::string const &precision_filename, bool fix_pop_size,
+        bool fix_mut_rate, bool fix_gen_time)
+        : Matrix3x3(Matrix3x3::Zero()) {
+        if (fix_pop_size and fix_mut_rate and fix_gen_time) {
+            std::cout << "The correlation matrix is 0 (all fixed effects)" << std::endl;
+            return;
+        }
 
-        if (input_filename.empty()) {
-            std::cerr << "No correlation matrix file provided, use the default correlation matrix."
+        std::ifstream input_stream(precision_filename);
+
+        if (precision_filename.empty()) {
+            std::cerr << "No precision matrix file provided, use the default precision matrix."
                       << std::endl;
+            return;
         }
 
         if (!input_stream) {
-            std::cerr << "Correlation matrix file " << input_filename
-                      << " doesn't exist, use the default correlation matrix instead." << std::endl;
+            std::cerr << "Precision matrix file " << precision_filename
+                      << " doesn't exist, use the default precision matrix instead." << std::endl;
+            return;
         }
 
         std::string line;
@@ -207,22 +307,36 @@ class CorrelationMatrix : public Matrix3x3 {
             getline(values_stream, value, '\t');
             int i = to_int(header_word[2]), j = to_int(header_word[3]);
             double v = stod(value);
-            (*this)(i, j) = v;
+            precision_matrix(i, j) = v;
             if (i != j) {
-                (*this)(j, i) = v;
+                precision_matrix(j, i) = v;
             } else {
                 assert(v >= 0.0);
             }
         }
-        std::cout << "The correlation matrix is:\n" << *this << std::endl;
-        assert(this->transpose() == (*this));
+        std::cout << "The input precision matrix is:\n" << precision_matrix << std::endl;
+        Matrix3x3 correlation_matrix = precision_matrix.inverse();
+        assert(correlation_matrix.transpose() == correlation_matrix);
+        for (int i = 0; i < dimensions; i++) {
+            if (fix_pop_size and i == dim_population_size) { continue; }
+            if (fix_mut_rate and i == dim_mutation_rate_per_generation) { continue; }
+            if (fix_gen_time and i == dim_generation_time) { continue; }
+            for (int j = 0; j < dimensions; j++) {
+                if (fix_pop_size and j == dim_population_size) { continue; }
+                if (fix_mut_rate and j == dim_mutation_rate_per_generation) { continue; }
+                if (fix_gen_time and j == dim_generation_time) { continue; }
+                (*this)(i, j) = correlation_matrix(i, j);
+            }
+        }
+        std::cout << "The correlation (taking fixed effect into account) matrix is:\n"
+                  << *this << std::endl;
     }
 
     void add_to_trace(Trace &trace) const {
         for (int i = 0; i < dimensions; i++) {
             for (int j = 0; j <= i; j++) {
-                trace.add("Covariance_" + std::to_string(i) + "_" + std::to_string(j),
-                    (*this).coeffRef(i, j));
+                trace.add("Precision_" + std::to_string(i) + "_" + std::to_string(j),
+                    precision_matrix.coeffRef(i, j));
             }
         }
     }
