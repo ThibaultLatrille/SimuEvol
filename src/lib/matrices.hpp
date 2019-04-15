@@ -185,11 +185,18 @@ class LogMultivariate : public Vector3x1 {
     u_long population_size() const {
         return static_cast<u_long>(std::exp((*this)(dim_population_size)));
     }
+
     double beta() const { return std::exp((*this)(dim_population_size)); }
     double mutation_rate_per_generation() const {
         return std::exp((*this)(dim_mutation_rate_per_generation));
     }
     double generation_time() const { return std::exp((*this)(dim_generation_time)); }
+
+    double log_population_size() const { return (*this)(dim_population_size); }
+    double log_mutation_rate_per_generation() const {
+        return (*this)(dim_mutation_rate_per_generation);
+    }
+    double log_generation_time() const { return (*this)(dim_generation_time); }
 };
 
 class PieceWiseMultivariate {

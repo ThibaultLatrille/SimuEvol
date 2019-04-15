@@ -210,6 +210,7 @@ TimeElapsed timer;
 Trace tracer_nodes;
 Trace tracer_leaves;
 Trace tracer_substitutions;
+Trace tracer_traits;
 
 class Haplotype {
   public:
@@ -814,27 +815,27 @@ class Population {
         tree.set_tag(node, "mutation_rate_per_generation",
             d_to_string(log_multivariate.mutation_rate_per_generation()));
 
-        if (!tree.is_root(node)) {
-            auto sum_events = events();
-            sum_events.add_to_tree(tree, node);
-            auto geom_pop_size = static_cast<u_long>(piecewise_multivariate.GeometricPopSize());
-            piecewise_multivariate.add_to_tree(tree, node, geom_pop_size);
+        if (tree.is_root(node)) { return; }
 
-            assert(parent != nullptr);
-            tree.set_tag(node, "Branch_dNdN0_predicted",
-                d_to_string(predicted_dn_dn0(nuc_matrix, geom_pop_size)));
-            tree.set_tag(node, "Branch_dNdN0_sequence_wise_predicted",
-                d_to_string(sequence_wise_predicted_dn_dn0(*parent, nuc_matrix, geom_pop_size)));
-            tree.set_tag(node, "Branch_dNdN0_event_based", d_to_string(event_based_dn_dn0()));
-            tree.set_tag(node, "Branch_dNdN0_count_based", d_to_string(count_based_dn_dn0()));
-            tree.set_tag(node, "Branch_dNdS_event_based", d_to_string(event_based_dn_ds()));
-            tree.set_tag(node, "Branch_dNdS_count_based", d_to_string(count_based_dn_ds()));
+        auto sum_events = events();
+        sum_events.add_to_tree(tree, node);
+        auto geom_pop_size = static_cast<u_long>(piecewise_multivariate.GeometricPopSize());
+        piecewise_multivariate.add_to_tree(tree, node, geom_pop_size);
 
-            for (auto const &exon : exons) {
-                tracer_nodes.add("taxon_name", node_name);
-                tracer_nodes.add("exon_id", exon.position);
-                exon.events.add_to_trace(tracer_nodes);
-            }
+        assert(parent != nullptr);
+        tree.set_tag(node, "Branch_dNdN0_predicted",
+            d_to_string(predicted_dn_dn0(nuc_matrix, geom_pop_size)));
+        tree.set_tag(node, "Branch_dNdN0_sequence_wise_predicted",
+            d_to_string(sequence_wise_predicted_dn_dn0(*parent, nuc_matrix, geom_pop_size)));
+        tree.set_tag(node, "Branch_dNdN0_event_based", d_to_string(event_based_dn_dn0()));
+        tree.set_tag(node, "Branch_dNdN0_count_based", d_to_string(count_based_dn_dn0()));
+        tree.set_tag(node, "Branch_dNdS_event_based", d_to_string(event_based_dn_ds()));
+        tree.set_tag(node, "Branch_dNdS_count_based", d_to_string(count_based_dn_ds()));
+
+        for (auto const &exon : exons) {
+            tracer_nodes.add("taxon_name", node_name);
+            tracer_nodes.add("exon_id", exon.position);
+            exon.events.add_to_trace(tracer_nodes);
         }
 
         if (!tree.is_leaf(node)) { return; }
@@ -1014,6 +1015,11 @@ class Population {
         tree.set_tag(node, "theta_pairwise_pred", d_to_string(theoretical_theta()));
         tree.set_tag(node, "theta_watterson_pred", d_to_string(theoretical_theta()));
 
+        tracer_traits.add("TaxonName", node_name);
+        tracer_traits.add("LogPopulationSize", log_multivariate.log_population_size());
+        tracer_traits.add(
+            "LogMutationRatePerGeneration", log_multivariate.log_mutation_rate_per_generation());
+        tracer_traits.add("LogGenerationTime", log_multivariate.log_generation_time());
 
         timer.exportation += duration(timeNow() - t_start);
     }
@@ -1230,6 +1236,8 @@ int main(int argc, char *argv[]) {
     tracer_leaves.write_tsv(output_path + ".leaves");
     tracer_nodes.write_tsv(output_path + ".nodes");
     tracer_substitutions.write_tsv(output_path + ".substitutions");
+    tracer_traits.write_tsv(output_path + ".traits");
+
 
     Population::timer_cout();
 

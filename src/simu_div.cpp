@@ -221,6 +221,7 @@ class Exon {
 };
 
 static double time_grid_step;
+Trace tracer_traits;
 
 class Sequence {
   public:
@@ -483,25 +484,29 @@ class Sequence {
         tree.set_tag(node, "generation_time_in_year", d_to_string(generation_time));
         tree.set_tag(node, "mutation_rate", d_to_string(nuc_matrix.mutation_rate));
 
-        if (!tree.is_root(node)) {
-            assert(parent != nullptr);
-            double geom_pop_size = piecewise_multivariate.GeometricPopSize();
-            piecewise_multivariate.add_to_tree(tree, node, geom_pop_size);
+        if (tree.is_root(node)) { return; }
+        assert(parent != nullptr);
+        double geom_pop_size = piecewise_multivariate.GeometricPopSize();
+        piecewise_multivariate.add_to_tree(tree, node, geom_pop_size);
 
-            tree.set_tag(node, "Branch_dNdN0_predicted",
-                d_to_string(predicted_dn_dn0(nuc_matrix, geom_pop_size)));
-            tree.set_tag(node, "Branch_dNdN0_sequence_wise_predicted",
-                d_to_string(sequence_wise_predicted_dn_dn0(*parent, nuc_matrix, geom_pop_size)));
-            tree.set_tag(node, "Branch_dNdN0_flow_based", d_to_string(flow_based_dn_dn0()));
-            tree.set_tag(node, "Branch_dNdN0_count_based", d_to_string(count_based_dn_dn0()));
-            tree.set_tag(node, "Branch_dNdS_event_based", d_to_string(event_based_dn_ds()));
-            tree.set_tag(node, "Branch_dNdS_count_based", d_to_string(count_based_dn_ds()));
-        }
+        tree.set_tag(node, "Branch_dNdN0_predicted",
+            d_to_string(predicted_dn_dn0(nuc_matrix, geom_pop_size)));
+        tree.set_tag(node, "Branch_dNdN0_sequence_wise_predicted",
+            d_to_string(sequence_wise_predicted_dn_dn0(*parent, nuc_matrix, geom_pop_size)));
+        tree.set_tag(node, "Branch_dNdN0_flow_based", d_to_string(flow_based_dn_dn0()));
+        tree.set_tag(node, "Branch_dNdN0_count_based", d_to_string(count_based_dn_dn0()));
+        tree.set_tag(node, "Branch_dNdS_event_based", d_to_string(event_based_dn_ds()));
+        tree.set_tag(node, "Branch_dNdS_count_based", d_to_string(count_based_dn_ds()));
 
-        if (tree.is_leaf(node)) {
-            // If the node is a leaf, output the DNA sequence and name.
-            write_sequence(output_filename, node_name, this->get_dna_str());
-        }
+        if (!tree.is_leaf(node)) { return; }
+        // If the node is a leaf, output the DNA sequence and name.
+        write_sequence(output_filename, node_name, this->get_dna_str());
+
+        tracer_traits.add("TaxonName", node_name);
+        tracer_traits.add("LogPopulationSize", log_multivariate.log_population_size());
+        tracer_traits.add(
+                "LogMutationRatePerGeneration", log_multivariate.log_mutation_rate_per_generation());
+        tracer_traits.add("LogGenerationTime", log_multivariate.log_generation_time());
     }
 
     // Method returning the DNA string corresponding to the codon sequence.
@@ -545,7 +550,8 @@ class Sequence {
                                          Codon::codon_string(codon_to);
                             double fix = nuc_matrix(n_from, n_to) *
                                          rate_fixation(exon.aa_fitness_profiles[site], codon_from,
-                                             codon_to, beta) / nuc_matrix.mutation_rate;
+                                             codon_to, beta) /
+                                         nuc_matrix.mutation_rate;
                             trace.add(key, fix);
                         }
                     }
@@ -752,6 +758,8 @@ int main(int argc, char *argv[]) {
     trace.add("#synonymous_substitutions", nbr_synonymous);
     trace.add("#non_synonymous_substitutions", nbr_non_synonymous);
     trace.write_tsv(output_path);
+
+    tracer_traits.write_tsv(output_path + ".traits");
 
     cout << "Simulation computed." << endl;
     cout << nbr_sites * 3 * (mutation_rate_per_generation / generation_time) * tree.total_length()
