@@ -96,6 +96,7 @@ class NucleotideRateMatrix : public Matrix4x4 {
         mutation_rate = mu;
     }
 
+    double normalized_rate(int from, int to) const { return (*this)(from, to) / mutation_rate; }
 
     bool is_reversible() const {
         bool reversible = true;

@@ -503,10 +503,10 @@ class Sequence {
         write_sequence(output_filename, node_name, this->get_dna_str());
 
         tracer_traits.add("TaxonName", node_name);
+        tracer_traits.add("LogGenerationTime", log_multivariate.log_generation_time());
         tracer_traits.add("LogPopulationSize", log_multivariate.log_population_size());
         tracer_traits.add(
-                "LogMutationRatePerGeneration", log_multivariate.log_mutation_rate_per_generation());
-        tracer_traits.add("LogGenerationTime", log_multivariate.log_generation_time());
+            "LogMutationRatePerGeneration", log_multivariate.log_mutation_rate_per_generation());
     }
 
     // Method returning the DNA string corresponding to the codon sequence.
@@ -548,10 +548,9 @@ class Sequence {
                         if (Codon::codon_to_aa_array[codon_to] != 20) {
                             string key = "q_" + Codon::codon_string(codon_from) + "_" +
                                          Codon::codon_string(codon_to);
-                            double fix = nuc_matrix(n_from, n_to) *
+                            double fix = nuc_matrix.normalized_rate(n_from, n_to) *
                                          rate_fixation(exon.aa_fitness_profiles[site], codon_from,
-                                             codon_to, beta) /
-                                         nuc_matrix.mutation_rate;
+                                             codon_to, beta);
                             trace.add(key, fix);
                         }
                     }

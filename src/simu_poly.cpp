@@ -136,7 +136,6 @@ class Substitution {
 class Polymorphism {
   private:
     u_long sample_size;
-    u_long seq_size;
     double inv_harmonic_sum;
     double inv_choice;
 
@@ -146,9 +145,11 @@ class Polymorphism {
     u_long non_syn_nbr{0};
     u_long syn_nbr{0};
     u_long complex_sites{0};
+    double syn_flow{0.0};
+    double non_syn_flow{0.0};
 
-    explicit Polymorphism(u_long sample_size_, u_long seq_size_)
-        : sample_size{sample_size_}, seq_size{seq_size_} {
+    explicit Polymorphism(u_long insample_size)
+        : sample_size{insample_size} {
         double harmonic_sum = 0;
         for (u_long i = 1; i < 2 * sample_size; i++) { harmonic_sum += 1.0 / i; }
         inv_harmonic_sum = 1.0 / harmonic_sum;
@@ -161,6 +162,8 @@ class Polymorphism {
         non_syn_nbr += poly.non_syn_nbr;
         syn_nbr += poly.syn_nbr;
         complex_sites += poly.complex_sites;
+        syn_flow += poly.syn_flow;
+        non_syn_flow += poly.non_syn_flow;
     }
 
     void add_to_trace(Trace &trace) const {
@@ -182,19 +185,12 @@ class Polymorphism {
     }
 
   private:
-    double theta_watterson_non_syn() const { return non_syn_nbr * inv_harmonic_sum / seq_size; }
-
-    double theta_watterson_syn() const { return syn_nbr * inv_harmonic_sum / seq_size; }
-
-    double theta_watterson() const { return (non_syn_nbr + syn_nbr) * inv_harmonic_sum / seq_size; }
-
-    double theta_pairwise_non_syn() const { return pairwise_non_syn * inv_choice / seq_size; }
-
-    double theta_pairwise_syn() const { return pairwise_syn * inv_choice / seq_size; }
-
-    double theta_pairwise() const {
-        return (pairwise_non_syn + pairwise_syn) * inv_choice / seq_size;
-    }
+    double theta_watterson_non_syn() const { return non_syn_nbr * inv_harmonic_sum / non_syn_flow; }
+    double theta_watterson_syn() const { return syn_nbr * inv_harmonic_sum / syn_flow; }
+    double theta_watterson() const { return theta_watterson_non_syn() + theta_watterson_syn(); }
+    double theta_pairwise_non_syn() const { return pairwise_non_syn * inv_choice / non_syn_flow; }
+    double theta_pairwise_syn() const { return pairwise_syn * inv_choice / syn_flow; }
+    double theta_pairwise() const { return theta_pairwise_non_syn() + theta_pairwise_syn(); }
 };
 
 struct TimeElapsed {
@@ -524,7 +520,12 @@ class Exon {
             for (auto &haplotype : haplotype_vector) {
                 mean_fitness += haplotype.fitness;
                 haplotype.fitness -= df;
-                if (haplotype.diff_sites.at(site) == codon_to) { haplotype.diff_sites.erase(site); }
+                if (haplotype.diff_sites.at(site) == codon_to) {
+                    haplotype.diff_sites.erase(site);
+                } else {
+                    assert(poly_codons.size() > 1);
+                    assert(poly_codons.find(haplotype.diff_sites.at(site)) != poly_codons.end());
+                }
             }
             mean_fitness /= haplotype_vector.size();
 
@@ -552,6 +553,73 @@ class Exon {
             substitutions.push_back(sub);
         }
         timer.fixation += duration(timeNow() - t_start);
+    }
+
+    void sample_one_individual() {
+        // Compute the distribution of haplotype frequency in the population
+        vector<u_long> nbr_copies(haplotype_vector.size(), 0);
+        std::transform(haplotype_vector.begin(), haplotype_vector.end(), nbr_copies.begin(),
+            [](const Haplotype &h) { return h.nbr_copies; });
+        u_long rand_hap =
+            discrete_distribution<u_long>(nbr_copies.begin(), nbr_copies.end())(generator);
+
+        auto diffs = haplotype_vector[rand_hap].diff_sites;
+        // For each site (different to the reference) of the most common haplotype
+        for (auto const &diff : diffs) {
+            // Update the vector of haplotypes
+            u_long site = diff.first;
+            char codon_from = codon_seq[diff.first];
+            char codon_to = diff.second;
+
+            double df = aa_fitness_profiles.at(site).at(Codon::codon_to_aa_array.at(codon_to)) -
+                        aa_fitness_profiles.at(site).at(Codon::codon_to_aa_array.at(codon_from));
+
+            codon_seq[site] = codon_to;
+            for (auto &haplotype : haplotype_vector) {
+                haplotype.fitness -= df;
+                if (haplotype.diff_sites.count(site) > 0 and
+                    haplotype.diff_sites.at(site) == codon_to) {
+                    haplotype.diff_sites.erase(site);
+                } else if (haplotype.diff_sites.count(site) == 0) {
+                    haplotype.diff_sites[site] = codon_from;
+                }
+            }
+        }
+        assert(haplotype_vector[rand_hap].diff_sites.empty());
+    }
+
+    tuple<double, double> flow(NucleotideRateMatrix const &nuc_matrix) const {
+        double non_syn_mut_flow{0.0}, syn_mut_flow{0.0};
+        // For all site of the sequence.
+        for (u_long site{0}; site < nbr_sites; site++) {
+            // Codon original before substitution.
+            char codon_from = codon_seq[site];
+
+            // Array of neighbors of the original codon (codons differing by only 1 mutation).
+            array<tuple<char, char, char>, 9> neighbors =
+                Codon::codon_to_neighbors_array[codon_from];
+
+            // For all possible neighbors.
+            for (char neighbor{0}; neighbor < 9; neighbor++) {
+                // Codon after mutation, Nucleotide original and Nucleotide after mutation.
+                char codon_to{0}, n_from{0}, n_to{0};
+                tie(codon_to, n_from, n_to) = neighbors[neighbor];
+
+                // If the mutated amino-acid is a stop codon, the rate of fixation is 0.
+                // Else, if the mutated and original amino-acids are non-synonymous, we compute the
+                // rate of fixation. Note that, if the mutated and original amino-acids are
+                // synonymous, the rate of fixation is 1.
+                if (Codon::codon_to_aa_array[codon_to] != 20) {
+                    if (Codon::codon_to_aa_array[codon_from] !=
+                        Codon::codon_to_aa_array[codon_to]) {
+                        non_syn_mut_flow += nuc_matrix.normalized_rate(n_from, n_to);
+                    } else {
+                        syn_mut_flow += nuc_matrix.normalized_rate(n_from, n_to);
+                    }
+                }
+            }
+        }
+        return make_tuple(non_syn_mut_flow, syn_mut_flow);
     }
 };
 
@@ -804,8 +872,8 @@ class Population {
         }
     }
 
-    void node_trace(string const &output_filename, Tree::NodeIndex node, Tree &tree,
-        Population const *parent) const {
+    void node_trace(
+        string const &output_filename, Tree::NodeIndex node, Tree &tree, Population const *parent) {
         TimeVar t_start = timeNow();
 
         string node_name = tree.node_name(node);
@@ -839,11 +907,14 @@ class Population {
         }
 
         if (!tree.is_leaf(node)) { return; }
+
+        sample_one_individual();
+
         // If the node is a leaf, output the DNA sequence and name.
         write_sequence(output_filename, node_name, get_dna_str());
 
         // VCF file on the sample
-        Polymorphism exome_poly(sample_size, nbr_nucleotides());
+        Polymorphism exome_poly(sample_size);
 
         string out;
         out += "##fileformat=VCFv4.0";
@@ -862,7 +933,7 @@ class Population {
         }
 
         for (auto const &exon : exons) {
-            Polymorphism exon_poly(sample_size, exon.nbr_nucleotides);
+            Polymorphism exon_poly(sample_size);
 
             // Draw the sample of individuals
             vector<u_long> haplotypes_sample(2 * population_size, 0);
@@ -1000,6 +1071,8 @@ class Population {
                 }
             }
 
+            tie(exon_poly.non_syn_flow, exon_poly.syn_flow) = exon.flow(nuc_matrix);
+
             tracer_leaves.add("taxon_name", node_name);
             tracer_leaves.add("exon_id", exon.position);
             exon_poly.add_to_trace(tracer_leaves);
@@ -1012,14 +1085,13 @@ class Population {
         vcf.close();
 
         exome_poly.add_to_tree(tree, node);
-        tree.set_tag(node, "theta_pairwise_pred", d_to_string(theoretical_theta()));
-        tree.set_tag(node, "theta_watterson_pred", d_to_string(theoretical_theta()));
+        tree.set_tag(node, "theta_pred", d_to_string(theoretical_theta()));
 
         tracer_traits.add("TaxonName", node_name);
+        tracer_traits.add("LogGenerationTime", log_multivariate.log_generation_time());
         tracer_traits.add("LogPopulationSize", log_multivariate.log_population_size());
         tracer_traits.add(
             "LogMutationRatePerGeneration", log_multivariate.log_mutation_rate_per_generation());
-        tracer_traits.add("LogGenerationTime", log_multivariate.log_generation_time());
 
         timer.exportation += duration(timeNow() - t_start);
     }
@@ -1038,6 +1110,9 @@ class Population {
         syn_mutations = 0;
     }
 
+    void sample_one_individual() {
+        for (auto &exon : exons) { exon.sample_one_individual(); }
+    }
     // Method returning the DNA string corresponding to the codon sequence.
     string get_dna_str() const {
         string dna_str{};

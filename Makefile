@@ -24,6 +24,13 @@ debug:
 	@cd build ; cmake -DDEBUG_MODE=ON ..
 	@make --no-print-directory
 
+.PHONY: release
+release:
+	@rm -rf _build
+	@mkdir _build
+	@cd _build ; cmake ..
+	@make --no-print-directory
+
 .PHONY: clean
 clean:
 	@rm -rf build
