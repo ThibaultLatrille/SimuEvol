@@ -26,9 +26,9 @@ debug:
 
 .PHONY: release
 release:
-	@rm -rf _build
-	@mkdir _build
-	@cd _build ; cmake ..
+	@rm -rf build
+	@mkdir build
+	@cd build ; cmake ..
 	@make --no-print-directory
 
 .PHONY: clean
