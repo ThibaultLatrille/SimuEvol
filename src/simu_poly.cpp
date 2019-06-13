@@ -123,6 +123,7 @@ class Substitution {
         trace.add("time_event", time_event);
         trace.add("time_between", time_between);
     }
+
     char codon_from;
     char codon_to;
     double time_event;
@@ -148,8 +149,7 @@ class Polymorphism {
     double syn_flow{0.0};
     double non_syn_flow{0.0};
 
-    explicit Polymorphism(u_long insample_size)
-        : sample_size{insample_size} {
+    explicit Polymorphism(u_long insample_size) : sample_size{insample_size} {
         double harmonic_sum = 0;
         for (u_long i = 1; i < 2 * sample_size; i++) { harmonic_sum += 1.0 / i; }
         inv_harmonic_sum = 1.0 / harmonic_sum;
@@ -186,10 +186,15 @@ class Polymorphism {
 
   private:
     double theta_watterson_non_syn() const { return non_syn_nbr * inv_harmonic_sum / non_syn_flow; }
+
     double theta_watterson_syn() const { return syn_nbr * inv_harmonic_sum / syn_flow; }
+
     double theta_watterson() const { return theta_watterson_non_syn() + theta_watterson_syn(); }
+
     double theta_pairwise_non_syn() const { return pairwise_non_syn * inv_choice / non_syn_flow; }
+
     double theta_pairwise_syn() const { return pairwise_syn * inv_choice / syn_flow; }
+
     double theta_pairwise() const { return theta_pairwise_non_syn() + theta_pairwise_syn(); }
 };
 
@@ -207,6 +212,7 @@ Trace tracer_nodes;
 Trace tracer_leaves;
 Trace tracer_substitutions;
 Trace tracer_traits;
+Trace tracer_fossils;
 
 class Haplotype {
   public:
@@ -638,6 +644,8 @@ class Population {
     NucleotideRateMatrix nuc_matrix;
     EMatrix const &transform_matrix;
     bool branch_wise{};
+    double white_noise_sigma{};
+    gamma_distribution<double> white_noise_distr{};
 
     vector<Substitution> substitutions{};
     u_long non_syn_mutations{0}, syn_mutations{0};
@@ -646,16 +654,21 @@ class Population {
     mutable MapBinomialDistr binomial_distribs;
 
     Population(vector<array<double, 20>> const &fitness_profiles, u_long sample_size,
-        LogMultivariate &log_multi, u_long exon_size, NucleotideRateMatrix const &nucleotide_matrix,
-        EMatrix const &transform_matrix, bool branch_wise)
+        LogMultivariate &log_multi, u_long exon_size, NucleotideRateMatrix nucleotide_matrix,
+        EMatrix const &transform_matrix, bool branch_wise, double white_noise_sigma)
         : exons{},
           sample_size{sample_size},
           log_multivariate{log_multi},
           population_size{log_multivariate.population_size()},
           generation_time{log_multivariate.generation_time()},
-          nuc_matrix{nucleotide_matrix},
+          nuc_matrix{move(nucleotide_matrix)},
           transform_matrix{transform_matrix},
-          branch_wise{branch_wise} {
+          branch_wise{branch_wise},
+          white_noise_sigma{white_noise_sigma} {
+        if (white_noise_sigma > 0) {
+            double alpha = 1. / (white_noise_sigma * white_noise_sigma);
+            white_noise_distr = gamma_distribution<double>(alpha, alpha);
+        }
         auto dv = std::div(static_cast<int>(fitness_profiles.size()), exon_size);
         if (dv.rem != 0) { dv.quot++; }
         exons.reserve(dv.quot);
@@ -737,6 +750,10 @@ class Population {
                  << ") became lower than sample size (" << sample_size << ")" << endl;
             population_size = 2 * sample_size - population_size;
             log_multivariate.set_population_size(population_size);
+        }
+        if (white_noise_sigma > 0) {
+            population_size = max(
+                static_cast<u_long>(population_size * white_noise_distr(generator)), sample_size);
         }
         update_binomial_distribs();
         timer.correlation += duration(timeNow() - t_start);
@@ -906,7 +923,14 @@ class Population {
             exon.events.add_to_trace(tracer_nodes);
         }
 
-        if (!tree.is_leaf(node)) { return; }
+        if (!tree.is_leaf(node)) {
+            tracer_fossils.add("NodeName", node_name);
+            double age = tree.max_distance_to_root() - time_from_root;
+            tracer_fossils.add("Age", age);
+            tracer_fossils.add("LowerBound", age * 0.9);
+            tracer_fossils.add("UpperBound", age * 1.1);
+            return;
+        }
 
         sample_one_individual();
 
@@ -1113,6 +1137,7 @@ class Population {
     void sample_one_individual() {
         for (auto &exon : exons) { exon.sample_one_individual(); }
     }
+
     // Method returning the DNA string corresponding to the codon sequence.
     string get_dna_str() const {
         string dna_str{};
@@ -1217,6 +1242,9 @@ class SimuPolyArgParse : public SimuArgParse {
         "n", "population_size", "Population size (at the root)", false, 500, "u_long", cmd};
     TCLAP::ValueArg<u_long> sample_size{
         "p", "sample_size", "Sample size (at the leaves)", false, 20, "u_long", cmd};
+    TCLAP::ValueArg<double> white_noise{"w", "white_noise",
+        "The white noise (between 0.0 and 1.0) applied to Ne at each generation", false, 0.1,
+        "double", cmd};
 };
 
 int main(int argc, char *argv[]) {
@@ -1250,6 +1278,9 @@ int main(int argc, char *argv[]) {
     u_long sample_size{args.sample_size.getValue()};
     assert(sample_size <= pop_size);
     assert(sample_size > 0);
+    double white_noise{args.white_noise.getValue()};
+    assert(white_noise <= 1.0);
+    assert(white_noise >= 0.0);
 
     vector<array<double, 20>> fitness_profiles =
         open_preferences(preferences_path, beta / (4 * pop_size));
@@ -1284,7 +1315,7 @@ int main(int argc, char *argv[]) {
     parameters.add("nucleotide_matrix_path", output_path);
     parameters.add("mutation_rate_per_generation", mutation_rate_per_generation);
     nuc_matrix.add_to_trace(parameters);
-    parameters.add("generation_time_in_year", generation_time);
+    parameters.add("generation_time", generation_time);
     parameters.add("#generations_burn_in", burn_in);
     parameters.add("population_size", pop_size);
     parameters.add("sample_size", sample_size);
@@ -1292,6 +1323,7 @@ int main(int argc, char *argv[]) {
     parameters.add("fix_pop_size", fix_pop_size);
     parameters.add("fix_mut_rate", fix_mut_rate);
     parameters.add("fix_gen_time", fix_gen_time);
+    parameters.add("white_noise", white_noise);
     correlation_matrix.add_to_trace(parameters);
     parameters.write_tsv(output_path + ".parameters");
 
@@ -1302,7 +1334,7 @@ int main(int argc, char *argv[]) {
         eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
 
     Population root_population(fitness_profiles, sample_size, log_multivariate, exon_size,
-        nuc_matrix, transform_matrix, branch_wise_correlation);
+        nuc_matrix, transform_matrix, branch_wise_correlation, white_noise);
     root_population.burn_in(burn_in);
 
     Process simu_process(tree, root_population);
@@ -1312,7 +1344,7 @@ int main(int argc, char *argv[]) {
     tracer_nodes.write_tsv(output_path + ".nodes");
     tracer_substitutions.write_tsv(output_path + ".substitutions");
     tracer_traits.write_tsv(output_path + ".traits");
-
+    tracer_fossils.write_tsv(output_path + ".fossils");
 
     Population::timer_cout();
 

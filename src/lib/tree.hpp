@@ -25,7 +25,13 @@ class Tree {
             children_.emplace_back(
                 input_tree.children(node).begin(), input_tree.children(node).end());
             auto node_name = input_tree.tag(node, "name");
-            if (node_name.empty()) { node_name = std::to_string(node); }
+            if (node_name.empty()) {
+                if (is_root(node)){
+                    node_name = "Root";
+                } else {
+                    node_name = std::to_string(node);
+                }
+            }
             name_.push_back(node_name);
             tags_.push_back(Tag());
             std::string length = input_tree.tag(node, "length");

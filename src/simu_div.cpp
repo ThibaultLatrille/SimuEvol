@@ -11,11 +11,12 @@ using namespace TCLAP;
 using namespace std;
 
 class Substitution {
-  private:
+  public:
+    u_long site;
     char codon_from;
     char codon_to;
-
-  public:
+    char n_from;
+    char n_to;
     double time_event;
     double time_between_event;
     double non_syn_sub_flow;
@@ -23,9 +24,13 @@ class Substitution {
     double syn_mut_flow;
 
     Substitution(double time_event, double time_between_event, double non_syn_sub_flow,
-        double non_syn_mut_flow, double syn_mut_flow, char codon_from = -1, char codon_to = -1)
-        : codon_from{codon_from},
+        double non_syn_mut_flow, double syn_mut_flow, char codon_from = -1, char codon_to = -1,
+        char n_from = -1, char n_to = -1, u_long site = 0)
+        : site{site},
+          codon_from{codon_from},
           codon_to{codon_to},
+          n_from{n_from},
+          n_to{n_to},
           time_event{time_event},
           time_between_event{time_between_event},
           non_syn_sub_flow{non_syn_sub_flow},
@@ -175,7 +180,7 @@ class Exon {
             assert(syn_mut_flow < 10e10);
 
             substitutions.emplace(time_start + time_draw, time_draw, non_syn_sub_flow,
-                non_syn_mut_flow, syn_mut_flow, codom_from, codon_to);
+                non_syn_mut_flow, syn_mut_flow, codom_from, codon_to, n_from, n_to, site);
 
             if (sel_coef != 0.0) {
                 char aa_from = Codon::codon_to_aa_array[codon_to];
@@ -222,6 +227,9 @@ class Exon {
 
 static double time_grid_step;
 Trace tracer_traits;
+Trace tracer_fossils;
+Trace tracer_substitutions;
+Trace tracer_sequences;
 
 class Sequence {
   public:
@@ -300,10 +308,9 @@ class Sequence {
                 });
             auto sub = exon_next_sub->substitutions.front();
             if (sub.is_dummy()) {
-                double event = sub.time_event;
                 for (auto &exon : exons) {
                     assert(exon.substitutions.front().is_dummy());
-                    assert(exon.substitutions.front().time_event == event);
+                    assert(exon.substitutions.front().time_event == sub.time_event);
                     exon.substitutions.pop();
                     assert(exon.substitutions.empty());
                 }
@@ -366,6 +373,8 @@ class Sequence {
     void run_forward(double t_max, Tree const &tree) {
         if (branch_wise) {
             EVector delta = delta_log_multivariate(t_max / tree.max_distance_to_root());
+            // TO REMOVE THIS IS WRONG
+            // log_multivariate.set_mutation_rate_per_generation(0.2 / pow(t_max, 0.4));
             update_brownian(delta / 2);
             piecewise_multivariate.AddMultivariate(t_max, log_multivariate);
             for (auto &exon : exons) { exon.run_substitutions(nuc_matrix, beta, 0.0, t_max); }
@@ -481,8 +490,10 @@ class Sequence {
         string node_name = tree.node_name(node);
 
         tree.set_tag(node, "population_size", d_to_string(beta));
-        tree.set_tag(node, "generation_time_in_year", d_to_string(generation_time));
+        tree.set_tag(node, "generation_time", d_to_string(generation_time));
         tree.set_tag(node, "mutation_rate", d_to_string(nuc_matrix.mutation_rate));
+        tree.set_tag(node, "mutation_rate_per_generation",
+            d_to_string(log_multivariate.mutation_rate_per_generation()));
 
         if (tree.is_root(node)) { return; }
         assert(parent != nullptr);
@@ -498,7 +509,31 @@ class Sequence {
         tree.set_tag(node, "Branch_dNdS_event_based", d_to_string(event_based_dn_ds()));
         tree.set_tag(node, "Branch_dNdS_count_based", d_to_string(count_based_dn_ds()));
 
-        if (!tree.is_leaf(node)) { return; }
+        for (auto const &sub : interspersed_substitutions) {
+            if (!sub.is_dummy()) {
+                tracer_substitutions.add("NodeName", node_name);
+                tracer_substitutions.add("Time", sub.time_event);
+                tracer_substitutions.add("NucFrom", Codon::nucleotides[sub.n_from]);
+                tracer_substitutions.add("NucTo", Codon::nucleotides[sub.n_to]);
+                tracer_substitutions.add("CodonFrom", Codon::codon_string(sub.codon_from));
+                tracer_substitutions.add("CodonTo", Codon::codon_string(sub.codon_to));
+                tracer_substitutions.add("AAFrom", Codon::codon_aa_string(sub.codon_from));
+                tracer_substitutions.add("AATo", Codon::codon_aa_string(sub.codon_to));
+                tracer_substitutions.add("Site", sub.site);
+            }
+        }
+        tracer_sequences.add("NodeName", node_name);
+        tracer_sequences.add("CodonSequence", get_dna_str());
+        tracer_sequences.add("AASequence", get_aa_str());
+
+        if (!tree.is_leaf(node)) {
+            tracer_fossils.add("NodeName", node_name);
+            double age = tree.max_distance_to_root() - time_from_root;
+            tracer_fossils.add("Age", age);
+            tracer_fossils.add("LowerBound", age * 0.9);
+            tracer_fossils.add("UpperBound", age * 1.1);
+            return;
+        }
         // If the node is a leaf, output the DNA sequence and name.
         write_sequence(output_filename, node_name, this->get_dna_str());
 
@@ -528,6 +563,23 @@ class Sequence {
             }
         }
         return dna_str;  // return the DNA sequence as a string.
+    }
+
+    // Method returning the AA string corresponding to the codon sequence.
+    string get_aa_str() const {
+        string aa_str{};
+        aa_str.reserve(nbr_sites());
+
+        // For each site of the sequence.
+        for (auto const &exon : exons) {
+            for (u_long site{0}; site < exon.nbr_sites; site++) {
+                // Assert there is no stop in the sequence.
+                assert(Codon::codon_to_aa_array[exon.codon_seq[site]] != 20);
+                // Translate the site to amino-acids
+                aa_str += Codon::codon_aa_string(exon.codon_seq[site]);
+            }
+        }
+        return aa_str;  // return the DNA sequence as a string.
     }
 
     void write_matrices(string const &output_filename) {
@@ -722,7 +774,7 @@ int main(int argc, char *argv[]) {
     parameters.add("nucleotide_matrix_path", output_path);
     parameters.add("mutation_rate_per_generation", mutation_rate_per_generation);
     nuc_matrix.add_to_trace(parameters);
-    parameters.add("generation_time_in_year", generation_time);
+    parameters.add("generation_time", generation_time);
     parameters.add("exon_size", exon_size);
     parameters.add("fix_pop_size", fix_pop_size);
     parameters.add("fix_mut_rate", fix_mut_rate);
@@ -759,6 +811,9 @@ int main(int argc, char *argv[]) {
     trace.write_tsv(output_path);
 
     tracer_traits.write_tsv(output_path + ".traits");
+    tracer_fossils.write_tsv(output_path + ".fossils");
+    tracer_substitutions.write_tsv(output_path + ".substitutions");
+    tracer_sequences.write_tsv(output_path + ".sequences");
 
     cout << "Simulation computed." << endl;
     cout << nbr_sites * 3 * (mutation_rate_per_generation / generation_time) * tree.total_length()
