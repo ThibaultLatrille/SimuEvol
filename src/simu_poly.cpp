@@ -638,14 +638,15 @@ class Population {
 
     u_long sample_size{0};
     LogMultivariate log_multivariate;
+    double ornstein_uhlenbeck_sigma{};
+    double ornstein_uhlenbeck_theta{};
+    OrnsteinUhlenbeck ornstein_uhlenbeck;
 
     u_long population_size{0};
     double generation_time{0};
     NucleotideRateMatrix nuc_matrix;
     EMatrix const &transform_matrix;
     bool branch_wise{};
-    double white_noise_sigma{};
-    gamma_distribution<double> white_noise_distr{};
 
     vector<Substitution> substitutions{};
     u_long non_syn_mutations{0}, syn_mutations{0};
@@ -655,20 +656,19 @@ class Population {
 
     Population(vector<array<double, 20>> const &fitness_profiles, u_long sample_size,
         LogMultivariate &log_multi, u_long exon_size, NucleotideRateMatrix nucleotide_matrix,
-        EMatrix const &transform_matrix, bool branch_wise, double white_noise_sigma)
+        EMatrix const &transform_matrix, bool branch_wise, double ornstein_uhlenbeck_sigma,
+        double ornstein_uhlenbeck_theta)
         : exons{},
           sample_size{sample_size},
           log_multivariate{log_multi},
+          ornstein_uhlenbeck_sigma{ornstein_uhlenbeck_sigma},
+          ornstein_uhlenbeck_theta{ornstein_uhlenbeck_theta},
+          ornstein_uhlenbeck(ornstein_uhlenbeck_sigma, ornstein_uhlenbeck_theta, generator),
           population_size{log_multivariate.population_size()},
           generation_time{log_multivariate.generation_time()},
           nuc_matrix{move(nucleotide_matrix)},
           transform_matrix{transform_matrix},
-          branch_wise{branch_wise},
-          white_noise_sigma{white_noise_sigma} {
-        if (white_noise_sigma > 0) {
-            double alpha = 1. / (white_noise_sigma * white_noise_sigma);
-            white_noise_distr = gamma_distribution<double>(alpha, alpha);
-        }
+          branch_wise{branch_wise} {
         auto dv = std::div(static_cast<int>(fitness_profiles.size()), exon_size);
         if (dv.rem != 0) { dv.quot++; }
         exons.reserve(dv.quot);
@@ -751,9 +751,10 @@ class Population {
             population_size = 2 * sample_size - population_size;
             log_multivariate.set_population_size(population_size);
         }
-        if (white_noise_sigma > 0) {
+        if (ornstein_uhlenbeck_sigma > 0) {
+            ornstein_uhlenbeck.Next();
             population_size = max(
-                static_cast<u_long>(population_size * white_noise_distr(generator)), sample_size);
+                static_cast<u_long>(population_size * ornstein_uhlenbeck.GetExpVal()), sample_size);
         }
         update_binomial_distribs();
         timer.correlation += duration(timeNow() - t_start);
@@ -1242,8 +1243,11 @@ class SimuPolyArgParse : public SimuArgParse {
         "n", "population_size", "Population size (at the root)", false, 500, "u_long", cmd};
     TCLAP::ValueArg<u_long> sample_size{
         "p", "sample_size", "Sample size (at the leaves)", false, 20, "u_long", cmd};
-    TCLAP::ValueArg<double> white_noise{"w", "white_noise",
-        "The white noise (between 0.0 and 1.0) applied to Ne at each generation", false, 0.1,
+    TCLAP::ValueArg<double> noise_sigma{"", "noise_sigma",
+        "The Ornstein–Uhlenbeck sigma (0<sigma) applied to Ne at each generation", false, 0.0,
+        "double", cmd};
+    TCLAP::ValueArg<double> noise_theta{"", "noise_theta",
+        "The Ornstein–Uhlenbeck theta (0<=theta<1) applied to Ne at each generation", false, 0.9,
         "double", cmd};
 };
 
@@ -1278,9 +1282,10 @@ int main(int argc, char *argv[]) {
     u_long sample_size{args.sample_size.getValue()};
     assert(sample_size <= pop_size);
     assert(sample_size > 0);
-    double white_noise{args.white_noise.getValue()};
-    assert(white_noise <= 1.0);
-    assert(white_noise >= 0.0);
+    double noise_sigma{args.noise_sigma.getValue()};
+    assert(noise_sigma >= 0.0);
+    double noise_theta{args.noise_theta.getValue()};
+    assert(noise_theta < 1.0);
 
     vector<array<double, 20>> fitness_profiles =
         open_preferences(preferences_path, beta / (4 * pop_size));
@@ -1323,7 +1328,8 @@ int main(int argc, char *argv[]) {
     parameters.add("fix_pop_size", fix_pop_size);
     parameters.add("fix_mut_rate", fix_mut_rate);
     parameters.add("fix_gen_time", fix_gen_time);
-    parameters.add("white_noise", white_noise);
+    parameters.add("noise_sigma", noise_sigma);
+    parameters.add("noise_theta", noise_theta);
     correlation_matrix.add_to_trace(parameters);
     parameters.write_tsv(output_path + ".parameters");
 
@@ -1334,7 +1340,7 @@ int main(int argc, char *argv[]) {
         eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
 
     Population root_population(fitness_profiles, sample_size, log_multivariate, exon_size,
-        nuc_matrix, transform_matrix, branch_wise_correlation, white_noise);
+        nuc_matrix, transform_matrix, branch_wise_correlation, noise_sigma, noise_theta);
     root_population.burn_in(burn_in);
 
     Process simu_process(tree, root_population);

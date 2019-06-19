@@ -200,6 +200,23 @@ class LogMultivariate : public Vector3x1 {
     double log_generation_time() const { return (*this)(dim_generation_time); }
 };
 
+class OrnsteinUhlenbeck {
+  public:
+    double x{0.0};
+    double sigma{0.1};
+    double theta{0.9};
+    std::default_random_engine &generator;
+    std::normal_distribution<double> normal_distrib;
+
+    OrnsteinUhlenbeck(double sigma, double theta, std::default_random_engine &gen)
+        : sigma{sigma}, theta{theta}, generator{gen} {
+        normal_distrib = std::normal_distribution<double>(0.0, 1.0);
+    }
+
+    void Next() { x += sigma * normal_distrib(generator) - theta * x; }
+    double GetExpVal() { return exp(x); }
+};
+
 class PieceWiseMultivariate {
   private:
     std::vector<double> times;
