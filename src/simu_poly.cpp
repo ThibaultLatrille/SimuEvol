@@ -29,7 +29,7 @@ static string info =
     "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
 
 bool is_synonymous(char codon_from, char codon_to) {
-    return Codon::codon_to_aa_array.at(codon_from) == Codon::codon_to_aa_array.at(codon_to);
+    return codonLexico.codon_to_aa.at(codon_from) == codonLexico.codon_to_aa.at(codon_to);
 }
 
 typedef binomial_distribution<u_long> BinomialDistr;
@@ -113,10 +113,10 @@ class Substitution {
     bool is_non_synonymous() const { return !::is_synonymous(codon_from, codon_to); }
 
     void add_to_trace(Trace &trace) const {
-        trace.add("codon_from", Codon::codon_string(codon_from));
-        trace.add("codon_to", Codon::codon_string(codon_to));
-        trace.add("aa_from", Codon::codon_aa_string(codon_from));
-        trace.add("aa_to", Codon::codon_aa_string(codon_to));
+        trace.add("codon_from", codonLexico.codon_string(codon_from));
+        trace.add("codon_to", codonLexico.codon_string(codon_to));
+        trace.add("aa_from", codonLexico.codon_aa_string(codon_from));
+        trace.add("aa_to", codonLexico.codon_aa_string(codon_to));
         trace.add("synonymous", is_synonymous());
         trace.add("selection_coefficient", delta_logfitness);
         trace.add("mean_fitness", mean_logfitness);
@@ -231,7 +231,7 @@ class Haplotype {
 
     bool check_consistency(u_long nbr_sites) const {
         for (auto &diff : diff_sites) {
-            if (Codon::codon_to_aa_array.at(diff.second) == 20) {
+            if (codonLexico.codon_to_aa.at(diff.second) == 20) {
                 cerr << "The haplotype contains a stop codon" << endl;
                 return false;
             }
@@ -374,7 +374,7 @@ class Exon {
             }
 
             // The selected nucleotide
-            array<char, 3> triplet_nuc = Codon::codon_to_triplet_array.at(codon_from);
+            array<char, 3> triplet_nuc = codonLexico.codon_to_triplet.at(codon_from);
             char nuc_from = triplet_nuc.at(nuc_pos);
 
             // Early continue (next iteration) if the rate away from this nucleotide is too low
@@ -389,8 +389,8 @@ class Exon {
             // Randomly choose the target nucleotide
             triplet_nuc[nuc_pos] = p.mutation_distr.at(nuc_from)(generator);
             char codon_to =
-                Codon::triplet_to_codon(triplet_nuc.at(0), triplet_nuc.at(1), triplet_nuc.at(2));
-            if (Codon::codon_to_aa_array.at(codon_to) == 20) { continue; }
+                codonLexico.triplet_to_codon(triplet_nuc.at(0), triplet_nuc.at(1), triplet_nuc.at(2));
+            if (codonLexico.codon_to_aa.at(codon_to) == 20) { continue; }
 
             // Depending on whether the mutation is back to the reference sequence
             Haplotype haplotype = haplotype_vector.at(hap_id);
@@ -403,8 +403,8 @@ class Exon {
 
             // Update the fitness of the new haplotype
             double df =
-                aa_fitness_profiles.at(codon_site).at(Codon::codon_to_aa_array.at(codon_to)) -
-                aa_fitness_profiles.at(codon_site).at(Codon::codon_to_aa_array.at(codon_from));
+                aa_fitness_profiles.at(codon_site).at(codonLexico.codon_to_aa.at(codon_to)) -
+                aa_fitness_profiles.at(codon_site).at(codonLexico.codon_to_aa.at(codon_from));
             haplotype.fitness += df;
 
             // Update the vector of haplotypes
@@ -519,8 +519,8 @@ class Exon {
             codon_seq[site] = codon_to;
 
             // Update the vector of haplotypes
-            double df = aa_fitness_profiles.at(site).at(Codon::codon_to_aa_array.at(codon_to)) -
-                        aa_fitness_profiles.at(site).at(Codon::codon_to_aa_array.at(codon_from));
+            double df = aa_fitness_profiles.at(site).at(codonLexico.codon_to_aa.at(codon_to)) -
+                        aa_fitness_profiles.at(site).at(codonLexico.codon_to_aa.at(codon_from));
 
             double mean_fitness = 0;
             for (auto &haplotype : haplotype_vector) {
@@ -577,8 +577,8 @@ class Exon {
             char codon_from = codon_seq[diff.first];
             char codon_to = diff.second;
 
-            double df = aa_fitness_profiles.at(site).at(Codon::codon_to_aa_array.at(codon_to)) -
-                        aa_fitness_profiles.at(site).at(Codon::codon_to_aa_array.at(codon_from));
+            double df = aa_fitness_profiles.at(site).at(codonLexico.codon_to_aa.at(codon_to)) -
+                        aa_fitness_profiles.at(site).at(codonLexico.codon_to_aa.at(codon_from));
 
             codon_seq[site] = codon_to;
             for (auto &haplotype : haplotype_vector) {
@@ -603,7 +603,7 @@ class Exon {
 
             // Array of neighbors of the original codon (codons differing by only 1 mutation).
             array<tuple<char, char, char>, 9> neighbors =
-                Codon::codon_to_neighbors_array[codon_from];
+                codonLexico.codon_to_neighbors[codon_from];
 
             // For all possible neighbors.
             for (char neighbor{0}; neighbor < 9; neighbor++) {
@@ -615,9 +615,9 @@ class Exon {
                 // Else, if the mutated and original amino-acids are non-synonymous, we compute the
                 // rate of fixation. Note that, if the mutated and original amino-acids are
                 // synonymous, the rate of fixation is 1.
-                if (Codon::codon_to_aa_array[codon_to] != 20) {
-                    if (Codon::codon_to_aa_array[codon_from] !=
-                        Codon::codon_to_aa_array[codon_to]) {
+                if (codonLexico.codon_to_aa[codon_to] != 20) {
+                    if (codonLexico.codon_to_aa[codon_from] !=
+                        codonLexico.codon_to_aa[codon_to]) {
                         non_syn_mut_flow += nuc_matrix.normalized_rate(n_from, n_to);
                     } else {
                         syn_mut_flow += nuc_matrix.normalized_rate(n_from, n_to);
@@ -992,8 +992,8 @@ class Population {
                     u_long alt_freq = codon_from_to_copy.begin()->second;
                     char nuc_pos{0};
                     while (nuc_pos < 3) {
-                        if (Codon::codon_to_nuc(codon_from, nuc_pos) !=
-                            Codon::codon_to_nuc(codon_to, nuc_pos)) {
+                        if (codonLexico.codon_to_nuc(codon_from, nuc_pos) !=
+                            codonLexico.codon_to_nuc(codon_to, nuc_pos)) {
                             break;
                         } else {
                             nuc_pos++;
@@ -1004,9 +1004,9 @@ class Population {
                     line += ".\t";
                     line += to_string(3 * (exon.position + site) + nuc_pos);
                     line += "\t.\t";
-                    line += Codon::codon_to_nuc(codon_from, nuc_pos);
+                    line += codonLexico.codon_to_nuc(codon_from, nuc_pos);
                     line += "\t";
-                    line += Codon::codon_to_nuc(codon_to, nuc_pos);
+                    line += codonLexico.codon_to_nuc(codon_to, nuc_pos);
                     line += "\t100\t";
                     if (alt_freq == 2 * sample_size) {
                         line += "s100";
@@ -1016,13 +1016,13 @@ class Population {
                         line += "PASS";
                     }
                     line += "\tREFCODON=";
-                    line += Codon::codon_string(codon_from);
+                    line += codonLexico.codon_string(codon_from);
                     line += ";ALTCODON=";
-                    line += Codon::codon_string(codon_to);
+                    line += codonLexico.codon_string(codon_to);
                     line += ";REFAA=";
-                    line += Codon::codon_aa_string(codon_from);
+                    line += codonLexico.codon_aa_string(codon_from);
                     line += ";ALTAA=";
-                    line += Codon::codon_aa_string(codon_to);
+                    line += codonLexico.codon_aa_string(codon_to);
                     line += ";POSITION=";
                     line += to_string(nuc_pos);
                     line += ";ALTCOUNT=";
@@ -1045,9 +1045,9 @@ class Population {
                             char nuc{0};
                             if (exon.haplotype_vector.at(i_hap).diff_sites.count(site) > 0) {
                                 char codon = exon.haplotype_vector.at(i_hap).diff_sites.at(site);
-                                nuc = Codon::codon_to_nuc(codon, nuc_pos);
+                                nuc = codonLexico.codon_to_nuc(codon, nuc_pos);
                             } else {
-                                nuc = Codon::codon_to_nuc(exon.codon_seq.at(site), nuc_pos);
+                                nuc = codonLexico.codon_to_nuc(exon.codon_seq.at(site), nuc_pos);
                             }
                             line += nuc;
                             if (ploidy == 0) { line += "|"; }
@@ -1148,12 +1148,12 @@ class Population {
         for (auto const &exon : exons) {
             for (u_long site{0}; site < exon.nbr_sites; site++) {
                 // Assert there is no stop in the sequence.
-                assert(Codon::codon_to_aa_array.at(exon.codon_seq.at(site)) != 20);
+                assert(codonLexico.codon_to_aa.at(exon.codon_seq.at(site)) != 20);
 
                 // Translate the site to a triplet of DNA nucleotides
-                array<char, 3> triplet = Codon::codon_to_triplet_array.at(exon.codon_seq.at(site));
+                array<char, 3> triplet = codonLexico.codon_to_triplet.at(exon.codon_seq.at(site));
                 for (char nuc_pos{0}; nuc_pos < 3; nuc_pos++) {
-                    dna_str += Codon::nucleotides.at(triplet.at(nuc_pos));
+                    dna_str += codonLexico.nucleotides.at(triplet.at(nuc_pos));
                 }
             }
         }

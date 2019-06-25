@@ -4,6 +4,7 @@
 #include <random>
 #include "Eigen/Dense"
 #include "lib/tree.hpp"
+#include "codon.hpp"
 #include "statistic.hpp"
 
 typedef Eigen::Matrix<double, 3, 3> Matrix3x3;
@@ -61,15 +62,15 @@ class NucleotideRateMatrix : public Matrix4x4 {
             assert(header_word.size() == 4);
             assert(header_word.substr(0, 2) == "q_");
             getline(values_stream, value, '\t');
-            (*this)(Codon::nuc_to_index.at(header_word[2]),
-                Codon::nuc_to_index.at(header_word[3])) = stod(value);
+            (*this)(codonLexico.nuc_to_index.at(header_word[2]),
+                codonLexico.nuc_to_index.at(header_word[3])) = stod(value);
         }
 
         for (int diag{0}; diag < 4; diag++) { (*this)(diag, diag) = 0.0; }
         (*this) -= this->rowwise().sum().asDiagonal();
 
         equilibrium_frequencies();
-        std::cout << "The equilibrium nucleotides frequencies (" << Codon::nucleotides << ") are:\n"
+        std::cout << "The equilibrium nucleotides frequencies (" << codonLexico.nucleotides << ") are:\n"
                   << nuc_frequencies.transpose() << std::endl;
 
         if (normalize) { normalize_matrix(); }
@@ -87,7 +88,7 @@ class NucleotideRateMatrix : public Matrix4x4 {
 
         (*this) *= mutation_rate;
 
-        std::cout << "The nucleotide rate matrix (" << Codon::nucleotides << ") is:\n"
+        std::cout << "The nucleotide rate matrix (" << codonLexico.nucleotides << ") is:\n"
                   << *this << std::endl;
     }
 
@@ -129,8 +130,8 @@ class NucleotideRateMatrix : public Matrix4x4 {
             for (char nuc_to{0}; nuc_to < 4; nuc_to++) {
                 if (nuc_from != nuc_to) {
                     std::string key = "q_";
-                    key += Codon::nucleotides[nuc_from];
-                    key += Codon::nucleotides[nuc_to];
+                    key += codonLexico.nucleotides[nuc_from];
+                    key += codonLexico.nucleotides[nuc_to];
                     trace.add(key, (*this)(nuc_from, nuc_to));
                 }
             }
@@ -376,13 +377,13 @@ std::array<double, 64> codon_frequencies(std::array<double, 20> const &aa_fitnes
         double codon_freq = 1.0;
 
         // For all nucleotides in the codon
-        for (auto const &nuc : Codon::codon_to_triplet_array[codon]) {
+        for (auto const &nuc : codonLexico.codon_to_triplet[codon]) {
             codon_freq *= nuc_matrix.nuc_frequencies[nuc];
         }
 
-        if (Codon::codon_to_aa_array[codon] != 20) {
+        if (codonLexico.codon_to_aa[codon] != 20) {
             codon_frequencies[codon] =
-                codon_freq * exp(aa_fitness_profil[Codon::codon_to_aa_array[codon]] * beta);
+                codon_freq * exp(aa_fitness_profil[codonLexico.codon_to_aa[codon]] * beta);
         } else {
             codon_frequencies[codon] = 0.;
         }
@@ -392,20 +393,20 @@ std::array<double, 64> codon_frequencies(std::array<double, 20> const &aa_fitnes
     for (char codon{0}; codon < 64; codon++) { codon_frequencies[codon] /= sum_freq; }
 
     return codon_frequencies;
-};
+}
 
 double rate_fixation(
     std::array<double, 20> const &preferences, char codon_from, char codon_to, double scale) {
     double rate_fix = 1.0;
     // Selective strength between the mutated and original amino-acids.
     double s{0.};
-    s = preferences[Codon::codon_to_aa_array[codon_to]];
-    s -= preferences[Codon::codon_to_aa_array[codon_from]];
+    s = preferences[codonLexico.codon_to_aa[codon_to]];
+    s -= preferences[codonLexico.codon_to_aa[codon_from]];
     s *= scale;
     // If the selective strength is 0, the rate of fixation is neutral.
     // Else, the rate of fixation is computed using population genetic formulas
     // (Kimura).
-    if (fabs(s) > Codon::epsilon) {
+    if (fabs(s) > codonLexico.epsilon) {
         // The substitution rate is the mutation rate multiplied by the rate of
         // fixation.
         rate_fix = s / (1 - exp(-s));
@@ -425,9 +426,9 @@ std::tuple<double, double> predicted_dn_dn0(
             codon_frequencies(aa_fitness_profile, mutation_rate_matrix, scale);
 
         for (char codon_from{0}; codon_from < 64; codon_from++) {
-            if (Codon::codon_to_aa_array[codon_from] != 20) {
+            if (codonLexico.codon_to_aa[codon_from] != 20) {
                 // For all possible neighbors.
-                for (auto &neighbor : Codon::codon_to_neighbors_array[codon_from]) {
+                for (auto &neighbor : codonLexico.codon_to_neighbors[codon_from]) {
                     // Codon after mutation, Nucleotide original and Nucleotide after mutation.
                     char codon_to{0}, n_from{0}, n_to{0};
                     std::tie(codon_to, n_from, n_to) = neighbor;
@@ -436,9 +437,9 @@ std::tuple<double, double> predicted_dn_dn0(
                     // Else, if the mutated and original amino-acids are non-synonymous, we
                     // compute the rate of fixation. Note that, if the mutated and original
                     // amino-acids are synonymous, the rate of fixation is 1.
-                    if (Codon::codon_to_aa_array[codon_to] != 20 and
-                        Codon::codon_to_aa_array[codon_from] !=
-                            Codon::codon_to_aa_array[codon_to]) {
+                    if (codonLexico.codon_to_aa[codon_to] != 20 and
+                        codonLexico.codon_to_aa[codon_from] !=
+                            codonLexico.codon_to_aa[codon_to]) {
                         double rate = codon_freqs[codon_from] * mutation_rate_matrix(n_from, n_to);
                         dn0 += rate;
                         rate *= rate_fixation(aa_fitness_profile, codon_from, codon_to, scale);
@@ -461,7 +462,7 @@ std::tuple<double, double> flow_dn_dn0(
     // For all site of the sequence.
     for (size_t site{0}; site < aa_fitness_profiles.size(); site++) {
         // For all possible neighbors.
-        for (auto &neighbor : Codon::codon_to_neighbors_array[codon_seq[site]]) {
+        for (auto &neighbor : codonLexico.codon_to_neighbors[codon_seq[site]]) {
             // Codon after mutation, Nucleotide original and Nucleotide after mutation.
             char codon_to{0}, n_from{0}, n_to{0};
             std::tie(codon_to, n_from, n_to) = neighbor;
@@ -470,8 +471,8 @@ std::tuple<double, double> flow_dn_dn0(
             // Else, if the mutated and original amino-acids are non-synonymous, we
             // compute the rate of fixation. Note that, if the mutated and original
             // amino-acids are synonymous, the rate of fixation is 1.
-            if (Codon::codon_to_aa_array[codon_to] != 20 and
-                Codon::codon_to_aa_array[codon_seq[site]] != Codon::codon_to_aa_array[codon_to]) {
+            if (codonLexico.codon_to_aa[codon_to] != 20 and
+                codonLexico.codon_to_aa[codon_seq[site]] != codonLexico.codon_to_aa[codon_to]) {
                 double rate = mutation_rate_matrix(n_from, n_to);
                 dn0 += rate;
                 rate *= rate_fixation(aa_fitness_profiles[site], codon_seq[site], codon_to, scale);

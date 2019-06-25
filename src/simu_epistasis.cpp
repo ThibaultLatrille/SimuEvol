@@ -1,6 +1,7 @@
 #include <queue>
 #include "argparse.hpp"
 #include "codon.hpp"
+#include "folding.hpp"
 #include "io.hpp"
 #include "matrices.hpp"
 #include "random.hpp"
@@ -701,6 +702,8 @@ class SimuEvolArgParse : public SimuArgParse {
         "All sites are affected by the random shuffling (instead of just the one where the "
         "substitution occured)",
         cmd, false};
+    SwitchArg pdb{
+        "", "pdb", "Introduce epistasis using the Goldstein-Pollock model (2017)", cmd, false};
 };
 
 int main(int argc, char *argv[]) {
@@ -738,6 +741,7 @@ int main(int argc, char *argv[]) {
     assert(p >= 0.0);
     assert(p <= 1.0);
     bool all_sites{args.shuffle_all.getValue()};
+    bool pdb{args.pdb.getValue()};
 
     vector<array<double, 20>> fitness_profiles = open_preferences(preferences_path, 1.0);
     u_long nbr_sites = fitness_profiles.size();
