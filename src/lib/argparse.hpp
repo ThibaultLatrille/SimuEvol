@@ -31,12 +31,8 @@ class SimuArgParse : public OutputArgParse {
         "Number of year between generations (at the root)", false, 40, "double", cmd};
     TCLAP::ValueArg<std::string> nuc_matrix_path{
         "q", "nuc_matrix", "input nucleotide matrix preferences path", false, "", "string", cmd};
-    TCLAP::ValueArg<std::string> preferences_path{
-        "f", "preferences", "input site-specific preferences path", true, "", "string", cmd};
     TCLAP::ValueArg<std::string> newick_path{
         "t", "newick", "input newick tree path", true, "", "string", cmd};
-    TCLAP::ValueArg<double> beta{
-        "b", "beta", "Stringency parameter of the fitness profiles", false, 1.0, "double", cmd};
     TCLAP::ValueArg<u_long> exons{"s", "exon_size",
         "Number of codon sites per exon (default 0 means the size of the fitness profiles "
         "provided, thus assuming complete linkage between sites)",

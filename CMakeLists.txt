@@ -24,6 +24,6 @@ include_directories("src/lib")
 include_directories("utils")
 
 add_executable(SimuDiv src/simu_div.cpp)
-add_executable(SimuEpistasis src/simu_epistasis.cpp)
+add_executable(SimuFold src/simu_fold.cpp)
 add_executable(SimuPoly src/simu_poly.cpp)
 add_executable(SimuRelax src/simu_relax.cpp)

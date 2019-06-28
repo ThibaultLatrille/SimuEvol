@@ -1238,7 +1238,10 @@ double Process::years_computed = 0.0;
 class SimuPolyArgParse : public SimuArgParse {
   public:
     explicit SimuPolyArgParse(CmdLine &cmd) : SimuArgParse(cmd) {}
-
+    TCLAP::ValueArg<std::string> preferences_path{
+            "f", "preferences", "input site-specific preferences path", true, "", "string", cmd};
+    TCLAP::ValueArg<double> beta{
+            "b", "beta", "Stringency parameter of the fitness profiles", false, 1.0, "double", cmd};
     TCLAP::ValueArg<u_long> pop_size{
         "n", "population_size", "Population size (at the root)", false, 500, "u_long", cmd};
     TCLAP::ValueArg<u_long> sample_size{

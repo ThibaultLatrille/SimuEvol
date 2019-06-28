@@ -20,25 +20,15 @@ class Codon {
     double epsilon = std::numeric_limits<double>::epsilon();
 
     // String of all nucleotides.
-    std::string const nucleotides{"ACGT"};
-    std::map<char, char> const nuc_to_index{{'A', 0}, {'C', 1}, {'G', 2}, {'T', 3}};
+    static std::string nucleotides;
+    static std::map<char, char> nuc_to_index;
 
     // String containing the 21 amino-acids (20 + stop) for translations from index to amino-acid
     // character
     std::string const amino_acids;
     // Map from codons to amino-acids
-    std::map<std::string, char> const triplet_str_to_aa_char{{"GCA", 'A'}, {"GAA", 'E'},
-        {"ACT", 'T'}, {"CAT", 'H'}, {"ACG", 'T'}, {"GGT", 'G'}, {"GCG", 'A'}, {"GAG", 'E'},
-        {"CGC", 'R'}, {"TGA", 'X'}, {"CGG", 'R'}, {"GCC", 'A'}, {"TGC", 'C'}, {"GAC", 'D'},
-        {"CAA", 'Q'}, {"CGT", 'R'}, {"GAT", 'D'}, {"TCA", 'S'}, {"CAC", 'H'}, {"ATC", 'I'},
-        {"CGA", 'R'}, {"ATA", 'I'}, {"GCT", 'A'}, {"CAG", 'Q'}, {"TGG", 'W'}, {"GGC", 'G'},
-        {"TTC", 'F'}, {"CCA", 'P'}, {"ACC", 'T'}, {"TAC", 'Y'}, {"GTG", 'V'}, {"AAC", 'N'},
-        {"AAG", 'K'}, {"CCT", 'P'}, {"TCC", 'S'}, {"CCC", 'P'}, {"CTC", 'L'}, {"GTT", 'V'},
-        {"AGC", 'S'}, {"ATT", 'I'}, {"ACA", 'T'}, {"TTG", 'L'}, {"GTC", 'V'}, {"AGT", 'S'},
-        {"CTG", 'L'}, {"TCG", 'S'}, {"TAT", 'Y'}, {"TTT", 'F'}, {"AAT", 'N'}, {"CCG", 'P'},
-        {"TTA", 'L'}, {"TGT", 'C'}, {"GGA", 'G'}, {"CTA", 'L'}, {"AAA", 'K'}, {"GGG", 'G'},
-        {"ATG", 'M'}, {"GTA", 'V'}, {"TCT", 'S'}, {"AGA", 'R'}, {"TAA", 'X'}, {"TAG", 'X'},
-        {"AGG", 'R'}, {"CTT", 'L'}};
+    static std::map<std::string, char> triplet_str_to_aa_char;
+    static std::map<std::string, char> AAcode_3_to_1;
 
     std::array<std::array<char, 3>, 64> codon_to_triplet{};
     std::array<std::array<std::tuple<char, char, char>, 9>, 64> codon_to_neighbors{};
@@ -143,5 +133,25 @@ class Codon {
     char codon_aa_string(char codon) { return amino_acids[codon_to_aa[codon]]; }
 };
 
+std::string Codon::nucleotides = {"ACGT"};
+std::map<char, char> Codon::nuc_to_index = {{'A', 0}, {'C', 1}, {'G', 2}, {'T', 3}};
+
+std::map<std::string, char> Codon::triplet_str_to_aa_char = {{"GCA", 'A'}, {"GAA", 'E'},
+    {"ACT", 'T'}, {"CAT", 'H'}, {"ACG", 'T'}, {"GGT", 'G'}, {"GCG", 'A'}, {"GAG", 'E'},
+    {"CGC", 'R'}, {"TGA", 'X'}, {"CGG", 'R'}, {"GCC", 'A'}, {"TGC", 'C'}, {"GAC", 'D'},
+    {"CAA", 'Q'}, {"CGT", 'R'}, {"GAT", 'D'}, {"TCA", 'S'}, {"CAC", 'H'}, {"ATC", 'I'},
+    {"CGA", 'R'}, {"ATA", 'I'}, {"GCT", 'A'}, {"CAG", 'Q'}, {"TGG", 'W'}, {"GGC", 'G'},
+    {"TTC", 'F'}, {"CCA", 'P'}, {"ACC", 'T'}, {"TAC", 'Y'}, {"GTG", 'V'}, {"AAC", 'N'},
+    {"AAG", 'K'}, {"CCT", 'P'}, {"TCC", 'S'}, {"CCC", 'P'}, {"CTC", 'L'}, {"GTT", 'V'},
+    {"AGC", 'S'}, {"ATT", 'I'}, {"ACA", 'T'}, {"TTG", 'L'}, {"GTC", 'V'}, {"AGT", 'S'},
+    {"CTG", 'L'}, {"TCG", 'S'}, {"TAT", 'Y'}, {"TTT", 'F'}, {"AAT", 'N'}, {"CCG", 'P'},
+    {"TTA", 'L'}, {"TGT", 'C'}, {"GGA", 'G'}, {"CTA", 'L'}, {"AAA", 'K'}, {"GGG", 'G'},
+    {"ATG", 'M'}, {"GTA", 'V'}, {"TCT", 'S'}, {"AGA", 'R'}, {"TAA", 'X'}, {"TAG", 'X'},
+    {"AGG", 'R'}, {"CTT", 'L'}};
+
+std::map<std::string, char> Codon::AAcode_3_to_1 = {{"CYS", 'C'}, {"ASP", 'D'}, {"SER", 'S'},
+    {"GLN", 'Q'}, {"LYS", 'K'}, {"ILE", 'I'}, {"PRO", 'P'}, {"THR", 'T'}, {"PHE", 'F'},
+    {"ASN", 'N'}, {"GLY", 'G'}, {"HIS", 'H'}, {"LEU", 'L'}, {"ARG", 'R'}, {"TRP", 'W'},
+    {"ALA", 'A'}, {"VAL", 'V'}, {"GLU", 'E'}, {"TYR", 'Y'}, {"MET", 'M'}};
 
 Codon codonLexico = Codon("ACDEFGHIKLMNPQRSTVWYX");

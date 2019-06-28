@@ -132,16 +132,16 @@ class Exon {
                 // Else, if the mutated and original amino-acids are non-synonymous, we compute the
                 // rate of fixation. Note that, if the mutated and original amino-acids are
                 // synonymous, the rate of fixation is 1.
-                if (codonLexico.codon_to_aa[codon_to] != 20) {
-                    rate_substitution = nuc_matrix(n_from, n_to);
-                    if (codonLexico.codon_to_aa[codon_from] != codonLexico.codon_to_aa[codon_to]) {
-                        non_syn_mut_flow += rate_substitution;
-                        rate_substitution *=
-                            rate_fixation(aa_fitness_profiles[site], codon_from, codon_to, beta);
-                        non_syn_sub_flow += rate_substitution;
-                    } else {
-                        syn_mut_flow += rate_substitution;
-                    }
+                if (codonLexico.codon_to_aa[codon_to] == 20) { continue; }
+
+                rate_substitution = nuc_matrix(n_from, n_to);
+                if (codonLexico.codon_to_aa[codon_from] != codonLexico.codon_to_aa[codon_to]) {
+                    non_syn_mut_flow += rate_substitution;
+                    rate_substitution *=
+                        rate_fixation(aa_fitness_profiles[site], codon_from, codon_to, beta);
+                    non_syn_sub_flow += rate_substitution;
+                } else {
+                    syn_mut_flow += rate_substitution;
                 }
 
                 substitution_rates[9 * site + neighbor] = rate_substitution;
@@ -689,7 +689,10 @@ double Process::years_computed = 0.0;
 class SimuEvolArgParse : public SimuArgParse {
   public:
     explicit SimuEvolArgParse(CmdLine &cmd) : SimuArgParse(cmd) {}
-
+    TCLAP::ValueArg<std::string> preferences_path{
+        "f", "preferences", "input site-specific preferences path", true, "", "string", cmd};
+    TCLAP::ValueArg<double> beta{
+            "b", "beta", "Stringency parameter of the fitness profiles", false, 1.0, "double", cmd};
     TCLAP::ValueArg<u_long> nbr_grid_step{"d", "nbr_grid_step",
         "Number of intervals in which discretize the brownian motion", false, 100, "u_long", cmd};
     TCLAP::ValueArg<double> selection{"", "selection",
