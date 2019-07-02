@@ -6,11 +6,9 @@
 #include <unordered_map>
 #include "codon.hpp"
 
-double CUTOFF = 7.0;
 double LOG_UNFOLDED_STATES = 368.413615;  // log(1.0E160)
 double TEMPERATURE = 0.6;
 
-std::string PDB_DIRECTORY = "pdbfiles/";
 std::array<std::string, 2> nativeProtein = {"1qhw", "A"};
 std::vector<std::array<std::string, 2>> unfoldedProteinList = {{"1mty", "B"}, {"1n00", "A"},
     {"1gwu", "A"}, {"1kwf", "A"}, {"1iom", "A"}, {"1jfb", "A"}, {"1wer", " "}, {"1hz4", "A"},
@@ -84,6 +82,7 @@ class Structure {
     std::string proteinName;
     std::string chainName;
     size_t size;
+    double cut_off;
     std::vector<std::array<size_t, 2>> contactVector;
     std::vector<std::vector<size_t>> siteContactVector;
 
@@ -107,7 +106,7 @@ class Structure {
         }
         for (size_t iRes = 0; iRes < size - 2; iRes++) {
             for (size_t jRes = iRes + 2; jRes < size; jRes++) {
-                if (distanceMatrix.at(iRes).at(jRes) < CUTOFF) {
+                if (distanceMatrix.at(iRes).at(jRes) < cut_off) {
                     std::array<size_t, 2> contact{};
                     contact[0] = iRes;
                     contact[1] = jRes;
@@ -247,8 +246,8 @@ class Structure {
     std::string proteinSeq;
 
     explicit Structure(
-        std::string const &pdb_folder, std::array<std::string, 2> protein_chain_names, size_t size)
-        : proteinName{protein_chain_names[0]}, chainName{protein_chain_names[1]}, size{size} {
+        std::string const &pdb_folder, std::array<std::string, 2> protein_chain_names, size_t size, double cut_off)
+        : proteinName{protein_chain_names[0]}, chainName{protein_chain_names[1]}, size{size}, cut_off{cut_off} {
         readPDBFile(pdb_folder);
         if (!allOK()) { std::cout << "Yell!!!\n"; }
         makeContactVector();
@@ -287,10 +286,10 @@ class StructureSet {
     Structure native;
     std::vector<Structure> unfoldedVector{};
 
-    explicit StructureSet(std::string const &pdb_folder, int nbr_sites)
-        : native(pdb_folder, nativeProtein, nbr_sites) {
+    explicit StructureSet(std::string const &pdb_folder, int nbr_sites, double cut_off)
+        : native(pdb_folder, nativeProtein, nbr_sites, cut_off) {
         for (auto const &unfolded : unfoldedProteinList) {
-            unfoldedVector.emplace_back(Structure(pdb_folder, unfolded, nbr_sites));
+            unfoldedVector.emplace_back(Structure(pdb_folder, unfolded, nbr_sites, cut_off));
         }
     }
 };

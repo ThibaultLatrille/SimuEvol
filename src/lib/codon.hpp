@@ -32,7 +32,7 @@ class Codon {
 
     std::array<std::array<char, 3>, 64> codon_to_triplet{};
     std::array<std::array<std::tuple<char, char, char>, 9>, 64> codon_to_neighbors{};
-    std::array<char, 64> codon_to_aa{0};
+    std::array<char, 64> codon_to_aa{};
 
     explicit Codon(std::string amino_acids) : amino_acids{std::move(amino_acids)} {
         // Array mapping each of the 64 codons to their respective triplet.

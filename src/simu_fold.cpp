@@ -261,7 +261,7 @@ class Sequence {
 
     Sequence(string const &pdb_folder, LogMultivariate &log_multi, u_long exon_size,
         u_long nbr_exons, NucleotideRateMatrix nucleotide_matrix, EMatrix const &transform_matrix,
-        bool branch_wise)
+        bool branch_wise, double cut_off)
         : exons{},
           log_multivariate{log_multi},
           pop_size{log_multivariate.beta()},
@@ -269,7 +269,7 @@ class Sequence {
           nuc_matrix{move(nucleotide_matrix)},
           transform_matrix{transform_matrix},
           branch_wise{branch_wise},
-          structure_set(pdb_folder, exon_size) {
+          structure_set(pdb_folder, exon_size, cut_off) {
         exons.reserve(nbr_exons);
         for (u_long exon{0}; exon < nbr_exons; exon++) {
             size_t begin_exon = exon * exon_size;
@@ -761,6 +761,10 @@ class SimuEvolArgParse : public SimuArgParse {
         "", "nbr_exons", "Number of exons in the protein", false, 5000, "u_long", cmd};
     TCLAP::SwitchArg initialisation{
         "", "initialisation", "Initialize the amino-acid sequence.", cmd, false};
+    TCLAP::ValueArg<double> cut_off{
+            "", "cut_off", "The distance (in angstrom) to determine if 2 sites are in contact", false, 7.0, "double", cmd};
+
+
 };
 
 int main(int argc, char *argv[]) {
@@ -793,6 +797,7 @@ int main(int argc, char *argv[]) {
     double pop_size{args.pop_size.getValue()};
     assert(pop_size >= 0.0);
     bool branch_wise_correlation{args.branch_wise_correlation.getValue()};
+    double cut_off{args.cut_off.getValue()};
 
     u_long nbr_exons{args.nbr_exons.getValue()};
     u_long exon_size{args.exons.getValue()};
@@ -840,7 +845,7 @@ int main(int argc, char *argv[]) {
         eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
 
     Sequence root_sequence(pdb_folder, log_multivariate, exon_size, nbr_exons, nuc_matrix,
-        transform_matrix, branch_wise_correlation);
+        transform_matrix, branch_wise_correlation, cut_off);
     string equilibrium_filename = output_path + ".equilibrium";
     ifstream input_prefs(equilibrium_filename + ".fasta");
 
