@@ -458,7 +458,7 @@ class Sequence {
             cerr << "There is no synonymous substitutions, dN/dS can't be computed!" << endl;
             return .0;
         } else {
-            return dn / ds;
+            return (dn * ds0) / (dn0 * ds);
         }
     }
 

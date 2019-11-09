@@ -245,9 +245,12 @@ class Structure {
   public:
     std::string proteinSeq;
 
-    explicit Structure(
-        std::string const &pdb_folder, std::array<std::string, 2> protein_chain_names, size_t size, double cut_off)
-        : proteinName{protein_chain_names[0]}, chainName{protein_chain_names[1]}, size{size}, cut_off{cut_off} {
+    explicit Structure(std::string const &pdb_folder,
+        std::array<std::string, 2> protein_chain_names, size_t size, double cut_off)
+        : proteinName{protein_chain_names[0]},
+          chainName{protein_chain_names[1]},
+          size{size},
+          cut_off{cut_off} {
         readPDBFile(pdb_folder);
         if (!allOK()) { std::cout << "Yell!!!\n"; }
         makeContactVector();
@@ -319,8 +322,10 @@ class Protein {
 
     double computeSelCoeff(double deltaG, double deltaGMutant) const {
         // s = (f' - f)/f where f = e(-D/T)/(1+e(-D/T))
-        // return (exp((deltaG - deltaGMutant) / TEMPERATURE) - 1) / (exp(-deltaG / TEMPERATURE) + 1);
-        return computePFolded(deltaGMutant) / computePFolded(deltaG) - 1.0;
+        // return (exp((deltaG - deltaGMutant) / TEMPERATURE) - 1) / (exp(-deltaG / TEMPERATURE) +
+        // 1); return computePFolded(deltaGMutant) / computePFolded(deltaG) - 1.0;
+        double fm = computePFolded(deltaGMutant), f = computePFolded(deltaG);
+        return 2 * (fm - f) / (fm + f);
     }
 
     double DeltaG(std::vector<char> const &codonSeq) const {
@@ -382,7 +387,7 @@ class Protein {
 
     double computeMutantSelCoeff(std::vector<char> const &codonSeq, size_t const &site,
         char codon_from, char codon_to) const {
-        if (codonPDB.codon_to_aa[codon_from] == codonPDB.codon_to_aa[codon_to]) {
+        if (codonLexico.codon_to_aa[codon_from] == codonLexico.codon_to_aa[codon_to]) {
             return 0.0;
         }
         double nativeMutantEnergy = nativeEnergy + structure_set.native.getMutantEnergy(

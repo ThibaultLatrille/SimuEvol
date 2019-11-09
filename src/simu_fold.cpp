@@ -1,5 +1,5 @@
+#include <deque>
 #include <limits>
-#include <queue>
 #include "argparse.hpp"
 #include "codon.hpp"
 #include "folding.hpp"
@@ -12,11 +12,16 @@
 using namespace TCLAP;
 using namespace std;
 
+double dnds_count_tot{0}, dnds_event_tot{0}, dnd0_count_tot{0}, dnd0_event_tot{0}, ddg_tot{0},
+    ddg_abs_tot{0};
+
 double Pfix(double const &pop_size, double const &s) {
-    if ((abs(s) * pop_size) < 1e-4) {
-        return s / 2;
+    double S = 4 * s * pop_size;
+    if ((abs(S)) < 1e-4) {
+        return 1 + S / 2;
     } else {
-        return 2 * pop_size * (1.0 - exp(-2.0 * s)) / (1.0 - exp(-4 * pop_size * s));
+        // return 2 * pop_size * (1.0 - exp(-2.0 * s)) / (1.0 - exp(-4 * pop_size * s));
+        return S / (1.0 - exp(-S));
     }
 }
 
@@ -33,10 +38,12 @@ class Substitution {
     double non_syn_mut_flow;
     double syn_mut_flow;
     double p_fix;
+    vector<array<double, 20>> siteprefs;
 
     Substitution(double time_event, double time_between_event, double non_syn_sub_flow,
-        double non_syn_mut_flow, double syn_mut_flow, char codon_from = -1, char codon_to = -1,
-        char n_from = -1, char n_to = -1, u_long site = 0, double p_fix = 0)
+        double non_syn_mut_flow, double syn_mut_flow, vector<array<double, 20>> sitefitnesses,
+        char codon_from = -1, char codon_to = -1, char n_from = -1, char n_to = -1, u_long site = 0,
+        double p_fix = 0)
         : site{site},
           codon_from{codon_from},
           codon_to{codon_to},
@@ -47,7 +54,8 @@ class Substitution {
           non_syn_sub_flow{non_syn_sub_flow},
           non_syn_mut_flow{non_syn_mut_flow},
           syn_mut_flow{syn_mut_flow},
-          p_fix{p_fix} {}
+          p_fix{p_fix},
+          siteprefs{move(sitefitnesses)} {}
 
     bool is_dummy() const { return codon_from == codon_to; }
 
@@ -77,7 +85,7 @@ class Exon {
     // The protein
     Protein protein;
 
-    queue<Substitution> substitutions{};
+    deque<Substitution> substitutions{};
 
     // Constructor of Exon.
     // size: the size of the DNA sequence.
@@ -183,18 +191,29 @@ class Exon {
             assert(non_syn_sub_flow < 10e10);
             assert(syn_mut_flow < 10e10);
             double pfix = substitution_rates[index] / nuc_matrix(n_from, n_to);
-            substitutions.emplace(time_start + time_draw, time_draw, non_syn_sub_flow,
-                non_syn_mut_flow, syn_mut_flow, codon_from, codon_to, n_from, n_to, site, pfix);
-            cout << "DeltaG: " << protein.nativeDeltaG;
+            substitutions.emplace_back(time_start + time_draw, time_draw, non_syn_sub_flow,
+                non_syn_mut_flow, syn_mut_flow, get_marginal_preferences(pop_size), codon_from,
+                codon_to, n_from, n_to, site, pfix);
+            double s = protein.computeMutantSelCoeff(codon_seq, site, codon_from, codon_to);
+            cout << "S=" << s << "; Ne=" << pop_size << "; Pfix=" << Pfix(pop_size, s) << endl;
+            double dg = protein.nativeDeltaG;
+            double ddg = -dg;
+            cout << "ΔG=" << dg;
             if (codonLexico.codon_to_aa[codon_from] != codonLexico.codon_to_aa[codon_to]) {
                 protein.Update(codon_seq, site, codon_from, codon_to);
             }
-            cout << " -> " << protein.nativeDeltaG << " (Pfix = " << pfix << ")" << endl;
+            dg = protein.nativeDeltaG;
+            ddg += dg;
+            ddg_tot += ddg;
+            ddg_abs_tot += abs(ddg);
+            cout << " -> " << dg << "; ΔΔG=" << ddg << "; Pfix=" << pfix << endl;
+            cout << "--------" << endl;
+
             codon_seq[site] = codon_to;
             time_start += time_draw;
         } else {
-            substitutions.emplace(
-                time_end, time_end - time_start, non_syn_sub_flow, non_syn_mut_flow, syn_mut_flow);
+            substitutions.emplace_back(time_end, time_end - time_start, non_syn_sub_flow,
+                non_syn_mut_flow, syn_mut_flow, get_marginal_preferences(pop_size));
             time_start = time_end;
         }
         return time_start;
@@ -231,6 +250,27 @@ class Exon {
         }
         return true;
     }
+
+    vector<array<double, 20>> get_marginal_preferences(double const &pop_size) {
+        vector<array<double, 20>> prefs;
+        for (u_long site{0}; site < nbr_sites; site++) {
+            char codon_from = codon_seq[site];
+            array<double, 20> site_prefs{};
+            double tot = 0.0;
+            for (char aa = 0; aa < 20; aa++) {
+                auto it = find(codonLexico.codon_to_aa.begin(), codonLexico.codon_to_aa.end(), aa);
+                assert(it != codonLexico.codon_to_aa.end());
+                char codon_to = distance(codonLexico.codon_to_aa.begin(), it);
+                assert(codonLexico.codon_to_aa[codon_to] == aa);
+                double s = protein.computeMutantSelCoeff(codon_seq, site, codon_from, codon_to);
+                site_prefs[aa] = max(exp(s * pop_size), 1e-8);
+                tot += site_prefs[aa];
+            }
+            for (char aa = 0; aa < 20; aa++) { site_prefs[aa] /= tot; }
+            prefs.push_back(site_prefs);
+        }
+        return prefs;
+    };
 };
 
 static double time_grid_step;
@@ -242,7 +282,7 @@ Trace tracer_sequences;
 class Sequence {
   public:
     // TimeElapsed
-    double time_from_root{0};
+    double time_from_root{0}, time{0};
 
     // Blocks
     vector<Exon> exons;
@@ -311,8 +351,7 @@ class Sequence {
             for (u_long site{0}; site < exon.nbr_sites; site++) {
                 char aa_char = exon.protein.structure_set.native.proteinSeq.at(site);
                 char aa = codonLexico.aa_char_to_aa(aa_char);
-                auto it =
-                    find(codonLexico.codon_to_aa.begin(), codonLexico.codon_to_aa.end(), aa);
+                auto it = find(codonLexico.codon_to_aa.begin(), codonLexico.codon_to_aa.end(), aa);
                 assert(it != codonLexico.codon_to_aa.end());
                 char codon_to = distance(codonLexico.codon_to_aa.begin(), it);
                 exon.codon_seq[site] = codon_to;
@@ -320,7 +359,7 @@ class Sequence {
             exon.protein.Update(exon.codon_seq);
             cout << "DeltaG = " << exon.protein.nativeDeltaG << " (init)" << endl;
         }
-        for (int i = 0; i < nbr_pass; ++i) {
+        for (int i = 0; i < nbr_pass; i++) {
             for (auto &exon : exons) {
                 for (u_long site{0}; site < exon.nbr_sites; site++) {
                     char codon_from = exon.codon_seq[site];
@@ -354,31 +393,16 @@ class Sequence {
     vector<array<double, 20>> get_marginal_preferences() {
         vector<array<double, 20>> prefs;
         for (auto &exon : exons) {
-            for (u_long site{0}; site < exon.nbr_sites; site++) {
-                char codon_from = exon.codon_seq[site];
-                array<double, 20> site_prefs{};
-                double tot = 0.0;
-                for (char aa = 0; aa < 20; aa++) {
-                    auto it = find(
-                        codonLexico.codon_to_aa.begin(), codonLexico.codon_to_aa.end(), aa);
-                    assert(it != codonLexico.codon_to_aa.end());
-                    char codon_to = distance(codonLexico.codon_to_aa.begin(), it);
-                    assert(codonLexico.codon_to_aa[codon_to] == aa);
-                    double s = exon.protein.computeMutantSelCoeff(
-                        exon.codon_seq, site, codon_from, codon_to);
-                    site_prefs[aa] = max(exp(s * pop_size), 1e-8);
-                    tot += site_prefs[aa];
-                }
-                for (char aa = 0; aa < 20; aa++) { site_prefs[aa] /= tot; }
-                prefs.push_back(site_prefs);
-            }
+            auto exon_prefs = exon.get_marginal_preferences(pop_size);
+            prefs.insert(prefs.end(), exon_prefs.begin(), exon_prefs.end());
         }
+        assert(prefs.size() == nbr_sites());
         return prefs;
     }
 
 
     void burn_in(int nbr_sub) {
-        for (int i = 0; i < nbr_sub; ++i) {
+        for (int i = 0; i < nbr_sub; i++) {
             for (auto &exon : exons) {
                 exon.next_substitution(
                     nuc_matrix, pop_size, 0.0, numeric_limits<double>::infinity(), true);
@@ -389,12 +413,17 @@ class Sequence {
     }
 
     bool check_consistency() const {
-        for (size_t i = 1; i < interspersed_substitutions.size(); ++i) {
+        for (size_t i = 1; i < interspersed_substitutions.size(); i++) {
             if (abs(interspersed_substitutions.at(i).time_between_event -
                     (interspersed_substitutions.at(i).time_event -
                         interspersed_substitutions.at(i - 1).time_event)) > 1e-6) {
                 return false;
             }
+        }
+        for (auto const &exon : exons) {
+            double total_time = 0;
+            for (auto const &sub : exon.substitutions) { total_time += sub.time_between_event; }
+            if (abs(total_time - time) > 1e-4) { return false; }
         }
         return is_sorted(interspersed_substitutions.begin(), interspersed_substitutions.end(),
             [](const Substitution &a, const Substitution &b) -> bool {
@@ -402,21 +431,84 @@ class Sequence {
             });
     };
 
+    tuple<double, double> theoretical_dnd0(vector<array<double, 20>> const &avg_siteprefs) {
+        double dnd0{0}, dnd0_pred{0};
+        for (auto const &exon : exons) {
+            // Compute theoretical_dn_dn0 and theoretical_omega
+            vector<char> backward_seq = exon.codon_seq;
+            for (auto it = exon.substitutions.crbegin(); it != exon.substitutions.crend(); it++) {
+                double sub_dnd0{0}, sub_dnd0_pred{0};
+                if (!it->is_dummy()) {
+                    assert(backward_seq[it->site] == it->codon_to);
+                    backward_seq[it->site] = it->codon_from;
+                }
+                for (u_long site = 0; site < exon.nbr_sites; site++) {
+                    char codon_from = backward_seq[site];
+                    double site_dn{0}, site_dn_pred{0}, site_dn0{0};
+
+                    array<tuple<char, char, char>, 9> neighbors =
+                        codonLexico.codon_to_neighbors[codon_from];
+                    for (char neighbor{0}; neighbor < 9; neighbor++) {
+                        char codon_to{0}, n_from{0}, n_to{0};
+                        tie(codon_to, n_from, n_to) = neighbors[neighbor];
+
+
+                        if (codonLexico.codon_to_aa[codon_to] == 20 or
+                            codonLexico.codon_to_aa[codon_from] ==
+                                codonLexico.codon_to_aa[codon_to]) {
+                            continue;
+                        }
+
+                        double mut = nuc_matrix.normalized_rate(n_from, n_to);
+                        site_dn0 += mut;
+
+                        double r = it->siteprefs[site][codonLexico.codon_to_aa[codon_from]] /
+                                   it->siteprefs[site][codonLexico.codon_to_aa[codon_to]];
+                        double pfix = -log(r) / (1 - r);
+                        site_dn += mut * pfix;
+
+                        double r_pred =
+                            avg_siteprefs.at(
+                                site + exon.position)[codonLexico.codon_to_aa[codon_from]] /
+                            avg_siteprefs.at(
+                                site + exon.position)[codonLexico.codon_to_aa[codon_to]];
+                        double pfix_pred = -log(r_pred) / (1 - r_pred);
+                        site_dn_pred += mut * pfix_pred;
+                    }
+
+                    sub_dnd0 += site_dn / site_dn0;
+                    sub_dnd0_pred += site_dn_pred / site_dn0;
+                }
+
+                double t = it->time_between_event / time;
+                dnd0 += sub_dnd0 * t;
+                dnd0_pred += sub_dnd0_pred * t;
+            }
+        }
+        dnd0 /= nbr_sites();
+        dnd0_pred /= nbr_sites();
+        return make_tuple(dnd0, dnd0_pred);
+    }
+
     void intersperse_exon_substitutions() {
         // Find time of the next substitutions
         // At the same time sum the mut flow and sub flow
+        vector<deque<Substitution>> exon_subs(exons.size());
+        transform(exons.begin(), exons.end(), exon_subs.begin(),
+            [](Exon const &e) { return e.substitutions; });
+
         while (true) {
-            auto exon_next_sub =
-                min_element(exons.begin(), exons.end(), [](const Exon &a, const Exon &b) -> bool {
-                    return a.substitutions.front().time_event <= b.substitutions.front().time_event;
+            auto exon_next_sub = min_element(exon_subs.begin(), exon_subs.end(),
+                [](const deque<Substitution> &a, const deque<Substitution> &b) -> bool {
+                    return a.front().time_event <= b.front().time_event;
                 });
-            auto sub = exon_next_sub->substitutions.front();
+            auto sub = exon_next_sub->front();
             if (sub.is_dummy()) {
-                for (auto &exon : exons) {
-                    assert(exon.substitutions.front().is_dummy());
-                    assert(exon.substitutions.front().time_event == sub.time_event);
-                    exon.substitutions.pop();
-                    assert(exon.substitutions.empty());
+                for (auto &subs : exon_subs) {
+                    assert(subs.front().is_dummy());
+                    assert(subs.front().time_event == sub.time_event);
+                    subs.pop_front();
+                    assert(subs.empty());
                 }
                 break;
             } else {
@@ -427,13 +519,13 @@ class Sequence {
                 sub.non_syn_sub_flow = 0;
                 sub.non_syn_mut_flow = 0;
                 sub.syn_mut_flow = 0;
-                for (auto const &exon : exons) {
-                    sub.non_syn_sub_flow += exon.substitutions.front().non_syn_sub_flow;
-                    sub.non_syn_mut_flow += exon.substitutions.front().non_syn_mut_flow;
-                    sub.syn_mut_flow += exon.substitutions.front().syn_mut_flow;
+                for (auto const &subs : exon_subs) {
+                    sub.non_syn_sub_flow += subs.front().non_syn_sub_flow;
+                    sub.non_syn_mut_flow += subs.front().non_syn_mut_flow;
+                    sub.syn_mut_flow += subs.front().syn_mut_flow;
                 }
                 interspersed_substitutions.push_back(sub);
-                exon_next_sub->substitutions.pop();
+                exon_next_sub->pop_front();
             }
         }
     };
@@ -463,6 +555,7 @@ class Sequence {
             for (auto &exon : exons) { exon.run_substitutions(nuc_matrix, pop_size, 0.0, t_max); }
             intersperse_exon_substitutions();
             update_brownian(delta / 2);
+            time = t_max;
             time_from_root += t_max;
             assert(check_consistency());
         } else {
@@ -518,7 +611,7 @@ class Sequence {
             cerr << "There is no synonymous substitutions, dN/dS can't be computed!" << endl;
             return .0;
         } else {
-            return dn / ds;
+            return (dn * ds0) / (dn0 * ds);
         }
     }
 
@@ -557,10 +650,18 @@ class Sequence {
         double geom_pop_size = piecewise_multivariate.GeometricPopSize();
         piecewise_multivariate.add_to_tree(tree, node, geom_pop_size);
 
-        tree.set_tag(node, "Branch_dNdN0_flow_based", d_to_string(flow_based_dn_dn0()));
-        tree.set_tag(node, "Branch_dNdN0_count_based", d_to_string(count_based_dn_dn0()));
-        tree.set_tag(node, "Branch_dNdS_event_based", d_to_string(event_based_dn_ds()));
-        tree.set_tag(node, "Branch_dNdS_count_based", d_to_string(count_based_dn_ds()));
+        double flow_dn_dn0 = flow_based_dn_dn0();
+        double count_dn_dn0 = count_based_dn_dn0();
+        double event_dn_ds = event_based_dn_ds();
+        double count_dn_ds = count_based_dn_ds();
+        dnd0_event_tot += flow_dn_dn0 * tree.node_length(node);
+        dnd0_count_tot += count_dn_dn0 * tree.node_length(node);
+        dnds_event_tot += event_dn_ds * tree.node_length(node);
+        dnds_count_tot += count_dn_ds * tree.node_length(node);
+        tree.set_tag(node, "Branch_dNdN0_flow_based", d_to_string(flow_dn_dn0));
+        tree.set_tag(node, "Branch_dNdN0_count_based", d_to_string(count_dn_dn0));
+        tree.set_tag(node, "Branch_dNdS_event_based", d_to_string(event_dn_ds));
+        tree.set_tag(node, "Branch_dNdS_count_based", d_to_string(count_dn_ds));
 
         for (auto const &sub : interspersed_substitutions) {
             if (!sub.is_dummy()) {
@@ -673,9 +774,7 @@ class Sequence {
     void clear() {
         interspersed_substitutions.clear();
         piecewise_multivariate.clear();
-        for (auto &exon : exons) {
-            while (!exon.substitutions.empty()) { exon.substitutions.pop(); }
-        }
+        for (auto &exon : exons) { exon.substitutions.clear(); }
     }
 };
 
@@ -731,7 +830,7 @@ class Process {
     tuple<long, long> nbr_substitutions() {
         long nbr_non_syn{0}, nbr_syn{0};
 
-        for (auto const seq : sequences) {
+        for (auto const &seq : sequences) {
             nbr_syn += count_if(seq->interspersed_substitutions.begin(),
                 seq->interspersed_substitutions.end(),
                 [](Substitution const &s) { return s.is_synonymous(); });
@@ -742,6 +841,46 @@ class Process {
 
         return make_tuple(nbr_non_syn, nbr_syn);
     }
+
+    void theoretical_dndn0() {
+        // Compute average fitness landscape
+        vector<array<double, 20>> avg_siteprefs(sequences.front()->nbr_sites(), {0});
+        for (auto const &seq : sequences) {
+            for (auto const &exon : seq->exons) {
+                for (auto const &sub : exon.substitutions) {
+                    double t = sub.time_between_event;
+                    for (u_long site = 0; site < exon.nbr_sites; site++) {
+                        for (int aa{0}; aa < 20; aa++) {
+                            avg_siteprefs[exon.position + site][aa] +=
+                                sub.siteprefs[exon.position + site][aa] * t;
+                        }
+                    }
+                }
+            }
+        }
+        double t = tree.total_length();
+        for (auto &sitepref : avg_siteprefs) {
+            double pref_sum{0};
+            for (int aa{0}; aa < 20; aa++) {
+                sitepref[aa] /= t;
+                pref_sum += sitepref[aa];
+            }
+            assert(abs(pref_sum - 1.0) < 1e-4);
+        }
+
+        double dndn0{0}, dndn0_pred{0};
+        for (auto const &seq : sequences) {
+            double branch_dndn0{0}, branch_dndn0_pred{0};
+            tie(branch_dndn0, branch_dndn0_pred) = seq->theoretical_dnd0(avg_siteprefs);
+            dndn0 += branch_dndn0 * seq->time;
+            dndn0_pred += branch_dndn0_pred * seq->time;
+        }
+        dndn0 /= tree.total_length();
+        dndn0_pred /= tree.total_length();
+        cout << "dNdN0 along the simulation is " << dndn0 << endl;
+        cout << "dNdN0 predicted by the simulation is " << dndn0_pred << endl;
+        cout << "sigma is " << dndn0 / dndn0_pred << endl;
+    }
 };
 
 // Initialize static variables
@@ -750,21 +889,21 @@ double Process::years_computed = 0.0;
 class SimuEvolArgParse : public SimuArgParse {
   public:
     explicit SimuEvolArgParse(CmdLine &cmd) : SimuArgParse(cmd) {}
+
     TCLAP::ValueArg<double> pop_size{
         "n", "population_size", "Population size (at the root)", false, 500, "u_long", cmd};
     TCLAP::ValueArg<u_long> nbr_grid_step{"d", "nbr_grid_step",
         "Number of intervals in which to discretize the brownian motion", false, 100, "u_long",
         cmd};
-    TCLAP::ValueArg<string> pdb_folder{"", "pdb_folder",
-        "The folder containing the .pdb files", false, "data/pdbfiles", "string", cmd};
+    TCLAP::ValueArg<string> pdb_folder{"", "pdb_folder", "The folder containing the .pdb files",
+        false, "data/pdbfiles", "string", cmd};
     TCLAP::ValueArg<u_long> nbr_exons{
         "", "nbr_exons", "Number of exons in the protein", false, 5000, "u_long", cmd};
     TCLAP::SwitchArg initialisation{
         "", "initialisation", "Initialize the amino-acid sequence.", cmd, false};
-    TCLAP::ValueArg<double> cut_off{
-            "", "cut_off", "The distance (in angstrom) to determine if 2 sites are in contact", false, 7.0, "double", cmd};
-
-
+    TCLAP::ValueArg<double> cut_off{"", "cut_off",
+        "The distance (in angstrom) to determine if 2 sites are in contact", false, 7.0, "double",
+        cmd};
 };
 
 int main(int argc, char *argv[]) {
@@ -803,7 +942,7 @@ int main(int argc, char *argv[]) {
     u_long exon_size{args.exons.getValue()};
     u_long nbr_sites{nbr_exons * exon_size};
     assert(exon_size <= 300);
-    assert(0 <= exon_size and exon_size <= nbr_sites);
+    assert(exon_size <= nbr_sites);
 
     Tree tree(newick_path);
     tree.set_root_age(root_age);
@@ -886,8 +1025,22 @@ int main(int argc, char *argv[]) {
     root_sequence.write_matrices(output_path);
     Process simu_process(tree, root_sequence);
     simu_process.run(output_path);
+    simu_process.theoretical_dndn0();
     long nbr_non_synonymous, nbr_synonymous;
     tie(nbr_non_synonymous, nbr_synonymous) = simu_process.nbr_substitutions();
+
+    dnd0_event_tot /= tree.total_length();
+    dnd0_count_tot /= tree.total_length();
+    dnds_event_tot /= tree.total_length();
+    dnds_count_tot /= tree.total_length();
+
+    cout << "dnd0_event_tot is :" << dnd0_event_tot << endl;
+    cout << "dnd0_count_tot is :" << dnd0_count_tot << endl;
+    cout << "dnds_event_tot is :" << dnds_event_tot << endl;
+    cout << "dnds_count_tot is :" << dnds_count_tot << endl;
+
+    cout << "dDG mean is :" << ddg_tot / nbr_non_synonymous << endl;
+    cout << "|dDG| mean is :" << ddg_abs_tot / nbr_non_synonymous << endl;
 
     // .txt output
     Trace trace;
@@ -907,6 +1060,7 @@ int main(int argc, char *argv[]) {
     cout << nbr_sites * 3 * (mutation_rate_per_generation / generation_time) * tree.total_length()
          << " expected substitutions." << endl;
     cout << nbr_synonymous + nbr_non_synonymous << " simulated substitutions." << endl;
+    cout << nbr_non_synonymous << " simulated non-synonymous substitutions." << endl;
     cout << "Statistics summarized in: " << output_path + ".tsv" << endl;
     cout << "Fasta file in: " << output_path + ".fasta" << endl;
     cout << "Alignment (.ali) file in: " << output_path + ".ali" << endl;

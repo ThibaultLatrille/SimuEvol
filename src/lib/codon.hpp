@@ -104,7 +104,7 @@ class Codon {
     // Function to map a triplet of 3 nucleotides (1st, 2nd and 3rd positions) to the
     // corresponding codon. n_1 : the nucleotide in 1st position n_2 : the nucleotide in 2nd
     // position n_3 : the nucleotide in 3rd position
-    char triplet_to_codon(char n_1, char n_2, char n_3) {
+    static char triplet_to_codon(char n_1, char n_2, char n_3) {
         assert(0 <= n_1 and n_1 <= 3);
         assert(0 <= n_2 and n_2 <= 3);
         assert(0 <= n_3 and n_3 <= 3);

@@ -108,45 +108,52 @@ class Population {
     u_long elapsed{0};
 
     // Beings composing the population
-    vector<Being> beings{};
+    vector<Being> parents{};
+    double delta_f{0};
+    double delta_f_5pct_low{0};
+    double delta_f_5pct_high{0};
+    double delta_f_50pct_low{0};
+    double delta_f_50pct_high{0};
 
     explicit Population(u_long population_size) : population_size{population_size} {
-        beings.resize(population_size);
+        parents.resize(population_size);
     };
 
     void mutation() {
-        for (auto &being : beings) { being.mutation(); }
+        for (auto &being : parents) { being.mutation(); }
     };
 
     void selection() {
-        vector<double> fitness_beings(beings.size(), 0.0);
-        transform(beings.begin(), beings.end(), fitness_beings.begin(),
-            [](Being &b) { return b.fitness; });
+        vector<double> fitness_beings(parents.size(), 0.0);
+        transform(parents.begin(), parents.end(), fitness_beings.begin(),
+                  [](Being &b) { return b.fitness; });
         discrete_distribution<u_long> parent_distr(fitness_beings.begin(), fitness_beings.end());
 
-        vector<Being> next_beings;
-        next_beings.reserve(beings.size());
-        for (u_long i_being{0}; i_being < beings.size(); i_being++) {
+        vector<Being> children;
+        children.reserve(parents.size());
+        for (u_long i_being{0}; i_being < parents.size(); i_being++) {
             u_long mum = parent_distr(generator);
             u_long dad = mum;
             while (dad == mum) { dad = parent_distr(generator); }
-            next_beings.emplace_back(beings[mum], beings[dad]);
+            children.emplace_back(parents[mum], parents[dad]);
         }
-        beings = move(next_beings);
+        mean_delta_f(parents, children);
+        parents = move(children);
     };
 
     void random_mating() {
-        uniform_int_distribution<u_long> parent_distr(0, beings.size() - 1);
+        uniform_int_distribution<u_long> parent_distr(0, parents.size() - 1);
 
-        vector<Being> next_beings;
-        next_beings.reserve(beings.size());
-        for (u_long i_being{0}; i_being < beings.size(); i_being++) {
+        vector<Being> children;
+        children.reserve(parents.size());
+        for (u_long i_being{0}; i_being < parents.size(); i_being++) {
             u_long mum = parent_distr(generator);
             u_long dad = mum;
             while (dad == mum) { dad = parent_distr(generator); }
-            next_beings.emplace_back(beings[mum], beings[dad]);
+            children.emplace_back(parents[mum], parents[dad]);
         }
-        beings = move(next_beings);
+        mean_delta_f(parents, children);
+        parents = move(children);
     };
 
     void run(
@@ -178,28 +185,45 @@ class Population {
         }
     };
 
+    void mean_delta_f(const vector<Being> &pop, const vector<Being> &next_pop){
+        vector<double> delta_fitnesses(population_size, 0);
+        for (size_t i = 0; i < delta_fitnesses.size(); ++i) {
+            delta_fitnesses[i] = next_pop[i].fitness - pop[i].fitness;
+        }
+        sort(delta_fitnesses.begin(), delta_fitnesses.end());
+        delta_f = avg(delta_fitnesses);
+        auto low_bound = static_cast<u_long>(0.05 * (population_size - 1));
+        auto fifty_bound = static_cast<u_long>(0.5 * (population_size - 1));
+        auto up_bound = static_cast<u_long>(0.95 * (population_size - 1));
+        delta_f_5pct_low = accumulate(delta_fitnesses.begin(), delta_fitnesses.begin() + low_bound, 0.0) / low_bound;
+        delta_f_5pct_high = accumulate(delta_fitnesses.begin() + up_bound, delta_fitnesses.end(), 0.0) / (population_size - up_bound);
+
+        delta_f_50pct_low = accumulate(delta_fitnesses.begin(), delta_fitnesses.begin() + fifty_bound, 0.0) / fifty_bound;
+        delta_f_50pct_high = accumulate(delta_fitnesses.begin() + fifty_bound, delta_fitnesses.end(), 0.0) / (population_size - fifty_bound);
+    }
+
     void output_state(string &output_filename) const {
         auto low_bound = static_cast<u_long>(0.05 * (population_size - 1));
         auto up_bound = static_cast<u_long>(0.95 * (population_size - 1));
 
         vector<double> fitnesses(population_size, 0);
-        vector<double> distances(population_size, 0);
+        transform(parents.begin(), parents.end(), fitnesses.begin(),
+                  [](Being const &b) { return b.fitness; });
 
-        transform(beings.begin(), beings.end(), fitnesses.begin(),
-            [](Being const &b) { return b.fitness; });
+        vector<double> distances(population_size, 0);
         transform(
-            beings.begin(), beings.end(), distances.begin(), [](Being const &b) { return b.d; });
+                parents.begin(), parents.end(), distances.begin(), [](Being const &b) { return b.d; });
 
         sort(fitnesses.begin(), fitnesses.end());
         sort(distances.begin(), distances.end());
 
-        double f_tot = accumulate(fitnesses.begin(), fitnesses.end(), 0.0);
+        double f_tot = sum(fitnesses);
         double entropy = 0;
         for (auto const &f : fitnesses) { entropy += f * log(f / f_tot); }
         entropy = exp(-entropy / f_tot) / fitnesses.size();
 
         vector<double> p(Being::complexity, 0.0);
-        for (auto const &being : beings) {
+        for (auto const &being : parents) {
             for (auto const &chr : being.genome) {
                 for (u_long i = 0; i < Being::complexity; ++i) { p[i] += chr.phenotype[i]; }
             }
@@ -218,6 +242,11 @@ class Population {
         tsv << elapsed << "\t" << 2 << "\tDistance upper bound\t" << distances[up_bound] << endl;
         tsv << elapsed << "\t" << 2 << "\tMean distance\t" << avg(distances) << endl;
         tsv << elapsed << "\t" << 3 << "\tDistance of mean phenotype\t" << d << endl;
+        tsv << elapsed << "\t" << 4 << "\tΔF mean\t" << delta_f << endl;
+        tsv << elapsed << "\t" << 4 << "\tΔF 5% low\t" << delta_f_5pct_low << endl;
+        tsv << elapsed << "\t" << 4 << "\tΔF 5% high\t" << delta_f_5pct_high << endl;
+        tsv << elapsed << "\t" << 4 << "\tΔF 50% low\t" << delta_f_50pct_low << endl;
+        tsv << elapsed << "\t" << 4 << "\tΔF 50% high\t" << delta_f_50pct_high << endl;
         tsv << elapsed << "\t" << 0 << "\tVar fitness\t" << variance(fitnesses) << endl;
         tsv << elapsed << "\t" << 0 << "\tVar distance\t" << variance(distances) << endl;
         tsv.close();
@@ -297,9 +326,9 @@ int main(int argc, char *argv[]) {
     Being::q = args.epistasis.getValue();
     cout << "The epistasis of the fitness function is " << Being::q << "." << endl;
 
-    u_long nbr_intervals = 10;
-    u_long interval_length = 10;
-    u_long relax_length = 100;
+    u_long nbr_intervals = 500;
+    u_long interval_length = 1;
+    u_long relax_length = 500;
 
     output_path += "/" + to_string(pop_size) + "_" + to_string(Being::k) + "_" +
                    to_string(Being::mu) + "_" + to_string(Being::r) + "_" +
