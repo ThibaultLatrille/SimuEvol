@@ -58,6 +58,6 @@ test: debug
 	@echo "\n\e[35m\e[1m== SimuPoly run ==============================================================\e[0m"
 	build/SimuPoly --preferences data/preferences/gal4.prefs --newick data/trees/mammal_subtree.tre.annotated --nuc_matrix data/matrices/nucleotide_GTR.tsv --precision_matrix data/matrices/precision3x3.tsv --exon_size 25 --noise_sigma 0.1 --output test/SimuPoly_gal4
 	@echo "\n\e[35m\e[1m== SimuGeo run ===============================================================\e[0m"
-	build/SimuDiv --complexity 3 --newick data/trees/mammal_subtree.tre.annotated --nuc_matrix data/matrices/nucleotide_GTR.tsv --precision_matrix data/matrices/precision3x3.tsv --exon_size 200 --nbr_exons 5 --output test/SimuGeo
+	build/SimuGeo --complexity 3 --newick data/trees/mammal_subtree.tre.annotated --nuc_matrix data/matrices/nucleotide_GTR.tsv --precision_matrix data/matrices/precision3x3.tsv --exon_size 200 --nbr_exons 5 --output test/SimuGeo
 	@echo "\n\e[35m\e[1m== SimuRelax run =============================================================\e[0m"
 	build/SimuRelax --output test/SimuRelax_run
