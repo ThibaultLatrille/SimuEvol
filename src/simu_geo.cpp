@@ -10,8 +10,8 @@
 using namespace TCLAP;
 using namespace std;
 
-double dnds_count_tot{0}, dnds_event_tot{0}, dnd0_count_tot{0}, dnd0_event_tot{0}, ddg_tot{0},
-    ddg_abs_tot{0};
+double dnds_count_tot{0}, dnds_event_tot{0}, dnd0_count_tot{0}, dnd0_event_tot{0};
+double s_tot{0}, S_tot{0}, s_abs_tot{0}, S_abs_tot{0}, pfix_tot{0};
 
 normal_distribution<double> normal_distr(0.0, 1.0);
 
@@ -127,8 +127,8 @@ class Exon {
     // for the substitution event to occur. If there is not enough time given, no substitution event
     // is computed and the method returns 0. time_left: The time available for a substitution event
     // to occur.
-    double next_substitution(NucleotideRateMatrix const &nuc_matrix, double pop_size, double time_start,
-        double time_end, bool only_non_syn = false) {
+    double next_substitution(NucleotideRateMatrix const &nuc_matrix, double pop_size,
+        double time_start, double time_end, bool only_non_syn = false) {
         // Number of possible substitutions is 9 times the number of sites (3 substitutions for each
         // 3 possible positions).
         u_long nbr_substitutions{9 * nbr_sites};
@@ -215,7 +215,18 @@ class Exon {
             substitutions.emplace(time_start + time_draw, time_draw, non_syn_sub_flow,
                 non_syn_mut_flow, syn_mut_flow, codon_from, codon_to, n_from, n_to, site);
             codon_seq[site] = codon_to;
-            Update(site, codon_from, codon_to);
+
+            if (codonLexico.codon_to_aa[codon_from] != codonLexico.codon_to_aa[codon_to]) {
+                double s = computeMutantSelCoeff(site, codon_from, codon_to);
+                s_tot += s;
+                s_abs_tot += abs(s);
+                S_tot += 4 * s * pop_size;
+                S_abs_tot += abs(4 * s * pop_size);
+                pfix_tot += Pfix(pop_size, s);
+
+                Update(site, codon_from, codon_to);
+            }
+
             time_start += time_draw;
         } else {
             substitutions.emplace(
@@ -260,7 +271,9 @@ class Exon {
     // effects
     void run_substitutions(
         NucleotideRateMatrix const &nuc_matrix, double pop_size, double t_start, double t_end) {
-        while (t_start < t_end) { t_start = next_substitution(nuc_matrix, pop_size, t_start, t_end); }
+        while (t_start < t_end) {
+            t_start = next_substitution(nuc_matrix, pop_size, t_start, t_end);
+        }
     }
 };
 
@@ -458,7 +471,11 @@ class Sequence {
             if (substitution.is_non_synonymous()) { dn++; }
             dn0 += substitution.non_syn_mut_flow * substitution.time_between_event;
         }
-        return dn / dn0;
+        if (dn0 == .0) {
+            return .0;
+        } else {
+            return dn / dn0;
+        }
     }
 
     double flow_based_dn_dn0() const {
@@ -467,7 +484,11 @@ class Sequence {
             dn0 += substitution.non_syn_mut_flow * substitution.time_between_event;
             dn += substitution.non_syn_sub_flow * substitution.time_between_event;
         }
-        return dn / dn0;
+        if (dn0 == .0) {
+            return .0;
+        } else {
+            return dn / dn0;
+        }
     }
 
     // Simulated omega from the substitutions
@@ -692,8 +713,8 @@ double Process::years_computed = 0.0;
 class SimuEvolArgParse : public SimuArgParse {
   public:
     explicit SimuEvolArgParse(CmdLine &cmd) : SimuArgParse(cmd) {}
-    TCLAP::ValueArg<double> pop_size{
-        "b", "pop_size", "Effective population size", false, 1.0, "double", cmd};
+    TCLAP::ValueArg<double> population_size{
+        "b", "population_size", "Effective population size", false, 1.0, "double", cmd};
     TCLAP::ValueArg<u_long> nbr_grid_step{"d", "nbr_grid_step",
         "Number of intervals in which discretize the brownian motion", false, 100, "u_long", cmd};
     TCLAP::ValueArg<u_long> complexity{
@@ -727,7 +748,7 @@ int main(int argc, char *argv[]) {
     u_long nbr_grid_step = args.nbr_grid_step.getValue();
     assert(nbr_grid_step > 0);
     time_grid_step = root_age / nbr_grid_step;
-    double pop_size{args.pop_size.getValue()};
+    double pop_size{args.population_size.getValue()};
     assert(pop_size >= 0.0);
     bool branch_wise_correlation{args.branch_wise_correlation.getValue()};
     u_long complexity = args.complexity.getValue();
@@ -782,7 +803,8 @@ int main(int argc, char *argv[]) {
     int burn_in_aa_changes = exon_size * 2;
     int equilibrium_nbr_rounds = 15;
     cout << "DNA Sequence optimizing site marginals for " << equilibrium_nbr_rounds
-         << " rounds, and running for " << burn_in_aa_changes << " amino-acid changes (per exon)" << endl;
+         << " rounds, and running for " << burn_in_aa_changes << " amino-acid changes (per exon)"
+         << endl;
     root_sequence.at_equilibrium(equilibrium_nbr_rounds);
     root_sequence.burn_in(burn_in_aa_changes);
 
@@ -809,6 +831,15 @@ int main(int argc, char *argv[]) {
         static_cast<double>(nbr_synonymous + nbr_non_synonymous) / nbr_sites);
     trace.add("#synonymous_substitutions", nbr_synonymous);
     trace.add("#non_synonymous_substitutions", nbr_non_synonymous);
+    trace.add("dnd0_event_tot", dnd0_event_tot);
+    trace.add("dnd0_count_tot", dnd0_count_tot);
+    trace.add("dnds_event_tot", dnds_event_tot);
+    trace.add("dnds_count_tot", dnds_count_tot);
+    trace.add("<Pfix>", pfix_tot / nbr_non_synonymous);
+    trace.add("<s>", s_tot / nbr_non_synonymous);
+    trace.add("<S=4Nes>", S_tot / nbr_non_synonymous);
+    trace.add("<|s|>", s_abs_tot / nbr_non_synonymous);
+    trace.add("<|S=4Nes|>", S_abs_tot / nbr_non_synonymous);
     trace.write_tsv(output_path);
 
     tracer_traits.write_tsv(output_path + ".traits");

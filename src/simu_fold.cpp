@@ -13,7 +13,8 @@ using namespace TCLAP;
 using namespace std;
 
 double dnds_count_tot{0}, dnds_event_tot{0}, dnd0_count_tot{0}, dnd0_event_tot{0}, ddg_tot{0},
-    ddg_abs_tot{0};
+    ddg_abs_tot{0}, dg_tot{0};
+double s_tot{0}, S_tot{0}, s_abs_tot{0}, S_abs_tot{0}, pfix_tot{0};
 
 double Pfix(double const &pop_size, double const &s) {
     double S = 4 * s * pop_size;
@@ -86,6 +87,7 @@ class Exon {
     Protein protein;
 
     deque<Substitution> substitutions{};
+    deque<Substitution> substitutions_replay{};
 
     // Constructor of Exon.
     // size: the size of the DNA sequence.
@@ -96,6 +98,7 @@ class Exon {
           codon_seq(nbr_sites, 0),
           protein(codon_seq, structure_set) {
         assert(substitutions.empty());
+        assert(substitutions_replay.empty());
     }
 
     // Method computing the next substitution event to occur, and the time for it to happen.
@@ -105,7 +108,7 @@ class Exon {
     // is computed and the method returns 0. time_left: The time available for a substitution event
     // to occur.
     double next_substitution(NucleotideRateMatrix const &nuc_matrix, double pop_size,
-        double time_start, double time_end, bool only_non_syn = false) {
+        double time_start, double time_end, bool only_non_syn) {
         // Number of possible substitutions is 9 times the number of sites (3 substitutions for each
         // 3 possible positions).
         u_long nbr_substitutions{9 * nbr_sites};
@@ -149,7 +152,7 @@ class Exon {
                     non_syn_mut_flow += rate_substitution;
                     double s = protein.computeMutantSelCoeff(codon_seq, site, codon_from, codon_to);
                     double pfix = Pfix(pop_size, s);
-                    assert(CheckSelCoeff(site, codon_to, s));
+                    // assert(CheckSelCoeff(site, codon_to, s));
                     rate_substitution *= pfix;
                     non_syn_sub_flow += rate_substitution;
                 } else {
@@ -188,26 +191,43 @@ class Exon {
             tie(codon_to, n_from, n_to) = neighbors[index % 9];
 
             assert(non_syn_mut_flow < 10e10);
-            assert(non_syn_sub_flow < 10e10);
             assert(syn_mut_flow < 10e10);
             double pfix = substitution_rates[index] / nuc_matrix(n_from, n_to);
             substitutions.emplace_back(time_start + time_draw, time_draw, non_syn_sub_flow,
                 non_syn_mut_flow, syn_mut_flow, get_marginal_preferences(pop_size), codon_from,
                 codon_to, n_from, n_to, site, pfix);
-            double s = protein.computeMutantSelCoeff(codon_seq, site, codon_from, codon_to);
-            cout << "S=" << s << "; Ne=" << pop_size << "; Pfix=" << Pfix(pop_size, s) << endl;
-            double dg = protein.nativeDeltaG;
-            double ddg = -dg;
-            cout << "ΔG=" << dg;
+
             if (codonLexico.codon_to_aa[codon_from] != codonLexico.codon_to_aa[codon_to]) {
+
+                double s = protein.computeMutantSelCoeff(codon_seq, site, codon_from, codon_to);
+                // cout << "S=" << s << "; Ne=" << pop_size << "; Pfix=" << Pfix(pop_size, s) <<
+                // endl;
+
+                if (!only_non_syn) {
+                    s_tot += s;
+                    s_abs_tot += abs(s);
+                    S_tot += 4 * s * pop_size;
+                    S_abs_tot += abs(4 * s * pop_size);
+                    pfix_tot += Pfix(pop_size, s);
+
+                }
+
+                double dg = protein.nativeDeltaG;
+                double ddg = -dg;
+                // cout << "ΔG=" << dg;
+
                 protein.Update(codon_seq, site, codon_from, codon_to);
+
+                dg = protein.nativeDeltaG;
+                ddg += dg;
+                // cout << " -> " << dg << "; ΔΔG=" << ddg << "; Pfix=" << pfix << endl;
+                // cout << "--------" << endl;
+                if (!only_non_syn) {
+                    dg_tot += dg;
+                    ddg_tot += ddg;
+                    ddg_abs_tot += abs(ddg);
+                }
             }
-            dg = protein.nativeDeltaG;
-            ddg += dg;
-            ddg_tot += ddg;
-            ddg_abs_tot += abs(ddg);
-            cout << " -> " << dg << "; ΔΔG=" << ddg << "; Pfix=" << pfix << endl;
-            cout << "--------" << endl;
 
             codon_seq[site] = codon_to;
             time_start += time_draw;
@@ -226,7 +246,7 @@ class Exon {
     void run_substitutions(
         NucleotideRateMatrix const &nuc_matrix, double pop_size, double t_start, double t_end) {
         while (t_start < t_end) {
-            t_start = next_substitution(nuc_matrix, pop_size, t_start, t_end);
+            t_start = next_substitution(nuc_matrix, pop_size, t_start, t_end, false);
         }
     }
 
@@ -235,18 +255,10 @@ class Exon {
         mutant_seq[site] = codon_to;
         double full_cumpute_s = protein.computeMutantSelCoeff(codon_seq, mutant_seq);
 
-        if (s > 100) {
-            if (abs(full_cumpute_s - s) > 1e-3) {
-                cerr << "Houston... we have a problem..." << endl;
-                cerr << s << "\t" << full_cumpute_s;
-                return false;
-            }
-        } else {
-            if (abs(full_cumpute_s - s) > 1e-8) {
-                cerr << "Houston... we have a problem..." << endl;
-                cerr << s << "\t" << full_cumpute_s;
-                return false;
-            }
+        if (abs((full_cumpute_s - s) / s) > 1e-4) {
+            cerr << "Houston... we have a problem..." << endl;
+            cerr << s << " " << full_cumpute_s;
+            return false;
         }
         return true;
     }
@@ -417,18 +429,32 @@ class Sequence {
             if (abs(interspersed_substitutions.at(i).time_between_event -
                     (interspersed_substitutions.at(i).time_event -
                         interspersed_substitutions.at(i - 1).time_event)) > 1e-6) {
+                cerr << "The time between interspersed substitutions does not match the timing of "
+                        "events."
+                     << endl;
                 return false;
             }
         }
         for (auto const &exon : exons) {
             double total_time = 0;
-            for (auto const &sub : exon.substitutions) { total_time += sub.time_between_event; }
-            if (abs(total_time - time) > 1e-4) { return false; }
+            for (auto const &sub : exon.substitutions_replay) {
+                total_time += sub.time_between_event;
+            }
+            if (abs(total_time - time) > 1e-4) {
+                cerr << "The total time of substitutions replay is not equal to the length "
+                        "of the branch."
+                     << endl;
+                return false;
+            }
         }
-        return is_sorted(interspersed_substitutions.begin(), interspersed_substitutions.end(),
-            [](const Substitution &a, const Substitution &b) -> bool {
-                return a.time_event <= b.time_event;
-            });
+        if (!is_sorted(interspersed_substitutions.begin(), interspersed_substitutions.end(),
+                [](const Substitution &a, const Substitution &b) -> bool {
+                    return a.time_event <= b.time_event;
+                })) {
+            cerr << "The interspersed substitutions are not sorted." << endl;
+            return false;
+        }
+        return true;
     };
 
     tuple<double, double> theoretical_dnd0(vector<array<double, 20>> const &avg_siteprefs) {
@@ -436,7 +462,8 @@ class Sequence {
         for (auto const &exon : exons) {
             // Compute theoretical_dn_dn0 and theoretical_omega
             vector<char> backward_seq = exon.codon_seq;
-            for (auto it = exon.substitutions.crbegin(); it != exon.substitutions.crend(); it++) {
+            for (auto it = exon.substitutions_replay.crbegin();
+                 it != exon.substitutions_replay.crend(); it++) {
                 double sub_dnd0{0}, sub_dnd0_pred{0};
                 if (!it->is_dummy()) {
                     assert(backward_seq[it->site] == it->codon_to);
@@ -493,22 +520,35 @@ class Sequence {
     void intersperse_exon_substitutions() {
         // Find time of the next substitutions
         // At the same time sum the mut flow and sub flow
-        vector<deque<Substitution>> exon_subs(exons.size());
-        transform(exons.begin(), exons.end(), exon_subs.begin(),
-            [](Exon const &e) { return e.substitutions; });
+        for (auto &exon : exons) {
+            assert(!exon.substitutions.empty());
+            if (exon.substitutions_replay.empty()) {
+                exon.substitutions_replay.insert(exon.substitutions_replay.end(),
+                    exon.substitutions.begin(), exon.substitutions.end());
+            } else {
+                auto last = exon.substitutions_replay.back();
+                assert(last.is_dummy());
+                exon.substitutions_replay.pop_back();
+                auto first_new = exon.substitutions.front();
+                first_new.time_between_event += last.time_between_event;
+                exon.substitutions_replay.push_back(first_new);
+                exon.substitutions_replay.insert(exon.substitutions_replay.end(),
+                    exon.substitutions.begin() + 1, exon.substitutions.end());
+            }
+        }
 
         while (true) {
-            auto exon_next_sub = min_element(exon_subs.begin(), exon_subs.end(),
-                [](const deque<Substitution> &a, const deque<Substitution> &b) -> bool {
-                    return a.front().time_event <= b.front().time_event;
+            auto exon_next_sub =
+                min_element(exons.begin(), exons.end(), [](const Exon &a, const Exon &b) -> bool {
+                    return a.substitutions.front().time_event <= b.substitutions.front().time_event;
                 });
-            auto sub = exon_next_sub->front();
+            auto sub = exon_next_sub->substitutions.front();
             if (sub.is_dummy()) {
-                for (auto &subs : exon_subs) {
-                    assert(subs.front().is_dummy());
-                    assert(subs.front().time_event == sub.time_event);
-                    subs.pop_front();
-                    assert(subs.empty());
+                for (auto &exon : exons) {
+                    assert(exon.substitutions.front().is_dummy());
+                    assert(exon.substitutions.front().time_event == sub.time_event);
+                    exon.substitutions.pop_front();
+                    assert(exon.substitutions.empty());
                 }
                 break;
             } else {
@@ -519,13 +559,13 @@ class Sequence {
                 sub.non_syn_sub_flow = 0;
                 sub.non_syn_mut_flow = 0;
                 sub.syn_mut_flow = 0;
-                for (auto const &subs : exon_subs) {
-                    sub.non_syn_sub_flow += subs.front().non_syn_sub_flow;
-                    sub.non_syn_mut_flow += subs.front().non_syn_mut_flow;
-                    sub.syn_mut_flow += subs.front().syn_mut_flow;
+                for (auto const &exon : exons) {
+                    sub.non_syn_sub_flow += exon.substitutions.front().non_syn_sub_flow;
+                    sub.non_syn_mut_flow += exon.substitutions.front().non_syn_mut_flow;
+                    sub.syn_mut_flow += exon.substitutions.front().syn_mut_flow;
                 }
                 interspersed_substitutions.push_back(sub);
-                exon_next_sub->pop_front();
+                exon_next_sub->substitutions.pop_front();
             }
         }
     };
@@ -559,18 +599,16 @@ class Sequence {
             time_from_root += t_max;
             assert(check_consistency());
         } else {
-            double time_current = 0.0;
             double step_in_year = time_grid_step;
-            while (time_current < t_max) {
-                if (time_current + step_in_year > t_max) { step_in_year = t_max - time_current; }
+            while (time < t_max) {
+                if (time + step_in_year > t_max) { step_in_year = t_max - time; }
                 update_brownian(delta_log_multivariate(step_in_year / tree.max_distance_to_root()));
                 piecewise_multivariate.AddMultivariate(step_in_year, log_multivariate);
                 for (auto &exon : exons) {
-                    exon.run_substitutions(
-                        nuc_matrix, pop_size, time_current, time_current + step_in_year);
+                    exon.run_substitutions(nuc_matrix, pop_size, time, time + step_in_year);
                 }
                 intersperse_exon_substitutions();
-                time_current += step_in_year;
+                time += step_in_year;
                 time_from_root += step_in_year;
                 assert(check_consistency());
             }
@@ -583,7 +621,11 @@ class Sequence {
             if (substitution.is_non_synonymous()) { dn++; }
             dn0 += substitution.non_syn_mut_flow * substitution.time_between_event;
         }
-        return dn / dn0;
+        if (dn0 == .0) {
+            return .0;
+        } else {
+            return dn / dn0;
+        }
     }
 
     double flow_based_dn_dn0() const {
@@ -592,7 +634,11 @@ class Sequence {
             dn0 += substitution.non_syn_mut_flow * substitution.time_between_event;
             dn += substitution.non_syn_sub_flow * substitution.time_between_event;
         }
-        return dn / dn0;
+        if (dn0 == .0) {
+            return .0;
+        } else {
+            return dn / dn0;
+        }
     }
 
     // Simulated omega from the substitutions
@@ -654,6 +700,7 @@ class Sequence {
         double count_dn_dn0 = count_based_dn_dn0();
         double event_dn_ds = event_based_dn_ds();
         double count_dn_ds = count_based_dn_ds();
+        assert(tree.node_length(node) == time);
         dnd0_event_tot += flow_dn_dn0 * tree.node_length(node);
         dnd0_count_tot += count_dn_dn0 * tree.node_length(node);
         dnds_event_tot += event_dn_ds * tree.node_length(node);
@@ -761,7 +808,7 @@ class Sequence {
                         double s = exon.protein.computeMutantSelCoeff(
                             exon.codon_seq, site, codon_from, codon_to);
                         double pfix = Pfix(pop_size, s);
-                        assert(exon.CheckSelCoeff(site, codon_to, s));
+                        // assert(exon.CheckSelCoeff(site, codon_to, s));
                         subrate *= pfix;
                     }
                     trace.add(key, subrate);
@@ -772,9 +819,13 @@ class Sequence {
     }
 
     void clear() {
+        time = 0.0;
         interspersed_substitutions.clear();
         piecewise_multivariate.clear();
-        for (auto &exon : exons) { exon.substitutions.clear(); }
+        for (auto &exon : exons) {
+            exon.substitutions.clear();
+            exon.substitutions_replay.clear();
+        }
     }
 };
 
@@ -842,17 +893,17 @@ class Process {
         return make_tuple(nbr_non_syn, nbr_syn);
     }
 
-    void theoretical_dndn0() {
+    tuple<double, double> theoretical_dndn0() {
         // Compute average fitness landscape
         vector<array<double, 20>> avg_siteprefs(sequences.front()->nbr_sites(), {0});
         for (auto const &seq : sequences) {
             for (auto const &exon : seq->exons) {
-                for (auto const &sub : exon.substitutions) {
+                for (auto const &sub : exon.substitutions_replay) {
                     double t = sub.time_between_event;
                     for (u_long site = 0; site < exon.nbr_sites; site++) {
                         for (int aa{0}; aa < 20; aa++) {
                             avg_siteprefs[exon.position + site][aa] +=
-                                sub.siteprefs[exon.position + site][aa] * t;
+                                sub.siteprefs.at(site)[aa] * t;
                         }
                     }
                 }
@@ -880,6 +931,7 @@ class Process {
         cout << "dNdN0 along the simulation is " << dndn0 << endl;
         cout << "dNdN0 predicted by the simulation is " << dndn0_pred << endl;
         cout << "sigma is " << dndn0 / dndn0_pred << endl;
+        return tie(dndn0, dndn0_pred);
     }
 };
 
@@ -994,12 +1046,13 @@ int main(int argc, char *argv[]) {
         root_sequence.set_from_dna_string(dna_string);
         cout << "DNA Sequence at equilibrium found and starting from it." << endl;
     } else {
-        int burn_in_aa_changes = 200;
+        int burn_in_aa_changes = 5 * exon_size;
         int equilibrium_nbr_rounds = 15;
         cout << "DNA Sequence at equilibrium not found: optimizing site marginals for "
-             << equilibrium_nbr_rounds << " rounds, and running for " << burn_in_aa_changes
+             << equilibrium_nbr_rounds << " rounds, and burn-in for " << burn_in_aa_changes
              << " amino-acid changes." << endl;
         root_sequence.at_equilibrium(equilibrium_nbr_rounds, 1.0e2);
+        cout << "Starting burn-in." << endl;
         root_sequence.burn_in(burn_in_aa_changes);
         if (args.initialisation.getValue()) {
             ofstream fasta_file;
@@ -1022,10 +1075,11 @@ int main(int argc, char *argv[]) {
     }
 
 
-    root_sequence.write_matrices(output_path);
+    // root_sequence.write_matrices(output_path);
     Process simu_process(tree, root_sequence);
     simu_process.run(output_path);
-    simu_process.theoretical_dndn0();
+    double dndn0, dndn0_pred;
+    tie(dndn0, dndn0_pred) = simu_process.theoretical_dndn0();
     long nbr_non_synonymous, nbr_synonymous;
     tie(nbr_non_synonymous, nbr_synonymous) = simu_process.nbr_substitutions();
 
@@ -1034,13 +1088,15 @@ int main(int argc, char *argv[]) {
     dnds_event_tot /= tree.total_length();
     dnds_count_tot /= tree.total_length();
 
+    cout << "Theoretical dnd0 is :" << dndn0 << endl;
+    cout << "Predicted (by averaging profiles) dnd0 is :" << dndn0_pred << endl;
     cout << "dnd0_event_tot is :" << dnd0_event_tot << endl;
     cout << "dnd0_count_tot is :" << dnd0_count_tot << endl;
     cout << "dnds_event_tot is :" << dnds_event_tot << endl;
     cout << "dnds_count_tot is :" << dnds_count_tot << endl;
-
-    cout << "dDG mean is :" << ddg_tot / nbr_non_synonymous << endl;
-    cout << "|dDG| mean is :" << ddg_abs_tot / nbr_non_synonymous << endl;
+    cout << "ΔG mean is :" << dg_tot / nbr_non_synonymous << endl;
+    cout << "ΔΔG mean is :" << ddg_tot / nbr_non_synonymous << endl;
+    cout << "|ΔΔG| mean is :" << ddg_abs_tot / nbr_non_synonymous << endl;
 
     // .txt output
     Trace trace;
@@ -1049,6 +1105,21 @@ int main(int argc, char *argv[]) {
         static_cast<double>(nbr_synonymous + nbr_non_synonymous) / nbr_sites);
     trace.add("#synonymous_substitutions", nbr_synonymous);
     trace.add("#non_synonymous_substitutions", nbr_non_synonymous);
+    trace.add("dnd0_avg", dndn0);
+    trace.add("dnd0_predicted", dndn0_pred);
+    trace.add("sigma", dndn0 / dndn0_pred);
+    trace.add("dnd0_event_tot", dnd0_event_tot);
+    trace.add("dnd0_count_tot", dnd0_count_tot);
+    trace.add("dnds_event_tot", dnds_event_tot);
+    trace.add("dnds_count_tot", dnds_count_tot);
+    trace.add("<ΔG>", dg_tot / nbr_non_synonymous);
+    trace.add("<ΔΔG>", ddg_tot / nbr_non_synonymous);
+    trace.add("<|ΔΔG|>", ddg_abs_tot / nbr_non_synonymous);
+    trace.add("<Pfix>", pfix_tot / nbr_non_synonymous);
+    trace.add("<s>", s_tot / nbr_non_synonymous);
+    trace.add("<S=4Nes>", S_tot / nbr_non_synonymous);
+    trace.add("<|s|>", s_abs_tot / nbr_non_synonymous);
+    trace.add("<|S=4Nes|>", S_abs_tot / nbr_non_synonymous);
     trace.write_tsv(output_path);
 
     tracer_traits.write_tsv(output_path + ".traits");

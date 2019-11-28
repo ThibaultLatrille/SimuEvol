@@ -51,10 +51,10 @@ format:
 test: debug
 	@rm -rf test
 	@mkdir test
+	@echo "\n\e[35m\e[1m== SimuFold run =========================================================\e[0m"
+	build/SimuFold --pdb_folder data/pdbfiles --newick data/trees/mammal_subtree.tre.annotated --nuc_matrix data/matrices/nucleotide_GTR.tsv --precision_matrix data/matrices/precision3x3.tsv --exon_size 300 --nbr_exons 2 --population_size 1e5 --mutation_rate_per_generation 1e-9 --output test/SimuEpistasis_gal4
 	@echo "\n\e[35m\e[1m== SimuDiv run ===============================================================\e[0m"
 	build/SimuDiv --preferences data/preferences/gal4.prefs --newick data/trees/mammal_subtree.tre.annotated --nuc_matrix data/matrices/nucleotide_GTR.tsv --precision_matrix data/matrices/precision3x3.tsv --exon_size 25 --output test/SimuDiv_gal4
-	@echo "\n\e[35m\e[1m== SimuEpistasis run =========================================================\e[0m"
-	# build/SimuFold --pdb_folder data/pdbfiles --newick data/trees/mammal_subtree.tre.annotated --nuc_matrix data/matrices/nucleotide_GTR.tsv --precision_matrix data/matrices/precision3x3.tsv --exon_size 300 --nbr_exons 1 --population_size 1e5 --output test/SimuEpistasis_gal4
 	@echo "\n\e[35m\e[1m== SimuPoly run ==============================================================\e[0m"
 	build/SimuPoly --preferences data/preferences/gal4.prefs --newick data/trees/mammal_subtree.tre.annotated --nuc_matrix data/matrices/nucleotide_GTR.tsv --precision_matrix data/matrices/precision3x3.tsv --exon_size 25 --noise_sigma 0.1 --output test/SimuPoly_gal4
 	@echo "\n\e[35m\e[1m== SimuGeo run ===============================================================\e[0m"

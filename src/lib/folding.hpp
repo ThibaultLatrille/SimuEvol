@@ -251,6 +251,9 @@ class Structure {
           chainName{protein_chain_names[1]},
           size{size},
           cut_off{cut_off} {
+        for (char c = 0; c < 64; ++c) {
+            assert(codonPDB.codon_string(c) == codonLexico.codon_string(c));
+        }
         readPDBFile(pdb_folder);
         if (!allOK()) { std::cout << "Yell!!!\n"; }
         makeContactVector();
@@ -325,7 +328,7 @@ class Protein {
         // return (exp((deltaG - deltaGMutant) / TEMPERATURE) - 1) / (exp(-deltaG / TEMPERATURE) +
         // 1); return computePFolded(deltaGMutant) / computePFolded(deltaG) - 1.0;
         double fm = computePFolded(deltaGMutant), f = computePFolded(deltaG);
-        return 2 * (fm - f) / (fm + f);
+        return (fm - f) / f;
     }
 
     double DeltaG(std::vector<char> const &codonSeq) const {

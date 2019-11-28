@@ -10,6 +10,9 @@
 using namespace TCLAP;
 using namespace std;
 
+double dnds_count_tot{0}, dnds_event_tot{0}, dnd0_count_tot{0}, dnd0_event_tot{0};
+double s_tot{0}, S_tot{0}, s_abs_tot{0}, S_abs_tot{0}, pfix_tot{0};
+
 class Substitution {
   public:
     u_long site;
@@ -181,8 +184,19 @@ class Exon {
             substitutions.emplace(time_start + time_draw, time_draw, non_syn_sub_flow,
                 non_syn_mut_flow, syn_mut_flow, codom_from, codon_to, n_from, n_to, site);
 
+            if (codonLexico.codon_to_aa[codon_seq[site]] != codonLexico.codon_to_aa[codon_to]) {
+                double s = aa_fitness_profiles[site][codonLexico.codon_to_aa[codon_to]] -
+                           aa_fitness_profiles[site][codonLexico.codon_to_aa[codon_seq[site]]];
+                s_tot += s;
+                s_abs_tot += abs(s);
+                S_tot += 4 * s * beta;
+                S_abs_tot += abs(4 * s * beta);
+                pfix_tot +=
+                    rate_fixation(aa_fitness_profiles[site], codon_seq[site], codon_to, beta);
+            }
+
             if (sel_coef != 0.0) {
-                char aa_from = codonLexico.codon_to_aa[codon_to];
+                char aa_from = codonLexico.codon_to_aa[codon_seq[site]];
                 char aa_to = codonLexico.codon_to_aa[codon_to];
                 aa_fitness_profiles[site][aa_from] += sel_coef;
                 aa_fitness_profiles[site][aa_to] -= sel_coef;
@@ -430,7 +444,11 @@ class Sequence {
             if (substitution.is_non_synonymous()) { dn++; }
             dn0 += substitution.non_syn_mut_flow * substitution.time_between_event;
         }
-        return dn / dn0;
+        if (dn0 == .0) {
+            return .0;
+        } else {
+            return dn / dn0;
+        }
     }
 
     double flow_based_dn_dn0() const {
@@ -439,7 +457,11 @@ class Sequence {
             dn0 += substitution.non_syn_mut_flow * substitution.time_between_event;
             dn += substitution.non_syn_sub_flow * substitution.time_between_event;
         }
-        return dn / dn0;
+        if (dn0 == .0) {
+            return .0;
+        } else {
+            return dn / dn0;
+        }
     }
 
     // Simulated omega from the substitutions
@@ -501,10 +523,19 @@ class Sequence {
             d_to_string(predicted_dn_dn0(nuc_matrix, geom_pop_size)));
         tree.set_tag(node, "Branch_dNdN0_sequence_wise_predicted",
             d_to_string(sequence_wise_predicted_dn_dn0(*parent, nuc_matrix, geom_pop_size)));
-        tree.set_tag(node, "Branch_dNdN0_flow_based", d_to_string(flow_based_dn_dn0()));
-        tree.set_tag(node, "Branch_dNdN0_count_based", d_to_string(count_based_dn_dn0()));
-        tree.set_tag(node, "Branch_dNdS_event_based", d_to_string(event_based_dn_ds()));
-        tree.set_tag(node, "Branch_dNdS_count_based", d_to_string(count_based_dn_ds()));
+
+        double flow_dn_dn0 = flow_based_dn_dn0();
+        double count_dn_dn0 = count_based_dn_dn0();
+        double event_dn_ds = event_based_dn_ds();
+        double count_dn_ds = count_based_dn_ds();
+        dnd0_event_tot += flow_dn_dn0 * tree.node_length(node);
+        dnd0_count_tot += count_dn_dn0 * tree.node_length(node);
+        dnds_event_tot += event_dn_ds * tree.node_length(node);
+        dnds_count_tot += count_dn_ds * tree.node_length(node);
+        tree.set_tag(node, "Branch_dNdN0_flow_based", d_to_string(flow_dn_dn0));
+        tree.set_tag(node, "Branch_dNdN0_count_based", d_to_string(count_dn_dn0));
+        tree.set_tag(node, "Branch_dNdS_event_based", d_to_string(event_dn_ds));
+        tree.set_tag(node, "Branch_dNdS_count_based", d_to_string(count_dn_ds));
 
         for (auto const &sub : interspersed_substitutions) {
             if (!sub.is_dummy()) {
@@ -692,7 +723,7 @@ class SimuEvolArgParse : public SimuArgParse {
     TCLAP::ValueArg<std::string> preferences_path{
         "f", "preferences", "input site-specific preferences path", true, "", "string", cmd};
     TCLAP::ValueArg<double> beta{
-            "b", "beta", "Stringency parameter of the fitness profiles", false, 1.0, "double", cmd};
+        "b", "beta", "Stringency parameter of the fitness profiles", false, 1.0, "double", cmd};
     TCLAP::ValueArg<u_long> nbr_grid_step{"d", "nbr_grid_step",
         "Number of intervals in which discretize the brownian motion", false, 100, "u_long", cmd};
     TCLAP::ValueArg<double> selection{"", "selection",
@@ -793,13 +824,23 @@ int main(int argc, char *argv[]) {
     Sequence root_sequence(fitness_profiles, log_multivariate, exon_size, nuc_matrix,
         transform_matrix, branch_wise_correlation, s, p, all_sites);
     root_sequence.at_equilibrium();
-    root_sequence.write_matrices(output_path);
+    // root_sequence.write_matrices(output_path);
 
     Process simu_process(tree, root_sequence);
     simu_process.run(output_path);
 
     long nbr_non_synonymous, nbr_synonymous;
     tie(nbr_non_synonymous, nbr_synonymous) = simu_process.nbr_substitutions();
+
+    dnd0_event_tot /= tree.total_length();
+    dnd0_count_tot /= tree.total_length();
+    dnds_event_tot /= tree.total_length();
+    dnds_count_tot /= tree.total_length();
+
+    cout << "dnd0_event_tot is :" << dnd0_event_tot << endl;
+    cout << "dnd0_count_tot is :" << dnd0_count_tot << endl;
+    cout << "dnds_event_tot is :" << dnds_event_tot << endl;
+    cout << "dnds_count_tot is :" << dnds_count_tot << endl;
 
     // .txt output
     Trace trace;
@@ -808,6 +849,15 @@ int main(int argc, char *argv[]) {
         static_cast<double>(nbr_synonymous + nbr_non_synonymous) / fitness_profiles.size());
     trace.add("#synonymous_substitutions", nbr_synonymous);
     trace.add("#non_synonymous_substitutions", nbr_non_synonymous);
+    trace.add("dnd0_event_tot", dnd0_event_tot);
+    trace.add("dnd0_count_tot", dnd0_count_tot);
+    trace.add("dnds_event_tot", dnds_event_tot);
+    trace.add("dnds_count_tot", dnds_count_tot);
+    trace.add("<Pfix>", pfix_tot / nbr_non_synonymous);
+    trace.add("<s>", s_tot / nbr_non_synonymous);
+    trace.add("<S=4Nes>", S_tot / nbr_non_synonymous);
+    trace.add("<|s|>", s_abs_tot / nbr_non_synonymous);
+    trace.add("<|S=4Nes|>", S_abs_tot / nbr_non_synonymous);
     trace.write_tsv(output_path);
 
     tracer_traits.write_tsv(output_path + ".traits");
