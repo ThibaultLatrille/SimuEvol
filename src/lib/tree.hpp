@@ -4,6 +4,7 @@
 #include <set>
 #include <vector>
 #include "nhx-parser.hpp"
+#include <fstream>
 
 // a tree with both a vector of parents and a vector of children
 class Tree {

@@ -3,8 +3,8 @@
 #include <fstream>
 #include <iostream>
 #include <numeric>
-#include <unordered_map>
 #include "codon.hpp"
+#include "fitness.hpp"
 
 double LOG_UNFOLDED_STATES = 368.413615;  // log(1.0E160)
 double TEMPERATURE = 0.6;
@@ -318,12 +318,12 @@ class Protein {
     double nativeEnergy = 0.0;
     std::vector<double> unfoldedEnergyVector;
 
-    double computePFolded(double deltaG) const {
+    static double computePFolded(double deltaG) {
         double factor = exp(-deltaG / TEMPERATURE);
         return (factor / (1 + factor));
     }
 
-    double computeSelCoeff(double deltaG, double deltaGMutant) const {
+    static double computeSelCoeff(double deltaG, double deltaGMutant) {
         // s = (f' - f)/f where f = e(-D/T)/(1+e(-D/T))
         // return (exp((deltaG - deltaGMutant) / TEMPERATURE) - 1) / (exp(-deltaG / TEMPERATURE) +
         // 1); return computePFolded(deltaGMutant) / computePFolded(deltaG) - 1.0;

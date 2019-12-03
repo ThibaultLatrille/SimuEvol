@@ -2,9 +2,8 @@
 #include <limits>
 #include "argparse.hpp"
 #include "codon.hpp"
-#include "folding.hpp"
+#include "fitness_folding.hpp"
 #include "io.hpp"
-#include "matrices.hpp"
 #include "random.hpp"
 #include "statistic.hpp"
 #include "tree.hpp"
@@ -15,16 +14,6 @@ using namespace std;
 double dnds_count_tot{0}, dnds_event_tot{0}, dnd0_count_tot{0}, dnd0_event_tot{0}, ddg_tot{0},
     ddg_abs_tot{0}, dg_tot{0};
 double s_tot{0}, S_tot{0}, s_abs_tot{0}, S_abs_tot{0}, pfix_tot{0};
-
-double Pfix(double const &pop_size, double const &s) {
-    double S = 4 * s * pop_size;
-    if ((abs(S)) < 1e-4) {
-        return 1 + S / 2;
-    } else {
-        // return 2 * pop_size * (1.0 - exp(-2.0 * s)) / (1.0 - exp(-4 * pop_size * s));
-        return S / (1.0 - exp(-S));
-    }
-}
 
 class Substitution {
   public:
@@ -209,7 +198,6 @@ class Exon {
                     S_tot += 4 * s * pop_size;
                     S_abs_tot += abs(4 * s * pop_size);
                     pfix_tot += Pfix(pop_size, s);
-
                 }
 
                 double dg = protein.nativeDeltaG;
