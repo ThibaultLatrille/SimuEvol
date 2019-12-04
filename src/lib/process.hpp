@@ -5,8 +5,6 @@
 #include "fitness.hpp"
 #include "random.hpp"
 
-using namespace std;
-
 double dnds_count_tot{0}, dnds_event_tot{0}, dnd0_count_tot{0}, dnd0_event_tot{0};
 double s_tot{0}, S_tot{0}, s_abs_tot{0}, S_abs_tot{0}, pfix_tot{0};
 
@@ -59,12 +57,12 @@ class Exon {
     u_long position;
 
     // The sequence of codons.
-    vector<char> codon_seq;
+    std::vector<char> codon_seq;
 
     // The fitness landscape (cannot be modified), which map genotype->phenotype->fitness.
     ClonableUniquePtr<FitnessState> fitness_state;
 
-    queue<Substitution> substitutions{};
+    std::queue<Substitution> substitutions{};
 
     // Constructor of Exon.
     // size: the size of the DNA sequence.
@@ -96,7 +94,7 @@ class Exon {
         u_long nbr_substitutions{9 * nbr_sites};
 
         // Vector of substitution rates.
-        vector<double> substitution_rates(nbr_substitutions, 0);
+        std::vector<double> substitution_rates(nbr_substitutions, 0);
 
         // Sum of substitution rates.
         double total_substitution_rates{0.};
@@ -110,14 +108,14 @@ class Exon {
             char codon_from = codon_seq[site];
 
             // Array of neighbors of the original codon (codons differing by only 1 mutation).
-            array<tuple<char, char, char>, 9> neighbors =
+            std::array<std::tuple<char, char, char>, 9> neighbors =
                 codonLexico.codon_to_neighbors[codon_from];
 
             // For all possible neighbors.
             for (char neighbor{0}; neighbor < 9; neighbor++) {
                 // Codon after mutation, Nucleotide original and Nucleotide after mutation.
                 char codon_to{0}, n_from{0}, n_to{0};
-                tie(codon_to, n_from, n_to) = neighbors[neighbor];
+                std::tie(codon_to, n_from, n_to) = neighbors[neighbor];
 
                 // Assign the substitution rate given by the method substitution rate.
                 // Rate of substitution initialized to 0 (deleterious mutation)
@@ -148,13 +146,14 @@ class Exon {
 
         // Increment the time by drawing from an exponential distribution (mean equal to the inverse
         // sum of substitution rates).
-        double time_draw = exponential_distribution<double>(total_substitution_rates)(generator);
+        double time_draw =
+            std::exponential_distribution<double>(total_substitution_rates)(generator);
 
         // Substitute the sequence if the time is positive, else there is no substitution but the
         // time left is set to 0.
         assert(total_substitution_rates != 0.0);
         if (time_start + time_draw <= time_end) {
-            discrete_distribution<u_long> substitution_distr(
+            std::discrete_distribution<u_long> substitution_distr(
                 substitution_rates.begin(), substitution_rates.end());
 
             u_long index = substitution_distr(generator);
@@ -162,13 +161,13 @@ class Exon {
             char codom_from = codon_seq[site];
 
             // Array of neighbors of the original codon (codons differing by only 1 mutation).
-            array<tuple<char, char, char>, 9> neighbors =
+            std::array<std::tuple<char, char, char>, 9> neighbors =
                 codonLexico.codon_to_neighbors[codom_from];
 
             // Codon after mutation, Nucleotide original and Nucleotide after mutation.
             char codon_to{0}, n_from{0}, n_to{0};
 
-            tie(codon_to, n_from, n_to) = neighbors[index % 9];
+            std::tie(codon_to, n_from, n_to) = neighbors[index % 9];
 
             assert(non_syn_mut_flow < 10e10);
             assert(syn_mut_flow < 10e10);
@@ -213,7 +212,7 @@ class Sequence {
     double time_from_root{0};
 
     // Blocks
-    vector<Exon> exons;
+    std::vector<Exon> exons;
 
     LogMultivariate log_multivariate;
     double beta{0};
@@ -222,7 +221,7 @@ class Sequence {
 
     EMatrix const &transform_matrix;
     bool branch_wise;
-    vector<Substitution> interspersed_substitutions;
+    std::vector<Substitution> interspersed_substitutions;
     PieceWiseMultivariate piecewise_multivariate{};
 
     Sequence(FitnessModel &seq_fitness, LogMultivariate &log_multi,
@@ -259,22 +258,23 @@ class Sequence {
 
     u_long nbr_nucleotides() const { return 3 * nbr_sites(); }
 
-    void set_from_exon_aa_seq(string const &exon_aa_seq) {
+    void set_from_exon_aa_seq(std::string const &exon_aa_seq) {
         for (auto &exon : exons) {
             assert(exon_aa_seq.size() == exon.nbr_sites);
             for (u_long site{0}; site < exon.nbr_sites; site++) {
                 char aa_char = exon_aa_seq.at(site);
                 char aa = codonLexico.aa_char_to_aa(aa_char);
-                auto it = find(codonLexico.codon_to_aa.begin(), codonLexico.codon_to_aa.end(), aa);
+                auto it =
+                    std::find(codonLexico.codon_to_aa.begin(), codonLexico.codon_to_aa.end(), aa);
                 assert(it != codonLexico.codon_to_aa.end());
-                char codon_to = distance(codonLexico.codon_to_aa.begin(), it);
+                char codon_to = std::distance(codonLexico.codon_to_aa.begin(), it);
                 exon.codon_seq[site] = codon_to;
             }
             exon.fitness_state.ptr->update(exon.codon_seq);
         }
     }
 
-    void set_from_dna_seq(string const &dna_string) {
+    void set_from_dna_seq(std::string const &dna_string) {
         assert(dna_string.size() == nbr_nucleotides());
         for (auto &exon : exons) {
             for (u_long site{0}; site < exon.nbr_sites; site++) {
@@ -293,9 +293,10 @@ class Sequence {
             if (abs(interspersed_substitutions.at(i).time_between_event -
                     (interspersed_substitutions.at(i).time_event -
                         interspersed_substitutions.at(i - 1).time_event)) > 1e-6) {
-                cerr << "The time between interspersed substitutions does not match the timing of "
-                        "events."
-                     << endl;
+                std::cerr
+                    << "The time between interspersed substitutions does not match the timing of "
+                       "events."
+                    << std::endl;
                 return false;
             }
         }
@@ -303,7 +304,7 @@ class Sequence {
                 [](Substitution const &a, Substitution const &b) -> bool {
                     return a.time_event <= b.time_event;
                 })) {
-            cerr << "The interspersed substitutions are not sorted." << endl;
+            std::cerr << "The interspersed substitutions are not sorted." << std::endl;
             return false;
         }
         return true;
@@ -352,10 +353,10 @@ class Sequence {
         for (u_long i = 0; i < nbr_rounds; i++) {
             for (auto &exon : exons) {
                 for (u_long site{0}; site < exon.nbr_sites; site++) {
-                    array<double, 64> codon_freqs = codon_frequencies(
+                    std::array<double, 64> codon_freqs = codon_frequencies(
                         exon.fitness_state.ptr->aa_selection_coefficients(exon.codon_seq, site),
                         nuc_matrix, init_pop_size);
-                    discrete_distribution<char> freq_codon_distr(
+                    std::discrete_distribution<char> freq_codon_distr(
                         codon_freqs.begin(), codon_freqs.end());
                     char chosen_codon = freq_codon_distr(generator);
                     if (codonLexico.codon_to_aa[chosen_codon] !=
@@ -372,11 +373,11 @@ class Sequence {
         for (int i = 0; i < nbr_sub; i++) {
             for (auto &exon : exons) {
                 exon.next_substitution(
-                    nuc_matrix, beta, 0.0, numeric_limits<double>::infinity(), true);
+                    nuc_matrix, beta, 0.0, std::numeric_limits<double>::infinity(), true);
             }
         }
         clear();
-        cout << get_aa_str() << endl;
+        std::cout << get_aa_str() << std::endl;
     }
 
     EVector delta_log_multivariate(double distance) const {
@@ -429,7 +430,7 @@ class Sequence {
         double dn{0.}, dn0{0.};
         for (auto const &exon : exons) {
             double exon_dn{0}, exon_d0{0};
-            tie(exon_dn, exon_d0) =
+            std::tie(exon_dn, exon_d0) =
                 exon.fitness_state.ptr->predicted_dn_dn0(exon.codon_seq, rates, relative_pop);
             dn += exon_dn;
             dn0 += exon_d0;
@@ -443,7 +444,7 @@ class Sequence {
 
         for (size_t i = 0; i < nbr_exons(); i++) {
             double exon_dn{0}, exon_dn0{0};
-            tie(exon_dn, exon_dn0) = exons[i].fitness_state.ptr->flow_dn_dn0(
+            std::tie(exon_dn, exon_dn0) = exons[i].fitness_state.ptr->flow_dn_dn0(
                 parent.exons[i].codon_seq, rates, relative_pop);
             dn += exon_dn;
             dn0 += exon_dn0;
@@ -490,7 +491,8 @@ class Sequence {
             }
         }
         if (ds == .0) {
-            cerr << "There is no synonymous substitutions, dN/dS can't be computed!" << endl;
+            std::cerr << "There is no synonymous substitutions, dN/dS can't be computed!"
+                      << std::endl;
             return .0;
         } else {
             return (dn * ds0) / (dn0 * ds);
@@ -510,16 +512,17 @@ class Sequence {
             }
         }
         if (ds == .0) {
-            cerr << "There is no synonymous substitutions, dN/dS can't be computed!" << endl;
+            std::cerr << "There is no synonymous substitutions, dN/dS can't be computed!"
+                      << std::endl;
             return .0;
         } else {
             return (dn * ds0) / (dn0 * ds);
         }
     }
 
-    void node_trace(string const &output_filename, Tree::NodeIndex node, Tree &tree,
-        unique_ptr<Sequence> const &parent) const {
-        string node_name = tree.node_name(node);
+    void node_trace(std::string const &output_filename, Tree::NodeIndex node, Tree &tree,
+        std::unique_ptr<Sequence> const &parent) const {
+        std::string node_name = tree.node_name(node);
 
         tree.set_tag(node, "population_size", d_to_string(beta));
         tree.set_tag(node, "generation_time", d_to_string(generation_time));
@@ -585,9 +588,9 @@ class Sequence {
             "LogMutationRatePerGeneration", log_multivariate.log_mutation_rate_per_generation());
     }
 
-    // Method returning the DNA string corresponding to the codon sequence.
-    string get_dna_str() const {
-        string dna_str{};
+    // Method returning the DNA std::string corresponding to the codon sequence.
+    std::string get_dna_str() const {
+        std::string dna_str{};
         dna_str.reserve(nbr_nucleotides());
 
         // For each site of the sequence.
@@ -597,7 +600,7 @@ class Sequence {
                 assert(codonLexico.codon_to_aa[exon.codon_seq[site]] != 20);
 
                 // Translate the site to a triplet of DNA nucleotides
-                array<char, 3> triplet = codonLexico.codon_to_triplet[exon.codon_seq[site]];
+                std::array<char, 3> triplet = codonLexico.codon_to_triplet[exon.codon_seq[site]];
                 for (char position{0}; position < 3; position++) {
                     dna_str += codonLexico.nucleotides[triplet[position]];
                 }
@@ -606,9 +609,9 @@ class Sequence {
         return dna_str;  // return the DNA sequence as a string.
     }
 
-    // Method returning the AA string corresponding to the codon sequence.
-    string get_aa_str() const {
-        string aa_str{};
+    // Method returning the AA std::string corresponding to the codon sequence.
+    std::string get_aa_str() const {
+        std::string aa_str{};
         aa_str.reserve(nbr_sites());
 
         // For each site of the sequence.
@@ -636,26 +639,26 @@ class Process {
   private:
     static double years_computed;
     Tree &tree;
-    vector<unique_ptr<Sequence>> sequences;  // Vector of sequence DNA.
+    std::vector<std::unique_ptr<Sequence>> sequences;  // Vector of sequence DNA.
 
   public:
     // Constructor
-    Process(Tree &intree, unique_ptr<Sequence> &root_seq) : tree{intree}, sequences() {
+    Process(Tree &intree, std::unique_ptr<Sequence> &root_seq) : tree{intree}, sequences() {
         sequences.resize(tree.nb_nodes());
         sequences[tree.root()] = move(root_seq);
     }
 
-    void run(string const &output_filename) {
+    void run(std::string const &output_filename) {
         sequences[tree.root()]->node_trace(output_filename, tree.root(), tree, nullptr);
         run_recursive(tree.root(), output_filename);
-        ofstream nhx;
+        std::ofstream nhx;
         nhx.open(output_filename + ".nhx");
-        nhx << tree.as_string() << endl;
+        nhx << tree.as_string() << std::endl;
         nhx.close();
     }
 
     // Recursively iterate through the subtree.
-    void run_recursive(Tree::NodeIndex node, string const &output_filename) {
+    void run_recursive(Tree::NodeIndex node, std::string const &output_filename) {
         // Substitutions of the DNA sequence is generated.
         sequences.at(node)->clear();
 
@@ -663,11 +666,11 @@ class Process {
             sequences.at(node)->run_forward(tree.node_length(node), tree);
 
             years_computed += tree.node_length(node);
-            cout << years_computed << " years computed in total ("
-                 << static_cast<int>(100 * years_computed / tree.total_length()) << "%) at node "
-                 << tree.node_name(node) << " ("
-                 << static_cast<int>(100 * tree.node_length(node) / tree.total_length()) << "%)."
-                 << endl;
+            std::cout << years_computed << " years computed in total ("
+                      << static_cast<int>(100 * years_computed / tree.total_length())
+                      << "%) at node " << tree.node_name(node) << " ("
+                      << static_cast<int>(100 * tree.node_length(node) / tree.total_length())
+                      << "%)." << std::endl;
 
             sequences.at(node)->node_trace(
                 output_filename, node, tree, sequences.at(tree.parent(node)));
@@ -675,7 +678,7 @@ class Process {
 
         // If the node is internal, iterate through the direct children.
         for (auto &child : tree.children(node)) {
-            sequences.at(child) = make_unique<Sequence>(*sequences.at(node));
+            sequences.at(child) = std::make_unique<Sequence>(*sequences.at(node));
         }
         for (auto &child : tree.children(node)) {
             assert(*sequences.at(node) == *sequences.at(child));
@@ -684,10 +687,10 @@ class Process {
     }
 
     // Recursively iterate through the subtree and count the number of substitutions.
-    tuple<long, long> nbr_substitutions() {
+    std::tuple<long, long> nbr_substitutions() {
         long nbr_non_syn{0}, nbr_syn{0};
 
-        for (unique_ptr<Sequence> const &seq : sequences) {
+        for (std::unique_ptr<Sequence> const &seq : sequences) {
             nbr_syn += count_if(seq->interspersed_substitutions.begin(),
                 seq->interspersed_substitutions.end(),
                 [](Substitution const &s) { return s.is_synonymous(); });
@@ -696,7 +699,7 @@ class Process {
                 [](Substitution const &s) { return s.is_non_synonymous(); });
         }
 
-        return make_tuple(nbr_non_syn, nbr_syn);
+        return std::make_tuple(nbr_non_syn, nbr_syn);
     }
 };
 

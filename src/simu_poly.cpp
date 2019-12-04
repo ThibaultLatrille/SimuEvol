@@ -3,6 +3,7 @@
 #include "wright_fisher.hpp"
 
 using namespace TCLAP;
+using namespace std;
 
 class SimuPolyArgParse : public SimuArgParse {
   public:

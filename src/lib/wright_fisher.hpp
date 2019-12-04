@@ -8,14 +8,12 @@
 #include "statistic.hpp"
 #include "tree.hpp"
 
-using namespace std;
+#define duration(a) std::chrono::duration_cast<std::chrono::nanoseconds>(a).count()
+#define timeNow() std::chrono::high_resolution_clock::now()
 
-#define duration(a) chrono::duration_cast<std::chrono::nanoseconds>(a).count()
-#define timeNow() chrono::high_resolution_clock::now()
+typedef std::chrono::high_resolution_clock::time_point TimeVar;
 
-typedef chrono::high_resolution_clock::time_point TimeVar;
-
-static string info =
+static std::string info =
     "##FILTER=<ID=s50,Description=\"The alternative is the major allele\">\n"
     "##FILTER=<ID=s100,Description=\"The reference has not been sampled\">\n"
     "##INFO=<ID=REFCODON,Number=1,Type=String,Description=\"Codon of the reference\">\n"
@@ -32,8 +30,8 @@ bool is_synonymous(char codon_from, char codon_to) {
     return codonLexico.codon_to_aa.at(codon_from) == codonLexico.codon_to_aa.at(codon_to);
 }
 
-typedef binomial_distribution<u_long> BinomialDistr;
-typedef unordered_map<u_long, BinomialDistr> MapBinomialDistr;
+typedef std::binomial_distribution<u_long> BinomialDistr;
+typedef std::unordered_map<u_long, BinomialDistr> MapBinomialDistr;
 
 class Events {
   public:
@@ -215,7 +213,7 @@ class Haplotype {
     // times greater).
     u_long nbr_copies{0};
     double sel_coeff{0.0};
-    unordered_map<u_long, char> diff_sites;
+    std::unordered_map<u_long, char> diff_sites;
 
     explicit Haplotype() = default;
 
@@ -227,7 +225,7 @@ class Haplotype {
     bool check_consistency(u_long nbr_sites) const {
         for (auto &diff : diff_sites) {
             if (codonLexico.codon_to_aa.at(diff.second) == 20) {
-                cerr << "The haplotype contains a stop codon" << endl;
+                std::cerr << "The haplotype contains a stop codon" << std::endl;
                 return false;
             }
         }
@@ -254,13 +252,13 @@ class Exon {
     // Reference sequence
     u_long nbr_sites;
     u_long nbr_nucleotides;
-    vector<char> codon_seq;
+    std::vector<char> codon_seq;
 
     // The fitness profiles of amino-acids.
     ClonableUniquePtr<FitnessState> fitness_state;
 
     // Haplotypes
-    vector<Haplotype> haplotype_vector;
+    std::vector<Haplotype> haplotype_vector;
 
     // Keep track of mutations and fixations
     Events events{};
@@ -279,10 +277,11 @@ class Exon {
           haplotype_vector{} {
         // Draw codon from codon frequencies
         for (u_long site{0}; site < nbr_sites; site++) {
-            array<double, 64> codon_freqs =
+            std::array<double, 64> codon_freqs =
                 codon_frequencies(fitness_state.ptr->aa_selection_coefficients(codon_seq, site),
                     nuc_matrix, population_size);
-            discrete_distribution<char> freq_codon_distr(codon_freqs.begin(), codon_freqs.end());
+            std::discrete_distribution<char> freq_codon_distr(
+                codon_freqs.begin(), codon_freqs.end());
             codon_seq[site] = freq_codon_distr(generator);
         }
 
@@ -292,32 +291,33 @@ class Exon {
 
     bool check_consistency(u_long const &population_size) const {
         if (haplotype_vector.size() > 2 * population_size) {
-            cerr << "Too many haplotypes" << endl;
+            std::cerr << "Too many haplotypes" << std::endl;
             return false;
         }
         if (haplotype_vector.empty()) {
-            cerr << "No haplotype" << endl;
+            std::cerr << "No haplotype" << std::endl;
             return false;
         }
 
         u_long nbr_copies{0};
         for (auto &haplotype : haplotype_vector) {
             if (!haplotype.check_consistency(nbr_sites)) {
-                cerr << "The haplotype is not consistent" << endl;
+                std::cerr << "The haplotype is not consistent" << std::endl;
                 return false;
             }
             nbr_copies += haplotype.nbr_copies;
         }
         if (nbr_copies != 2 * population_size) {
-            cerr << "The number of copies is not equal to the population size." << endl;
+            std::cerr << "The number of copies is not equal to the population size." << std::endl;
             return false;
         }
         return true;
     }
 
     void forward(NucleotideRateMatrix const &nuc_matrix, u_long const &population_size,
-        BinomialDistr &binomial_distrib, double time_current, vector<Substitution> &substitutions,
-        u_long &non_syn_mutations, u_long &syn_mutations, bool trace) {
+        BinomialDistr &binomial_distrib, double time_current,
+        std::vector<Substitution> &substitutions, u_long &non_syn_mutations, u_long &syn_mutations,
+        bool trace) {
         mutation(nuc_matrix, binomial_distrib, non_syn_mutations, syn_mutations, trace);
         selection_and_drift(population_size);
         extinction();
@@ -325,7 +325,7 @@ class Exon {
     }
 
     u_long random_nuc_site() const {
-        return uniform_int_distribution<u_long>(0, nbr_nucleotides - 1)(generator);
+        return std::uniform_int_distribution<u_long>(0, nbr_nucleotides - 1)(generator);
     }
 
     void mutation(NucleotideRateMatrix const &p, BinomialDistr &binomial_distrib,
@@ -339,12 +339,13 @@ class Exon {
         if (binomial_draw == 0) { return; }
 
         // Compute the distribution of haplotype frequency in the population
-        discrete_distribution<u_long> haplotype_distri;
+        std::discrete_distribution<u_long> haplotype_distri;
         if (haplotype_vector.size() != 1) {
-            vector<u_long> nbr_copies(haplotype_vector.size(), 0);
+            std::vector<u_long> nbr_copies(haplotype_vector.size(), 0);
             std::transform(haplotype_vector.begin(), haplotype_vector.end(), nbr_copies.begin(),
                 [](Haplotype const &h) { return h.nbr_copies; });
-            haplotype_distri = discrete_distribution<u_long>(nbr_copies.begin(), nbr_copies.end());
+            haplotype_distri =
+                std::discrete_distribution<u_long>(nbr_copies.begin(), nbr_copies.end());
         }
 
         for (u_long nbr_draws{0}; nbr_draws < binomial_draw; nbr_draws++) {
@@ -370,7 +371,7 @@ class Exon {
             }
 
             // The selected nucleotide
-            array<char, 3> triplet_nuc = codonLexico.codon_to_triplet.at(codon_from);
+            std::array<char, 3> triplet_nuc = codonLexico.codon_to_triplet.at(codon_from);
             char nuc_from = triplet_nuc.at(nuc_pos);
 
             // Early continue (next iteration) if the rate away from this nucleotide is too low
@@ -435,14 +436,14 @@ class Exon {
         }
 
         // The fitness associated to each haplotype (weigthed by the number of copies)
-        vector<double> fitnesses(haplotype_vector.size(), 0);
+        std::vector<double> fitnesses(haplotype_vector.size(), 0);
         std::transform(haplotype_vector.begin(), haplotype_vector.end(), fitnesses.begin(),
             [](Haplotype const &h) { return (1.0 + h.sel_coeff) * h.nbr_copies; });
         double fit_tot = accumulate(fitnesses.begin(), fitnesses.end(), 0.0);
 
         // Random draws from the multinomial distribution
         for (size_t i_hap{0}; i_hap < haplotype_vector.size() - 1; i_hap++) {
-            haplotype_vector.at(i_hap).nbr_copies = binomial_distribution<u_long>(
+            haplotype_vector.at(i_hap).nbr_copies = std::binomial_distribution<u_long>(
                 children_tot, fitnesses.at(i_hap) / fit_tot)(generator);
             children_tot -= haplotype_vector.at(i_hap).nbr_copies;
             fit_tot -= fitnesses.at(i_hap);
@@ -474,7 +475,7 @@ class Exon {
         timer.extinction += duration(timeNow() - t_start);
     }
 
-    void fixation(double time_current, vector<Substitution> &substitutions,
+    void fixation(double time_current, std::vector<Substitution> &substitutions,
         u_long &non_syn_mutations, u_long &syn_mutations, bool trace) {
         TimeVar t_start = timeNow();
 
@@ -486,7 +487,7 @@ class Exon {
             u_long site = diff.first;
             char codon_to = diff.second;
             bool polymorphic_site = false;
-            set<char> poly_codons{codon_to};
+            std::set<char> poly_codons{codon_to};
             for (size_t hap_id{1}; hap_id < haplotype_vector.size(); hap_id++) {
                 if (haplotype_vector.at(hap_id).diff_sites.count(site) == 0) {
                     // In the case the site of this haplotype is the same than the reference
@@ -505,7 +506,7 @@ class Exon {
             if (poly_codons.size() > 1) {
                 // In the case the reference codon is not present in the alternative haplotypes,
                 // but they are several alternative codons, we have to find the most common.
-                unordered_map<char, u_long> codon_copies{};
+                std::unordered_map<char, u_long> codon_copies{};
                 for (char codon : poly_codons) { codon_copies[codon] = 0; }
                 for (auto const &haplotype : haplotype_vector) {
                     codon_copies.at(haplotype.diff_sites.at(site)) += haplotype.nbr_copies;
@@ -557,11 +558,11 @@ class Exon {
 
     void sample_one_individual() {
         // Compute the distribution of haplotype frequency in the population
-        vector<u_long> nbr_copies(haplotype_vector.size(), 0);
+        std::vector<u_long> nbr_copies(haplotype_vector.size(), 0);
         std::transform(haplotype_vector.begin(), haplotype_vector.end(), nbr_copies.begin(),
             [](Haplotype const &h) { return h.nbr_copies; });
         u_long rand_hap =
-            discrete_distribution<u_long>(nbr_copies.begin(), nbr_copies.end())(generator);
+            std::discrete_distribution<u_long>(nbr_copies.begin(), nbr_copies.end())(generator);
 
         auto diffs = haplotype_vector[rand_hap].diff_sites;
         // For each site (different to the reference) of the most common haplotype
@@ -587,7 +588,7 @@ class Exon {
         assert(haplotype_vector[rand_hap].diff_sites.empty());
     }
 
-    tuple<double, double> flow(NucleotideRateMatrix const &nuc_matrix) const {
+    std::tuple<double, double> flow(NucleotideRateMatrix const &nuc_matrix) const {
         double non_syn_mut_flow{0.0}, syn_mut_flow{0.0};
         // For all site of the sequence.
         for (u_long site{0}; site < nbr_sites; site++) {
@@ -595,14 +596,14 @@ class Exon {
             char codon_from = codon_seq[site];
 
             // Array of neighbors of the original codon (codons differing by only 1 mutation).
-            array<tuple<char, char, char>, 9> neighbors =
+            std::array<std::tuple<char, char, char>, 9> neighbors =
                 codonLexico.codon_to_neighbors[codon_from];
 
             // For all possible neighbors.
             for (char neighbor{0}; neighbor < 9; neighbor++) {
                 // Codon after mutation, Nucleotide original and Nucleotide after mutation.
                 char codon_to{0}, n_from{0}, n_to{0};
-                tie(codon_to, n_from, n_to) = neighbors[neighbor];
+                std::tie(codon_to, n_from, n_to) = neighbors[neighbor];
 
                 // If the mutated amino-acid is a stop codon, the rate of fixation is 0.
                 // Else, if the mutated and original amino-acids are non-synonymous, we compute the
@@ -617,7 +618,7 @@ class Exon {
                 }
             }
         }
-        return make_tuple(non_syn_mut_flow, syn_mut_flow);
+        return std::make_tuple(non_syn_mut_flow, syn_mut_flow);
     }
 };
 
@@ -626,7 +627,7 @@ class Population {
     // TimeElapsed
     double time_from_root{0};
     // Exons
-    vector<Exon> exons;
+    std::vector<Exon> exons;
 
     u_long sample_size{0};
     LogMultivariate log_multivariate;
@@ -640,7 +641,7 @@ class Population {
     EMatrix const &transform_matrix;
     bool branch_wise{};
 
-    vector<Substitution> substitutions{};
+    std::vector<Substitution> substitutions{};
     u_long non_syn_mutations{0}, syn_mutations{0};
     PieceWiseMultivariate piecewise_multivariate{};
 
@@ -657,7 +658,7 @@ class Population {
           ornstein_uhlenbeck(ornstein_uhlenbeck_sigma, ornstein_uhlenbeck_theta, generator),
           population_size{log_multivariate.population_size()},
           generation_time{log_multivariate.generation_time()},
-          nuc_matrix{move(nucleotide_matrix)},
+          nuc_matrix{std::move(nucleotide_matrix)},
           transform_matrix{transform_matrix},
           branch_wise{branch_wise} {
         u_long pos = 0;
@@ -673,7 +674,7 @@ class Population {
         for (auto const &exon : exons) {
             if (binomial_distribs.count(exon.nbr_sites) == 0) {
                 binomial_distribs[exon.nbr_sites] =
-                    binomial_distribution<u_long>(2 * population_size * exon.nbr_nucleotides,
+                    std::binomial_distribution<u_long>(2 * population_size * exon.nbr_nucleotides,
                         nuc_matrix.max_sum_mutation_rates * nuc_matrix.mutation_rate);
             }
         }
@@ -690,18 +691,18 @@ class Population {
     bool check_consistency() const {
         for (auto const &exon : exons) {
             if (!exon.check_consistency(population_size)) {
-                cerr << "The exon is not consistent" << endl;
+                std::cerr << "The exon is not consistent" << std::endl;
                 return false;
             }
         }
         for (size_t i = 1; i < substitutions.size(); ++i) {
             if (abs(substitutions.at(i).time_between -
                     (substitutions.at(i).time_event - substitutions.at(i - 1).time_event)) > 1e-6) {
-                cerr << "The time between substitutions is not consistent" << endl;
+                std::cerr << "The time between substitutions is not consistent" << std::endl;
                 return false;
             }
             if (substitutions.at(i).time_between < 0.0) {
-                cerr << "The substitutions are not ordered (in increasing time)" << endl;
+                std::cerr << "The substitutions are not ordered (in increasing time)" << std::endl;
                 return false;
             }
         }
@@ -727,22 +728,22 @@ class Population {
         nuc_matrix.set_mutation_rate(log_multivariate.mutation_rate_per_generation());
 
         if (population_size < sample_size) {
-            cerr << "The population size (" << population_size
-                 << ") became lower than sample size (" << sample_size << ")" << endl;
+            std::cerr << "The population size (" << population_size
+                      << ") became lower than sample size (" << sample_size << ")" << std::endl;
             population_size = 2 * sample_size - population_size;
             log_multivariate.set_population_size(population_size);
         }
         if (ornstein_uhlenbeck_sigma > 0) {
             ornstein_uhlenbeck.Next();
-            population_size = max(
+            population_size = std::max(
                 static_cast<u_long>(population_size * ornstein_uhlenbeck.GetExpVal()), sample_size);
         }
         update_binomial_distribs();
         timer.correlation += duration(timeNow() - t_start);
     }
 
-    void run_and_trace(string const &output_filename, Tree::NodeIndex node, Tree &tree,
-        unique_ptr<Population> const &parent) {
+    void run_and_trace(std::string const &output_filename, Tree::NodeIndex node, Tree &tree,
+        std::unique_ptr<Population> const &parent) {
         double t_max = tree.node_length(node);
         double time_current = 0.0;
         EVector delta;
@@ -771,7 +772,7 @@ class Population {
     }
 
     void burn_in(u_long burn_in_length) {
-        cout << "Burn-in for " << burn_in_length << " generations." << endl;
+        std::cout << "Burn-in for " << burn_in_length << " generations." << std::endl;
         for (u_long gen{1}; gen <= burn_in_length; gen++) {
             for (auto &exon : exons) {
                 assert(!exon.haplotype_vector.empty());
@@ -781,7 +782,7 @@ class Population {
             assert(check_consistency());
         }
         clear_events();
-        cout << "Burn-in completed." << endl;
+        std::cout << "Burn-in completed." << std::endl;
     }
 
     double theoretical_theta() const { return 4 * population_size * nuc_matrix.mutation_rate; };
@@ -790,7 +791,7 @@ class Population {
         double dn{0.}, dn0{0.};
         for (auto const &exon : exons) {
             double exon_dn{0}, exon_d0{0};
-            tie(exon_dn, exon_d0) =
+            std::tie(exon_dn, exon_d0) =
                 exon.fitness_state.ptr->predicted_dn_dn0(exon.codon_seq, rates, pop_size);
             dn += exon_dn;
             dn0 += exon_d0;
@@ -804,7 +805,7 @@ class Population {
 
         for (size_t i = 0; i < exons.size(); i++) {
             double exon_dn{0}, exon_dn0{0};
-            tie(exon_dn, exon_dn0) = exons[i].fitness_state.ptr->flow_dn_dn0(
+            std::tie(exon_dn, exon_dn0) = exons[i].fitness_state.ptr->flow_dn_dn0(
                 parent.exons.at(i).codon_seq, rates, pop_size);
             dn += exon_dn;
             dn0 += exon_dn0;
@@ -844,7 +845,8 @@ class Population {
             }
         }
         if (ds == .0) {
-            cerr << "There is no synonymous substitutions, dN/dS can't be computed!" << endl;
+            std::cerr << "There is no synonymous substitutions, dN/dS can't be computed!"
+                      << std::endl;
             return .0;
         } else {
             return dn / ds;
@@ -864,20 +866,21 @@ class Population {
             }
         }
         if (ds == .0) {
-            cerr << "There is no synonymous substitutions, dN/dS can't be computed!" << endl;
+            std::cerr << "There is no synonymous substitutions, dN/dS can't be computed!"
+                      << std::endl;
             return .0;
         } else {
             return (dn * ds0) / (dn0 * ds);
         }
     }
 
-    void node_trace(string const &output_filename, Tree::NodeIndex node, Tree &tree,
-        unique_ptr<Population> const &parent) {
+    void node_trace(std::string const &output_filename, Tree::NodeIndex node, Tree &tree,
+        std::unique_ptr<Population> const &parent) {
         TimeVar t_start = timeNow();
 
-        string node_name = tree.node_name(node);
+        std::string node_name = tree.node_name(node);
 
-        tree.set_tag(node, "population_size", to_string(log_multivariate.population_size()));
+        tree.set_tag(node, "population_size", std::to_string(log_multivariate.population_size()));
         tree.set_tag(node, "generation_time", d_to_string(log_multivariate.generation_time()));
         tree.set_tag(node, "mutation_rate_per_generation",
             d_to_string(log_multivariate.mutation_rate_per_generation()));
@@ -922,27 +925,27 @@ class Population {
         // VCF file on the sample
         Polymorphism exome_poly(sample_size);
 
-        string out;
+        std::string out;
         out += "##fileformat=VCFv4.0";
         out += "\n##source=SimuPoly";
         out += "\n##nodeName=" + node_name;
-        out += "\n##sequenceSize=" + to_string(nbr_nucleotides());
+        out += "\n##sequenceSize=" + std::to_string(nbr_nucleotides());
         out += "\n##ploidyLevel=diploid";
-        out += "\n##numberIndividuals=" + to_string(sample_size);
-        out += "\n##numberGenotypes=" + to_string(2 * sample_size);
+        out += "\n##numberIndividuals=" + std::to_string(sample_size);
+        out += "\n##numberGenotypes=" + std::to_string(2 * sample_size);
         out += "\n##reference=" + get_dna_str();
         out += "\n" + info;
 
         for (u_long indiv{1}; indiv <= sample_size; indiv++) {
             out += "\tId";
-            out += to_string(indiv);
+            out += std::to_string(indiv);
         }
 
         for (auto const &exon : exons) {
             Polymorphism exon_poly(sample_size);
 
             // Draw the sample of individuals
-            vector<u_long> haplotypes_sample(2 * population_size, 0);
+            std::vector<u_long> haplotypes_sample(2 * population_size, 0);
             u_long sum_copies = 0;
             for (u_long i_hap{0}; i_hap < exon.haplotype_vector.size(); i_hap++) {
                 for (u_long copy_id{0}; copy_id < exon.haplotype_vector.at(i_hap).nbr_copies;
@@ -956,19 +959,19 @@ class Population {
             haplotypes_sample.resize(2 * sample_size);
 
             for (u_long site{0}; site < exon.nbr_sites; site++) {
-                map<tuple<char, char>, u_long> codon_from_to_copy{};
+                std::map<std::tuple<char, char>, u_long> codon_from_to_copy{};
                 for (auto const &i_hap : haplotypes_sample) {
                     if (exon.haplotype_vector.at(i_hap).diff_sites.count(site) > 0) {
                         char codon_from = exon.codon_seq.at(site);
                         char codon_to = exon.haplotype_vector.at(i_hap).diff_sites.at(site);
                         assert(codon_from != codon_to);
-                        codon_from_to_copy[make_tuple(codon_from, codon_to)]++;
+                        codon_from_to_copy[std::make_tuple(codon_from, codon_to)]++;
                     }
                 }
 
                 if (codon_from_to_copy.size() == 1) {
-                    char codon_from = get<0>(codon_from_to_copy.begin()->first);
-                    char codon_to = get<1>(codon_from_to_copy.begin()->first);
+                    char codon_from = std::get<0>(codon_from_to_copy.begin()->first);
+                    char codon_to = std::get<1>(codon_from_to_copy.begin()->first);
                     assert(codon_to != codon_from);
                     u_long alt_freq = codon_from_to_copy.begin()->second;
                     char nuc_pos{0};
@@ -981,9 +984,9 @@ class Population {
                         }
                     }
                     assert(nuc_pos != 3);
-                    string line{"\n"};
+                    std::string line{"\n"};
                     line += ".\t";
-                    line += to_string(3 * (exon.position + site) + nuc_pos);
+                    line += std::to_string(3 * (exon.position + site) + nuc_pos);
                     line += "\t.\t";
                     line += codonLexico.codon_to_nuc(codon_from, nuc_pos);
                     line += "\t";
@@ -1005,9 +1008,9 @@ class Population {
                     line += ";ALTAA=";
                     line += codonLexico.codon_aa_string(codon_to);
                     line += ";POSITION=";
-                    line += to_string(nuc_pos);
+                    line += std::to_string(nuc_pos);
                     line += ";ALTCOUNT=";
-                    line += to_string(alt_freq);
+                    line += std::to_string(alt_freq);
                     line += ";SYN=";
 
                     if (is_synonymous(codon_from, codon_to)) {
@@ -1077,7 +1080,7 @@ class Population {
                 }
             }
 
-            tie(exon_poly.non_syn_flow, exon_poly.syn_flow) = exon.flow(nuc_matrix);
+            std::tie(exon_poly.non_syn_flow, exon_poly.syn_flow) = exon.flow(nuc_matrix);
 
             tracer_leaves.add("taxon_name", node_name);
             tracer_leaves.add("exon_id", exon.position);
@@ -1085,9 +1088,9 @@ class Population {
 
             exome_poly.add(exon_poly);
         }
-        ofstream vcf;
+        std::ofstream vcf;
         vcf.open(output_filename + "_" + node_name + ".vcf");
-        vcf << out << endl;
+        vcf << out << std::endl;
         vcf.close();
 
         exome_poly.add_to_tree(tree, node);
@@ -1120,9 +1123,9 @@ class Population {
         for (auto &exon : exons) { exon.sample_one_individual(); }
     }
 
-    // Method returning the DNA string corresponding to the codon sequence.
-    string get_dna_str() const {
-        string dna_str{};
+    // Method returning the DNA std::string corresponding to the codon sequence.
+    std::string get_dna_str() const {
+        std::string dna_str{};
         dna_str.reserve(nbr_nucleotides());
 
         // For each site of the sequence.
@@ -1132,33 +1135,38 @@ class Population {
                 assert(codonLexico.codon_to_aa.at(exon.codon_seq.at(site)) != 20);
 
                 // Translate the site to a triplet of DNA nucleotides
-                array<char, 3> triplet = codonLexico.codon_to_triplet.at(exon.codon_seq.at(site));
+                std::array<char, 3> triplet =
+                    codonLexico.codon_to_triplet.at(exon.codon_seq.at(site));
                 for (char nuc_pos{0}; nuc_pos < 3; nuc_pos++) {
                     dna_str += codonLexico.nucleotides.at(triplet.at(nuc_pos));
                 }
             }
         }
-        return dna_str;  // return the DNA sequence as a string.
+        return dna_str;  // return the DNA sequence as a std::string.
     }
 
     static void timer_cout() {
-        cout << Exon::nbr_fixations << " fixations" << endl;
-        cout << Exon::nbr_mutations << " mutations" << endl;
+        std::cout << Exon::nbr_fixations << " fixations" << std::endl;
+        std::cout << Exon::nbr_mutations << " mutations" << std::endl;
         double total_time = timer.mutation + timer.selection + timer.extinction + timer.fixation +
                             timer.exportation + timer.correlation;
-        cout << setprecision(3) << total_time / 1e9 << "s total time" << endl;
-        cout << 100 * timer.mutation / total_time << "% of time spent in calculating mutation ("
-             << timer.mutation / 1e9 << "s)" << endl;
-        cout << 100 * timer.selection / total_time << "% of time spent in calculating selection ("
-             << timer.selection / 1e9 << "s)" << endl;
-        cout << 100 * timer.extinction / total_time << "% of time spent in calculating extinction ("
-             << timer.extinction / 1e9 << "s)" << endl;
-        cout << 100 * timer.fixation / total_time << "% of time spent in calculating fixation ("
-             << timer.fixation / 1e9 << "s)" << endl;
-        cout << 100 * timer.exportation / total_time << "% of time spent in exporting vcf ("
-             << timer.exportation / 1e9 << "s)" << endl;
-        cout << 100 * timer.correlation / total_time << "% of time spent in the correlation ("
-             << timer.correlation / 1e9 << "s)" << endl;
+        std::cout << std::setprecision(3) << total_time / 1e9 << "s total time" << std::endl;
+        std::cout << 100 * timer.mutation / total_time
+                  << "% of time spent in calculating mutation (" << timer.mutation / 1e9 << "s)"
+                  << std::endl;
+        std::cout << 100 * timer.selection / total_time
+                  << "% of time spent in calculating selection (" << timer.selection / 1e9 << "s)"
+                  << std::endl;
+        std::cout << 100 * timer.extinction / total_time
+                  << "% of time spent in calculating extinction (" << timer.extinction / 1e9 << "s)"
+                  << std::endl;
+        std::cout << 100 * timer.fixation / total_time
+                  << "% of time spent in calculating fixation (" << timer.fixation / 1e9 << "s)"
+                  << std::endl;
+        std::cout << 100 * timer.exportation / total_time << "% of time spent in exporting vcf ("
+                  << timer.exportation / 1e9 << "s)" << std::endl;
+        std::cout << 100 * timer.correlation / total_time << "% of time spent in the correlation ("
+                  << timer.correlation / 1e9 << "s)" << std::endl;
     }
 };
 
@@ -1169,27 +1177,27 @@ class Process {
   private:
     static double years_computed;
     Tree &tree;
-    vector<unique_ptr<Population>> populations;  // Vector of sequence DNA.
+    std::vector<std::unique_ptr<Population>> populations;  // Vector of sequence DNA.
 
   public:
     // Constructor
-    Process(Tree &intree, unique_ptr<Population> &root_pop) : tree{intree}, populations() {
+    Process(Tree &intree, std::unique_ptr<Population> &root_pop) : tree{intree}, populations() {
         populations.resize(tree.nb_nodes());
-        populations[tree.root()] = move(root_pop);
+        populations[tree.root()] = std::move(root_pop);
     }
 
-    void run(string &output_filename) {
+    void run(std::string &output_filename) {
         populations.at(tree.root())->node_trace(output_filename, tree.root(), tree, nullptr);
         run_recursive(tree.root(), output_filename);
-        ofstream nhx;
+        std::ofstream nhx;
         nhx.open(output_filename + ".nhx");
-        nhx << tree.as_string() << endl;
+        nhx << tree.as_string() << std::endl;
         nhx.close();
     }
 
 
     // Recursively iterate through the subtree.
-    void run_recursive(Tree::NodeIndex node, string const &output_filename) {
+    void run_recursive(Tree::NodeIndex node, std::string const &output_filename) {
         // Substitutions of the DNA sequence is generated.
         populations.at(node)->clear_events();
 
@@ -1198,16 +1206,16 @@ class Process {
                 output_filename, node, tree, populations.at(tree.parent(node)));
 
             years_computed += tree.node_length(node);
-            cout << years_computed << " years computed in total ("
-                 << static_cast<int>(100 * years_computed / tree.total_length()) << "%) at node "
-                 << tree.node_name(node) << " ("
-                 << static_cast<int>(100 * tree.node_length(node) / tree.total_length()) << "%)."
-                 << endl;
+            std::cout << years_computed << " years computed in total ("
+                      << static_cast<int>(100 * years_computed / tree.total_length())
+                      << "%) at node " << tree.node_name(node) << " ("
+                      << static_cast<int>(100 * tree.node_length(node) / tree.total_length())
+                      << "%)." << std::endl;
         }
 
         // Iterate through the direct children.
         for (auto &child : tree.children(node)) {
-            populations.at(child) = make_unique<Population>(*populations.at(node));
+            populations.at(child) = std::make_unique<Population>(*populations.at(node));
             run_recursive(child, output_filename);
         }
     }

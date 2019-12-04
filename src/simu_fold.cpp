@@ -3,7 +3,7 @@
 #include "process.hpp"
 
 using namespace TCLAP;
-
+using namespace std;
 
 class SimuEvolArgParse : public SimuArgParse {
   public:
