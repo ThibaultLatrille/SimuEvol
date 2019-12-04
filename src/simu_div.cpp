@@ -1,20 +1,19 @@
-#include "process.hpp"
 #include "argparse.hpp"
 #include "fitness_additive.hpp"
+#include "process.hpp"
 
 using namespace TCLAP;
 
 class SimuEvolArgParse : public SimuArgParse {
-public:
+  public:
     explicit SimuEvolArgParse(CmdLine &cmd) : SimuArgParse(cmd) {}
 
     TCLAP::ValueArg<std::string> preferences_path{
-            "f", "preferences", "input site-specific preferences path", true, "", "string", cmd};
+        "f", "preferences", "input site-specific preferences path", true, "", "string", cmd};
     TCLAP::ValueArg<double> beta{
-            "b", "beta", "Stringency parameter of the fitness profiles", false, 1.0, "double", cmd};
+        "b", "beta", "Stringency parameter of the fitness profiles", false, 1.0, "double", cmd};
     TCLAP::ValueArg<u_long> nbr_grid_step{"d", "nbr_grid_step",
-                                          "Number of intervals in which discretize the brownian motion", false, 100,
-                                          "u_long", cmd};
+        "Number of intervals in which discretize the brownian motion", false, 100, "u_long", cmd};
 };
 
 int main(int argc, char *argv[]) {
@@ -49,7 +48,7 @@ int main(int argc, char *argv[]) {
     bool branch_wise_correlation{args.branch_wise_correlation.getValue()};
 
     u_long exon_size{args.exons.getValue()};
-    SequenceAdditiveLandscape seq_fit_profiles(preferences_path, 1.0 / 4, exon_size);
+    SequenceAdditiveModel seq_fit_profiles(preferences_path, 1.0 / 4, exon_size);
     u_long nbr_sites = seq_fit_profiles.nbr_sites();
     assert(0 <= exon_size and exon_size <= nbr_sites);
 
@@ -57,7 +56,7 @@ int main(int argc, char *argv[]) {
     tree.set_root_age(root_age);
 
     NucleotideRateMatrix nuc_matrix(
-            nuc_matrix_path, mutation_rate_per_generation / generation_time, true);
+        nuc_matrix_path, mutation_rate_per_generation / generation_time, true);
 
     LogMultivariate log_multivariate(beta, mutation_rate_per_generation, generation_time);
     CorrelationMatrix correlation_matrix(precision_path, fix_pop_size, fix_mut_rate, fix_gen_time);
@@ -90,10 +89,11 @@ int main(int argc, char *argv[]) {
     init_alignments(output_path, tree.nb_leaves(), nbr_sites * 3);
     Eigen::SelfAdjointEigenSolver<EMatrix> eigen_solver(correlation_matrix);
     EMatrix transform_matrix =
-            eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
+        eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
 
-    Sequence root_sequence(seq_fit_profiles, log_multivariate, nuc_matrix, transform_matrix, branch_wise_correlation);
-    root_sequence.at_equilibrium();
+    auto root_sequence = make_unique<Sequence>(
+        seq_fit_profiles, log_multivariate, nuc_matrix, transform_matrix, branch_wise_correlation);
+    root_sequence->at_equilibrium();
     // root_sequence.write_matrices(output_path);
 
     Process simu_process(tree, root_sequence);
@@ -116,7 +116,7 @@ int main(int argc, char *argv[]) {
     Trace trace;
     trace.add("#substitutions", nbr_synonymous + nbr_non_synonymous);
     trace.add("#substitutions_per_site",
-              static_cast<double>(nbr_synonymous + nbr_non_synonymous) / seq_fit_profiles.nbr_sites());
+        static_cast<double>(nbr_synonymous + nbr_non_synonymous) / seq_fit_profiles.nbr_sites());
     trace.add("#synonymous_substitutions", nbr_synonymous);
     trace.add("#non_synonymous_substitutions", nbr_non_synonymous);
     trace.add("dnd0_event_tot", dnd0_event_tot);

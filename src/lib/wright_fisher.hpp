@@ -1,11 +1,12 @@
 #include <chrono>
 
+#include "clonable_unique_ptr.hpp"
 #include "codon.hpp"
+#include "fitness.hpp"
 #include "io.hpp"
 #include "random.hpp"
 #include "statistic.hpp"
 #include "tree.hpp"
-#include "fitness.hpp"
 
 using namespace std;
 
@@ -15,17 +16,17 @@ using namespace std;
 typedef chrono::high_resolution_clock::time_point TimeVar;
 
 static string info =
-        "##FILTER=<ID=s50,Description=\"The alternative is the major allele\">\n"
-        "##FILTER=<ID=s100,Description=\"The reference has not been sampled\">\n"
-        "##INFO=<ID=REFCODON,Number=1,Type=String,Description=\"Codon of the reference\">\n"
-        "##INFO=<ID=ALTCODON,Number=1,Type=String,Description=\"Codon of the alternative\">\n"
-        "##INFO=<ID=REFAA,Number=1,Type=Character,Description=\"Amino-acid of the reference\">\n"
-        "##INFO=<ID=ALTAA,Number=1,Type=Character,Description=\"Amino-acid of the alternative\">\n"
-        "##INFO=<ID=POSITION,Number=1,Type=Integer,Description=\"Mutated codon position\">\n"
-        "##INFO=<ID=ALTCOUNT,Number=1,Type=Integer,Description=\"Number of alternative copy\">\n"
-        "##INFO=<ID=SYN,Number=1,Type=boolean,Description=\"Is a synonymous mutation\">\n"
-        "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
-        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
+    "##FILTER=<ID=s50,Description=\"The alternative is the major allele\">\n"
+    "##FILTER=<ID=s100,Description=\"The reference has not been sampled\">\n"
+    "##INFO=<ID=REFCODON,Number=1,Type=String,Description=\"Codon of the reference\">\n"
+    "##INFO=<ID=ALTCODON,Number=1,Type=String,Description=\"Codon of the alternative\">\n"
+    "##INFO=<ID=REFAA,Number=1,Type=Character,Description=\"Amino-acid of the reference\">\n"
+    "##INFO=<ID=ALTAA,Number=1,Type=Character,Description=\"Amino-acid of the alternative\">\n"
+    "##INFO=<ID=POSITION,Number=1,Type=Integer,Description=\"Mutated codon position\">\n"
+    "##INFO=<ID=ALTCOUNT,Number=1,Type=Integer,Description=\"Number of alternative copy\">\n"
+    "##INFO=<ID=SYN,Number=1,Type=boolean,Description=\"Is a synonymous mutation\">\n"
+    "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
 
 bool is_synonymous(char codon_from, char codon_to) {
     return codonLexico.codon_to_aa.at(codon_from) == codonLexico.codon_to_aa.at(codon_to);
@@ -35,7 +36,7 @@ typedef binomial_distribution<u_long> BinomialDistr;
 typedef unordered_map<u_long, BinomialDistr> MapBinomialDistr;
 
 class Events {
-public:
+  public:
     u_long non_syn_mut{0};
     u_long syn_mut{0};
     u_long non_syn_fix{0};
@@ -75,7 +76,7 @@ public:
         tree.set_tag(node, "Branch_dNdS", d_to_string(dnds()));
     }
 
-private:
+  private:
     double dn() const { return static_cast<double>(non_syn_fix) / non_syn_mut; }
 
     double ds() const { return static_cast<double>(syn_fix) / syn_mut; };
@@ -94,15 +95,15 @@ private:
 };
 
 class Substitution {
-public:
+  public:
     Substitution(char codon_from, char codon_to, double time_event, double time_between,
-                 u_long non_syn_mut_flow, u_long syn_mut_flow)
-            : codon_from{codon_from},
-              codon_to{codon_to},
-              time_event{time_event},
-              time_between{time_between},
-              non_syn_mut_flow{non_syn_mut_flow},
-              syn_mut_flow{syn_mut_flow} {}
+        u_long non_syn_mut_flow, u_long syn_mut_flow)
+        : codon_from{codon_from},
+          codon_to{codon_to},
+          time_event{time_event},
+          time_between{time_between},
+          non_syn_mut_flow{non_syn_mut_flow},
+          syn_mut_flow{syn_mut_flow} {}
 
     bool is_synonymous() const { return ::is_synonymous(codon_from, codon_to); }
 
@@ -129,12 +130,12 @@ public:
 };
 
 class Polymorphism {
-private:
+  private:
     u_long sample_size;
     double inv_harmonic_sum;
     double inv_choice;
 
-public:
+  public:
     u_long pairwise_syn{0};
     u_long pairwise_non_syn{0};
     u_long non_syn_nbr{0};
@@ -178,7 +179,7 @@ public:
         tree.set_tag(node, "theta_pairwise", d_to_string(theta_pairwise()));
     }
 
-private:
+  private:
     double theta_watterson_non_syn() const { return non_syn_nbr * inv_harmonic_sum / non_syn_flow; }
 
     double theta_watterson_syn() const { return syn_nbr * inv_harmonic_sum / syn_flow; }
@@ -209,7 +210,7 @@ Trace tracer_traits;
 Trace tracer_fossils;
 
 class Haplotype {
-public:
+  public:
     // The nbr_copies of sites in the sequence (each position is a codon, thus the DNA sequence is 3
     // times greater).
     u_long nbr_copies{0};
@@ -221,7 +222,7 @@ public:
     // Constructor of Reference_seq.
     // size: the size of the DNA sequence.
     Haplotype(u_long const nbr_copies, double const sel_coeff)
-            : nbr_copies{nbr_copies}, sel_coeff{sel_coeff} {};
+        : nbr_copies{nbr_copies}, sel_coeff{sel_coeff} {};
 
     bool check_consistency(u_long nbr_sites) const {
         for (auto &diff : diff_sites) {
@@ -234,19 +235,19 @@ public:
     }
 
     static struct {
-        bool operator()(const Haplotype &left, const Haplotype &right) {
+        bool operator()(Haplotype const &left, Haplotype const &right) {
             return left.nbr_copies > right.nbr_copies;
         }
 
-        bool operator()(const Haplotype &left, float right) { return left.nbr_copies > right; }
+        bool operator()(Haplotype const &left, float right) { return left.nbr_copies > right; }
 
-        bool operator()(float left, const Haplotype &right) { return left > right.nbr_copies; }
+        bool operator()(float left, Haplotype const &right) { return left > right.nbr_copies; }
     } GreaterThan;
 };
 
 // Class representing a genetically linked sequences (exons are unlinked between them)
 class Exon {
-public:
+  public:
     // Exon
     u_long position;
 
@@ -256,7 +257,7 @@ public:
     vector<char> codon_seq;
 
     // The fitness profiles of amino-acids.
-    FitnessLandscape const &fitness_landscape;
+    ClonableUniquePtr<FitnessState> fitness_state;
 
     // Haplotypes
     vector<Haplotype> haplotype_vector;
@@ -268,18 +269,19 @@ public:
     static u_long nbr_mutations, nbr_fixations;
 
     // Constructor
-    Exon(FitnessLandscape &exon_fitness, u_long const &position,
-         u_long const &population_size, NucleotideRateMatrix const &nuc_matrix)
-            : position{position},
-              nbr_sites{u_long(exon_fitness.nbr_sites())},
-              nbr_nucleotides{u_long(3 * exon_fitness.nbr_sites())},
-              codon_seq(exon_fitness.nbr_sites(), 0),
-              fitness_landscape{exon_fitness},
-              haplotype_vector{} {
+    Exon(std::unique_ptr<FitnessState> &f_state, u_long const &position,
+        u_long const &population_size, NucleotideRateMatrix const &nuc_matrix)
+        : position{position},
+          nbr_sites{u_long(f_state->nbr_sites())},
+          nbr_nucleotides{u_long(3 * f_state->nbr_sites())},
+          codon_seq(f_state->nbr_sites(), 0),
+          fitness_state{std::move(f_state)},
+          haplotype_vector{} {
         // Draw codon from codon frequencies
         for (u_long site{0}; site < nbr_sites; site++) {
             array<double, 64> codon_freqs =
-                    codon_frequencies(exon_fitness.aa_selection_coefficients(codon_seq, site), nuc_matrix, population_size);
+                codon_frequencies(fitness_state.ptr->aa_selection_coefficients(codon_seq, site),
+                    nuc_matrix, population_size);
             discrete_distribution<char> freq_codon_distr(codon_freqs.begin(), codon_freqs.end());
             codon_seq[site] = freq_codon_distr(generator);
         }
@@ -314,8 +316,8 @@ public:
     }
 
     void forward(NucleotideRateMatrix const &nuc_matrix, u_long const &population_size,
-                 BinomialDistr &binomial_distrib, double time_current, vector<Substitution> &substitutions,
-                 u_long &non_syn_mutations, u_long &syn_mutations, bool trace) {
+        BinomialDistr &binomial_distrib, double time_current, vector<Substitution> &substitutions,
+        u_long &non_syn_mutations, u_long &syn_mutations, bool trace) {
         mutation(nuc_matrix, binomial_distrib, non_syn_mutations, syn_mutations, trace);
         selection_and_drift(population_size);
         extinction();
@@ -327,7 +329,7 @@ public:
     }
 
     void mutation(NucleotideRateMatrix const &p, BinomialDistr &binomial_distrib,
-                  u_long &non_syn_mutations, u_long &syn_mutations, bool trace) {
+        u_long &non_syn_mutations, u_long &syn_mutations, bool trace) {
         TimeVar t_start = timeNow();
 
         // Randomly choose the number of mutations at this generation (for this exon)
@@ -341,7 +343,7 @@ public:
         if (haplotype_vector.size() != 1) {
             vector<u_long> nbr_copies(haplotype_vector.size(), 0);
             std::transform(haplotype_vector.begin(), haplotype_vector.end(), nbr_copies.begin(),
-                           [](const Haplotype &h) { return h.nbr_copies; });
+                [](Haplotype const &h) { return h.nbr_copies; });
             haplotype_distri = discrete_distribution<u_long>(nbr_copies.begin(), nbr_copies.end());
         }
 
@@ -382,8 +384,8 @@ public:
 
             // Randomly choose the target nucleotide
             triplet_nuc[nuc_pos] = p.mutation_distr.at(nuc_from)(generator);
-            char codon_to =
-                    codonLexico.triplet_to_codon(triplet_nuc.at(0), triplet_nuc.at(1), triplet_nuc.at(2));
+            char codon_to = codonLexico.triplet_to_codon(
+                triplet_nuc.at(0), triplet_nuc.at(1), triplet_nuc.at(2));
             if (codonLexico.codon_to_aa.at(codon_to) == 20) { continue; }
 
             // Depending on whether the mutation is back to the reference sequence
@@ -394,6 +396,14 @@ public:
             } else {
                 haplotype.diff_sites[codon_site] = codon_to;
             }
+
+            // Update the fitness of the new haplotype
+            auto bk = codon_seq.at(codon_site);
+            codon_seq[codon_site] = codon_from;
+            double df = fitness_state.ptr->selection_coefficient(codon_seq, codon_site, codon_to);
+            codon_seq[codon_site] = bk;
+
+            haplotype.sel_coeff += df;
 
             // Update the vector of haplotypes
             haplotype_vector.at(hap_id).nbr_copies--;
@@ -406,10 +416,6 @@ public:
                 syn_mutations++;
                 events.syn_mut++;
             } else {
-                // Update the fitness of the new haplotype
-                haplotype.sel_coeff = fitness_landscape.selection_coefficient(codon_seq, haplotype.diff_sites, codon_site,
-                                                                              codon_to);
-
                 non_syn_mutations++;
                 events.non_syn_mut++;
             }
@@ -431,13 +437,13 @@ public:
         // The fitness associated to each haplotype (weigthed by the number of copies)
         vector<double> fitnesses(haplotype_vector.size(), 0);
         std::transform(haplotype_vector.begin(), haplotype_vector.end(), fitnesses.begin(),
-                       [](const Haplotype &h) { return (1.0 + h.sel_coeff) * h.nbr_copies; });
+            [](Haplotype const &h) { return (1.0 + h.sel_coeff) * h.nbr_copies; });
         double fit_tot = accumulate(fitnesses.begin(), fitnesses.end(), 0.0);
 
         // Random draws from the multinomial distribution
         for (size_t i_hap{0}; i_hap < haplotype_vector.size() - 1; i_hap++) {
             haplotype_vector.at(i_hap).nbr_copies = binomial_distribution<u_long>(
-                    children_tot, fitnesses.at(i_hap) / fit_tot)(generator);
+                children_tot, fitnesses.at(i_hap) / fit_tot)(generator);
             children_tot -= haplotype_vector.at(i_hap).nbr_copies;
             fit_tot -= fitnesses.at(i_hap);
         }
@@ -460,7 +466,7 @@ public:
         // Remove haplotypes with 0 copies
         if (haplotype_vector.back().nbr_copies == 0) {
             auto low_bound = lower_bound(
-                    haplotype_vector.begin(), haplotype_vector.end(), 0, Haplotype::GreaterThan);
+                haplotype_vector.begin(), haplotype_vector.end(), 0, Haplotype::GreaterThan);
             if (low_bound != haplotype_vector.end()) {
                 haplotype_vector.erase(low_bound, haplotype_vector.end());
             }
@@ -469,7 +475,7 @@ public:
     }
 
     void fixation(double time_current, vector<Substitution> &substitutions,
-                  u_long &non_syn_mutations, u_long &syn_mutations, bool trace) {
+        u_long &non_syn_mutations, u_long &syn_mutations, bool trace) {
         TimeVar t_start = timeNow();
 
         // ! Copy before the loop is necessary, since it can be updated during the loop
@@ -504,19 +510,19 @@ public:
                 for (auto const &haplotype : haplotype_vector) {
                     codon_copies.at(haplotype.diff_sites.at(site)) += haplotype.nbr_copies;
                 }
-                codon_to = std::max_element(codon_copies.begin(), codon_copies.end(),
-                                            [](auto const &p1, auto const &p2) { return p1.second < p2.second; })
-                        ->first;
+                codon_to = std::max_element(
+                    codon_copies.begin(), codon_copies.end(), [](auto const &p1, auto const &p2) {
+                        return p1.second < p2.second;
+                    })->first;
             }
+            double df = fitness_state.ptr->selection_coefficient(codon_seq, site, codon_to);
             codon_seq[site] = codon_to;
 
             // Update the vector of haplotypes
             for (auto &haplotype : haplotype_vector) {
+                haplotype.sel_coeff -= df;
                 if (haplotype.diff_sites.at(site) == codon_to) {
                     haplotype.diff_sites.erase(site);
-                    if (!is_synonymous(codon_from, codon_to)) {
-                        haplotype.sel_coeff = fitness_landscape.selection_coefficient(codon_seq, haplotype.diff_sites);
-                    }
                 } else {
                     assert(poly_codons.size() > 1);
                     assert(poly_codons.find(haplotype.diff_sites.at(site)) != poly_codons.end());
@@ -539,8 +545,8 @@ public:
                     syn_mutations = substitutions.back().syn_mut_flow;
                 }
             }
-            auto sub = Substitution(codon_from, codon_to, time_current, t_between,
-                                    non_syn_mutations, syn_mutations);
+            auto sub = Substitution(
+                codon_from, codon_to, time_current, t_between, non_syn_mutations, syn_mutations);
             non_syn_mutations = 0;
             syn_mutations = 0;
             sub.add_to_trace(tracer_substitutions);
@@ -553,9 +559,9 @@ public:
         // Compute the distribution of haplotype frequency in the population
         vector<u_long> nbr_copies(haplotype_vector.size(), 0);
         std::transform(haplotype_vector.begin(), haplotype_vector.end(), nbr_copies.begin(),
-                       [](const Haplotype &h) { return h.nbr_copies; });
+            [](Haplotype const &h) { return h.nbr_copies; });
         u_long rand_hap =
-                discrete_distribution<u_long>(nbr_copies.begin(), nbr_copies.end())(generator);
+            discrete_distribution<u_long>(nbr_copies.begin(), nbr_copies.end())(generator);
 
         auto diffs = haplotype_vector[rand_hap].diff_sites;
         // For each site (different to the reference) of the most common haplotype
@@ -565,8 +571,11 @@ public:
             char codon_from = codon_seq[diff.first];
             char codon_to = diff.second;
 
+            double df = fitness_state.ptr->selection_coefficient(codon_seq, site, codon_to);
+
             codon_seq[site] = codon_to;
             for (auto &haplotype : haplotype_vector) {
+                haplotype.sel_coeff -= df;
                 if (haplotype.diff_sites.count(site) > 0 and
                     haplotype.diff_sites.at(site) == codon_to) {
                     haplotype.diff_sites.erase(site);
@@ -574,9 +583,6 @@ public:
                     haplotype.diff_sites[site] = codon_from;
                 }
             }
-        }
-        for (auto &haplotype : haplotype_vector) {
-            haplotype.sel_coeff = fitness_landscape.selection_coefficient(codon_seq, haplotype.diff_sites);
         }
         assert(haplotype_vector[rand_hap].diff_sites.empty());
     }
@@ -590,7 +596,7 @@ public:
 
             // Array of neighbors of the original codon (codons differing by only 1 mutation).
             array<tuple<char, char, char>, 9> neighbors =
-                    codonLexico.codon_to_neighbors[codon_from];
+                codonLexico.codon_to_neighbors[codon_from];
 
             // For all possible neighbors.
             for (char neighbor{0}; neighbor < 9; neighbor++) {
@@ -603,8 +609,7 @@ public:
                 // rate of fixation. Note that, if the mutated and original amino-acids are
                 // synonymous, the rate of fixation is 1.
                 if (codonLexico.codon_to_aa[codon_to] != 20) {
-                    if (codonLexico.codon_to_aa[codon_from] !=
-                        codonLexico.codon_to_aa[codon_to]) {
+                    if (codonLexico.codon_to_aa[codon_from] != codonLexico.codon_to_aa[codon_to]) {
                         non_syn_mut_flow += nuc_matrix.normalized_rate(n_from, n_to);
                     } else {
                         syn_mut_flow += nuc_matrix.normalized_rate(n_from, n_to);
@@ -617,7 +622,7 @@ public:
 };
 
 class Population {
-public:
+  public:
     // TimeElapsed
     double time_from_root{0};
     // Exons
@@ -641,25 +646,24 @@ public:
 
     mutable MapBinomialDistr binomial_distribs;
 
-    Population(SequenceFitnessLandscape &seq_fitness, u_long sample_size,
-               LogMultivariate &log_multi, NucleotideRateMatrix nucleotide_matrix,
-               EMatrix const &transform_matrix, bool branch_wise, double ornstein_uhlenbeck_sigma,
-               double ornstein_uhlenbeck_theta)
-            : exons{},
-              sample_size{sample_size},
-              log_multivariate{log_multi},
-              ornstein_uhlenbeck_sigma{ornstein_uhlenbeck_sigma},
-              ornstein_uhlenbeck_theta{ornstein_uhlenbeck_theta},
-              ornstein_uhlenbeck(ornstein_uhlenbeck_sigma, ornstein_uhlenbeck_theta, generator),
-              population_size{log_multivariate.population_size()},
-              generation_time{log_multivariate.generation_time()},
-              nuc_matrix{move(nucleotide_matrix)},
-              transform_matrix{transform_matrix},
-              branch_wise{branch_wise} {
+    Population(FitnessModel &seq_fitness, u_long sample_size, LogMultivariate &log_multi,
+        NucleotideRateMatrix nucleotide_matrix, EMatrix const &transform_matrix, bool branch_wise,
+        double ornstein_uhlenbeck_sigma, double ornstein_uhlenbeck_theta)
+        : exons{},
+          sample_size{sample_size},
+          log_multivariate{log_multi},
+          ornstein_uhlenbeck_sigma{ornstein_uhlenbeck_sigma},
+          ornstein_uhlenbeck_theta{ornstein_uhlenbeck_theta},
+          ornstein_uhlenbeck(ornstein_uhlenbeck_sigma, ornstein_uhlenbeck_theta, generator),
+          population_size{log_multivariate.population_size()},
+          generation_time{log_multivariate.generation_time()},
+          nuc_matrix{move(nucleotide_matrix)},
+          transform_matrix{transform_matrix},
+          branch_wise{branch_wise} {
         u_long pos = 0;
-        for (auto &exon_seq_fitness: seq_fitness) {
-            exons.emplace_back(Exon(*exon_seq_fitness, pos, population_size, nuc_matrix));
-            pos += exon_seq_fitness->nbr_sites();
+        for (std::unique_ptr<FitnessState> &exon_seq_fitness : seq_fitness.fitness_states) {
+            exons.emplace_back(Exon(exon_seq_fitness, pos, population_size, nuc_matrix));
+            pos += exons.back().nbr_sites;
         }
         update_binomial_distribs();
     }
@@ -669,8 +673,8 @@ public:
         for (auto const &exon : exons) {
             if (binomial_distribs.count(exon.nbr_sites) == 0) {
                 binomial_distribs[exon.nbr_sites] =
-                        binomial_distribution<u_long>(2 * population_size * exon.nbr_nucleotides,
-                                                      nuc_matrix.max_sum_mutation_rates * nuc_matrix.mutation_rate);
+                    binomial_distribution<u_long>(2 * population_size * exon.nbr_nucleotides,
+                        nuc_matrix.max_sum_mutation_rates * nuc_matrix.mutation_rate);
             }
         }
     }
@@ -731,14 +735,14 @@ public:
         if (ornstein_uhlenbeck_sigma > 0) {
             ornstein_uhlenbeck.Next();
             population_size = max(
-                    static_cast<u_long>(population_size * ornstein_uhlenbeck.GetExpVal()), sample_size);
+                static_cast<u_long>(population_size * ornstein_uhlenbeck.GetExpVal()), sample_size);
         }
         update_binomial_distribs();
         timer.correlation += duration(timeNow() - t_start);
     }
 
-    void run_and_trace(
-            string const &output_filename, Tree::NodeIndex node, Tree &tree, Population const *parent) {
+    void run_and_trace(string const &output_filename, Tree::NodeIndex node, Tree &tree,
+        unique_ptr<Population> const &parent) {
         double t_max = tree.node_length(node);
         double time_current = 0.0;
         EVector delta;
@@ -756,7 +760,7 @@ public:
             }
             for (auto &exon : exons) {
                 exon.forward(nuc_matrix, population_size, binomial_distribs.at(exon.nbr_sites),
-                             time_current, substitutions, non_syn_mutations, syn_mutations, true);
+                    time_current, substitutions, non_syn_mutations, syn_mutations, true);
             }
             assert(check_consistency());
             time_current += generation_time;
@@ -772,7 +776,7 @@ public:
             for (auto &exon : exons) {
                 assert(!exon.haplotype_vector.empty());
                 exon.forward(nuc_matrix, population_size, binomial_distribs.at(exon.nbr_sites), 0,
-                             substitutions, non_syn_mutations, syn_mutations, false);
+                    substitutions, non_syn_mutations, syn_mutations, false);
             }
             assert(check_consistency());
         }
@@ -786,7 +790,8 @@ public:
         double dn{0.}, dn0{0.};
         for (auto const &exon : exons) {
             double exon_dn{0}, exon_d0{0};
-            tie(exon_dn, exon_d0) = exon.fitness_landscape.predicted_dn_dn0(exon.codon_seq, rates, pop_size);
+            tie(exon_dn, exon_d0) =
+                exon.fitness_state.ptr->predicted_dn_dn0(exon.codon_seq, rates, pop_size);
             dn += exon_dn;
             dn0 += exon_d0;
         }
@@ -794,12 +799,13 @@ public:
     };
 
     double sequence_wise_predicted_dn_dn0(
-            Population const &parent, NucleotideRateMatrix const &rates, u_long const &pop_size) const {
+        Population const &parent, NucleotideRateMatrix const &rates, u_long const &pop_size) const {
         double dn{0.}, dn0{0.};
 
         for (size_t i = 0; i < exons.size(); i++) {
             double exon_dn{0}, exon_dn0{0};
-            tie(exon_dn, exon_dn0) = exons[i].fitness_landscape.flow_dn_dn0(parent.exons.at(i).codon_seq, rates, pop_size);
+            tie(exon_dn, exon_dn0) = exons[i].fitness_state.ptr->flow_dn_dn0(
+                parent.exons.at(i).codon_seq, rates, pop_size);
             dn += exon_dn;
             dn0 += exon_dn0;
         }
@@ -865,8 +871,8 @@ public:
         }
     }
 
-    void node_trace(
-            string const &output_filename, Tree::NodeIndex node, Tree &tree, Population const *parent) {
+    void node_trace(string const &output_filename, Tree::NodeIndex node, Tree &tree,
+        unique_ptr<Population> const &parent) {
         TimeVar t_start = timeNow();
 
         string node_name = tree.node_name(node);
@@ -874,7 +880,7 @@ public:
         tree.set_tag(node, "population_size", to_string(log_multivariate.population_size()));
         tree.set_tag(node, "generation_time", d_to_string(log_multivariate.generation_time()));
         tree.set_tag(node, "mutation_rate_per_generation",
-                     d_to_string(log_multivariate.mutation_rate_per_generation()));
+            d_to_string(log_multivariate.mutation_rate_per_generation()));
 
         if (tree.is_root(node)) { return; }
 
@@ -885,9 +891,9 @@ public:
 
         assert(parent != nullptr);
         tree.set_tag(node, "Branch_dNdN0_predicted",
-                     d_to_string(predicted_dn_dn0(nuc_matrix, geom_pop_size)));
+            d_to_string(predicted_dn_dn0(nuc_matrix, geom_pop_size)));
         tree.set_tag(node, "Branch_dNdN0_sequence_wise_predicted",
-                     d_to_string(sequence_wise_predicted_dn_dn0(*parent, nuc_matrix, geom_pop_size)));
+            d_to_string(sequence_wise_predicted_dn_dn0(*parent, nuc_matrix, geom_pop_size)));
         tree.set_tag(node, "Branch_dNdN0_event_based", d_to_string(event_based_dn_dn0()));
         tree.set_tag(node, "Branch_dNdN0_count_based", d_to_string(count_based_dn_dn0()));
         tree.set_tag(node, "Branch_dNdS_event_based", d_to_string(event_based_dn_ds()));
@@ -1091,7 +1097,7 @@ public:
         tracer_traits.add("LogGenerationTime", log_multivariate.log_generation_time());
         tracer_traits.add("LogPopulationSize", log_multivariate.log_population_size());
         tracer_traits.add(
-                "LogMutationRatePerGeneration", log_multivariate.log_mutation_rate_per_generation());
+            "LogMutationRatePerGeneration", log_multivariate.log_mutation_rate_per_generation());
 
         timer.exportation += duration(timeNow() - t_start);
     }
@@ -1160,16 +1166,16 @@ public:
 u_long Exon::nbr_mutations = 0, Exon::nbr_fixations = 0;
 
 class Process {
-private:
+  private:
     static double years_computed;
     Tree &tree;
-    vector<Population *> populations;  // Vector of sequence DNA.
+    vector<unique_ptr<Population>> populations;  // Vector of sequence DNA.
 
-public:
+  public:
     // Constructor
-    Process(Tree &intree, Population &root_pop) : tree{intree}, populations() {
+    Process(Tree &intree, unique_ptr<Population> &root_pop) : tree{intree}, populations() {
         populations.resize(tree.nb_nodes());
-        populations[tree.root()] = &root_pop;
+        populations[tree.root()] = move(root_pop);
     }
 
     void run(string &output_filename) {
@@ -1189,7 +1195,7 @@ public:
 
         if (!tree.is_root(node)) {
             populations.at(node)->run_and_trace(
-                    output_filename, node, tree, populations.at(tree.parent(node)));
+                output_filename, node, tree, populations.at(tree.parent(node)));
 
             years_computed += tree.node_length(node);
             cout << years_computed << " years computed in total ("
@@ -1201,7 +1207,7 @@ public:
 
         // Iterate through the direct children.
         for (auto &child : tree.children(node)) {
-            populations.at(child) = new Population(*populations.at(node));
+            populations.at(child) = make_unique<Population>(*populations.at(node));
             run_recursive(child, output_filename);
         }
     }

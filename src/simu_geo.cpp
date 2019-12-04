@@ -1,6 +1,6 @@
-#include "process.hpp"
 #include "argparse.hpp"
 #include "fitness_geometric.hpp"
+#include "process.hpp"
 
 using namespace TCLAP;
 
@@ -50,10 +50,9 @@ int main(int argc, char *argv[]) {
 
     u_long nbr_exons = args.nbr_exons.getValue();
     u_long exon_size{args.exons.getValue()};
-    SequenceGeometricLandscape seq_fitness(exon_size, nbr_exons, complexity);
-    u_long nbr_sites = nbr_exons * exon_size;
-
-    if (exon_size == 0) { exon_size = nbr_sites; }
+    GeometricModel seq_fitness(exon_size, nbr_exons, complexity);
+    u_long nbr_sites = seq_fitness.nbr_sites();
+    assert(exon_size <= nbr_sites);
 
     Tree tree(newick_path);
     tree.set_root_age(root_age);
@@ -93,15 +92,16 @@ int main(int argc, char *argv[]) {
     EMatrix transform_matrix =
         eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
 
-    Sequence root_sequence(seq_fitness, log_multivariate, nuc_matrix, transform_matrix, branch_wise_correlation);
+    auto root_sequence = make_unique<Sequence>(
+        seq_fitness, log_multivariate, nuc_matrix, transform_matrix, branch_wise_correlation);
 
-    int burn_in_aa_changes = 5 * exon_size;
+    int burn_in_aa_changes = exon_size * 2;
     int equilibrium_nbr_rounds = 15;
     cout << "DNA Sequence optimizing site marginals for " << equilibrium_nbr_rounds
          << " rounds, and running for " << burn_in_aa_changes << " amino-acid changes (per exon)"
          << endl;
-    root_sequence.at_equilibrium(equilibrium_nbr_rounds);
-    root_sequence.burn_in(burn_in_aa_changes);
+    root_sequence->at_equilibrium(equilibrium_nbr_rounds);
+    root_sequence->burn_in(burn_in_aa_changes);
 
     Process simu_process(tree, root_sequence);
     simu_process.run(output_path);

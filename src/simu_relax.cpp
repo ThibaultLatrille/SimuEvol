@@ -126,7 +126,7 @@ class Population {
     void selection() {
         vector<double> fitness_beings(parents.size(), 0.0);
         transform(parents.begin(), parents.end(), fitness_beings.begin(),
-                  [](Being &b) { return b.fitness; });
+            [](Being &b) { return b.fitness; });
         discrete_distribution<u_long> parent_distr(fitness_beings.begin(), fitness_beings.end());
 
         vector<Being> children;
@@ -185,7 +185,7 @@ class Population {
         }
     };
 
-    void mean_delta_f(const vector<Being> &pop, const vector<Being> &next_pop){
+    void mean_delta_f(vector<Being> const &pop, vector<Being> const &next_pop) {
         vector<double> delta_fitnesses(population_size, 0);
         for (size_t i = 0; i < delta_fitnesses.size(); ++i) {
             delta_fitnesses[i] = next_pop[i].fitness - pop[i].fitness;
@@ -195,11 +195,19 @@ class Population {
         auto low_bound = static_cast<u_long>(0.05 * (population_size - 1));
         auto fifty_bound = static_cast<u_long>(0.5 * (population_size - 1));
         auto up_bound = static_cast<u_long>(0.95 * (population_size - 1));
-        delta_f_5pct_low = accumulate(delta_fitnesses.begin(), delta_fitnesses.begin() + low_bound, 0.0) / low_bound;
-        delta_f_5pct_high = accumulate(delta_fitnesses.begin() + up_bound, delta_fitnesses.end(), 0.0) / (population_size - up_bound);
+        delta_f_5pct_low =
+            accumulate(delta_fitnesses.begin(), delta_fitnesses.begin() + low_bound, 0.0) /
+            low_bound;
+        delta_f_5pct_high =
+            accumulate(delta_fitnesses.begin() + up_bound, delta_fitnesses.end(), 0.0) /
+            (population_size - up_bound);
 
-        delta_f_50pct_low = accumulate(delta_fitnesses.begin(), delta_fitnesses.begin() + fifty_bound, 0.0) / fifty_bound;
-        delta_f_50pct_high = accumulate(delta_fitnesses.begin() + fifty_bound, delta_fitnesses.end(), 0.0) / (population_size - fifty_bound);
+        delta_f_50pct_low =
+            accumulate(delta_fitnesses.begin(), delta_fitnesses.begin() + fifty_bound, 0.0) /
+            fifty_bound;
+        delta_f_50pct_high =
+            accumulate(delta_fitnesses.begin() + fifty_bound, delta_fitnesses.end(), 0.0) /
+            (population_size - fifty_bound);
     }
 
     void output_state(string &output_filename) const {
@@ -208,11 +216,11 @@ class Population {
 
         vector<double> fitnesses(population_size, 0);
         transform(parents.begin(), parents.end(), fitnesses.begin(),
-                  [](Being const &b) { return b.fitness; });
+            [](Being const &b) { return b.fitness; });
 
         vector<double> distances(population_size, 0);
         transform(
-                parents.begin(), parents.end(), distances.begin(), [](Being const &b) { return b.d; });
+            parents.begin(), parents.end(), distances.begin(), [](Being const &b) { return b.d; });
 
         sort(fitnesses.begin(), fitnesses.end());
         sort(distances.begin(), distances.end());
@@ -268,8 +276,8 @@ class SimuEvolArgParse : public OutputArgParse {
     TCLAP::ValueArg<u_long> pop_size{"n", "pop_size", "population size", false, 100, "u_long", cmd};
     TCLAP::ValueArg<u_long> chromosomes{
         "k", "chromosomes", "number of chromosomes per individual", false, 23, "u_long", cmd};
-    TCLAP::ValueArg<double> mu{"m", "mutation_rate_per_generation", "mean number of mutations per individual per generation",
-        false, 10, "double", cmd};
+    TCLAP::ValueArg<double> mu{"m", "mutation_rate_per_generation",
+        "mean number of mutations per individual per generation", false, 10, "double", cmd};
     TCLAP::ValueArg<double> radius{"r", "radius",
         "effect of a mutation (radius of the move in the phenotypic space)", false, 1e-2, "double",
         cmd};

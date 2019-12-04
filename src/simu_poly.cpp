@@ -1,6 +1,6 @@
 #include "argparse.hpp"
-#include "wright_fisher.hpp"
 #include "fitness_additive.hpp"
+#include "wright_fisher.hpp"
 
 using namespace TCLAP;
 
@@ -8,9 +8,9 @@ class SimuPolyArgParse : public SimuArgParse {
   public:
     explicit SimuPolyArgParse(CmdLine &cmd) : SimuArgParse(cmd) {}
     TCLAP::ValueArg<std::string> preferences_path{
-            "f", "preferences", "input site-specific preferences path", true, "", "string", cmd};
+        "f", "preferences", "input site-specific preferences path", true, "", "string", cmd};
     TCLAP::ValueArg<double> beta{
-            "b", "beta", "Stringency parameter of the fitness profiles", false, 1.0, "double", cmd};
+        "b", "beta", "Stringency parameter of the fitness profiles", false, 1.0, "double", cmd};
     TCLAP::ValueArg<u_long> pop_size{
         "n", "population_size", "Population size (at the root)", false, 500, "u_long", cmd};
     TCLAP::ValueArg<u_long> sample_size{
@@ -60,7 +60,7 @@ int main(int argc, char *argv[]) {
     assert(noise_theta < 1.0);
 
     u_long exon_size{args.exons.getValue()};
-    SequenceAdditiveLandscape seq_fit_profiles(preferences_path, beta / (4 * pop_size), exon_size);
+    SequenceAdditiveModel seq_fit_profiles(preferences_path, beta / (4 * pop_size), exon_size);
     u_long nbr_sites = seq_fit_profiles.nbr_sites();
     assert(0 <= exon_size and exon_size <= nbr_sites);
 
@@ -109,9 +109,9 @@ int main(int argc, char *argv[]) {
     EMatrix transform_matrix =
         eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
 
-    Population root_population(seq_fit_profiles, sample_size, log_multivariate,
+    auto root_population = make_unique<Population>(seq_fit_profiles, sample_size, log_multivariate,
         nuc_matrix, transform_matrix, branch_wise_correlation, noise_sigma, noise_theta);
-    root_population.burn_in(burn_in);
+    root_population->burn_in(burn_in);
 
     Process simu_process(tree, root_population);
     simu_process.run(output_path);

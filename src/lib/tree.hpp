@@ -1,10 +1,10 @@
 #pragma once
 
 #include <cassert>
+#include <fstream>
 #include <set>
 #include <vector>
 #include "nhx-parser.hpp"
-#include <fstream>
 
 // a tree with both a vector of parents and a vector of children
 class Tree {
@@ -27,7 +27,7 @@ class Tree {
                 input_tree.children(node).begin(), input_tree.children(node).end());
             auto node_name = input_tree.tag(node, "name");
             if (node_name.empty()) {
-                if (is_root(node)){
+                if (is_root(node)) {
                     node_name = "Root";
                 } else {
                     node_name = std::to_string(node);

@@ -3,10 +3,10 @@
 #include <cassert>
 #include <random>
 #include "Eigen/Dense"
-#include "tree.hpp"
 #include "codon.hpp"
-#include "statistic.hpp"
 #include "io.hpp"
+#include "statistic.hpp"
+#include "tree.hpp"
 
 typedef Eigen::Matrix<double, 3, 3> Matrix3x3;
 typedef Eigen::Matrix<double, 4, 4> Matrix4x4;
@@ -17,7 +17,7 @@ typedef Eigen::VectorXd EVector;
 
 int to_int(char c) { return c - '0'; }
 
-double GetEntropy(const Vector4x1 &profile) {
+double GetEntropy(Vector4x1 const &profile) {
     double tot = 0;
     for (Eigen::Index i = 0; i < profile.size(); i++) {
         tot -= (profile[i] < 1e-6) ? 0 : profile[i] * log(profile[i]);
@@ -71,7 +71,8 @@ class NucleotideRateMatrix : public Matrix4x4 {
         (*this) -= this->rowwise().sum().asDiagonal();
 
         equilibrium_frequencies();
-        std::cout << "The equilibrium nucleotides frequencies (" << codonLexico.nucleotides << ") are:\n"
+        std::cout << "The equilibrium nucleotides frequencies (" << codonLexico.nucleotides
+                  << ") are:\n"
                   << nuc_frequencies.transpose() << std::endl;
 
         if (normalize) { normalize_matrix(); }

@@ -1,9 +1,5 @@
 #pragma once
 
-#include <fstream>
-#include <iostream>
-#include <numeric>
-#include "codon.hpp"
 #include "fitness.hpp"
 
 double LOG_UNFOLDED_STATES = 368.413615;  // log(1.0E160)
@@ -66,6 +62,7 @@ std::vector<std::vector<double>> pdbInteractionMatrix = {
         0.00, 0.00, 0.00, 0.00, 0.00}};
 
 Codon codonPDB = Codon("ARNDCQEGHILKMFPSTWYVX");
+
 double getCodonInteraction(char codonA, char codonB) {
     return pdbInteractionMatrix[codonPDB.codon_to_aa[codonA]][codonPDB.codon_to_aa[codonB]];
 }
@@ -287,17 +284,21 @@ class Structure {
     }
 };
 
-class StructureSet {
+class StabilityLandscape final : public FitnessLandscape {
   public:
     Structure native;
     std::vector<Structure> unfoldedVector{};
 
-    explicit StructureSet(std::string const &pdb_folder, int nbr_sites, double cut_off)
+    StabilityLandscape(std::string const &pdb_folder, int nbr_sites, double cut_off)
         : native(pdb_folder, nativeProtein, nbr_sites, cut_off) {
         for (auto const &unfolded : unfoldedProteinList) {
             unfoldedVector.emplace_back(Structure(pdb_folder, unfolded, nbr_sites, cut_off));
         }
     }
+
+    u_long nbr_sites() const override { return native.proteinSeq.size(); }
+
+    std::string seq() const { return native.proteinSeq; }
 };
 
 // Mean of a vector
@@ -313,56 +314,54 @@ double var(std::vector<double> const &v, double s) {
     return s2 - s * s;
 }
 
-class Protein {
+double computePFolded(double deltaG) {
+    double factor = exp(-deltaG / TEMPERATURE);
+    return (factor / (1 + factor));
+}
+
+double computeSelCoeff(double deltaG, double deltaGMutant) {
+    // s = (f' - f)/f where f = e(-D/T)/(1+e(-D/T))
+    // return (exp((deltaG - deltaGMutant) / TEMPERATURE) - 1) / (exp(-deltaG / TEMPERATURE) +
+    // 1); return computePFolded(deltaGMutant) / computePFolded(deltaG) - 1.0;
+    double fm = computePFolded(deltaGMutant), f = computePFolded(deltaG);
+    return (fm - f) / f;
+}
+
+class StabilityState final : public FitnessState {
   private:
+    StabilityLandscape const &f;
+
+    double nativeDeltaG = 0.0;
+    double nativePFolded = 0.0;
     double nativeEnergy = 0.0;
     std::vector<double> unfoldedEnergyVector;
 
-    static double computePFolded(double deltaG) {
-        double factor = exp(-deltaG / TEMPERATURE);
-        return (factor / (1 + factor));
-    }
-
-    static double computeSelCoeff(double deltaG, double deltaGMutant) {
-        // s = (f' - f)/f where f = e(-D/T)/(1+e(-D/T))
-        // return (exp((deltaG - deltaGMutant) / TEMPERATURE) - 1) / (exp(-deltaG / TEMPERATURE) +
-        // 1); return computePFolded(deltaGMutant) / computePFolded(deltaG) - 1.0;
-        double fm = computePFolded(deltaGMutant), f = computePFolded(deltaG);
-        return (fm - f) / f;
-    }
-
-    double DeltaG(std::vector<char> const &codonSeq) const {
-        double seqNativeEnergy = structure_set.native.getEnergy(codonSeq);
-
-        std::vector<double> seqUnfoldedEnergyVector(structure_set.unfoldedVector.size(), 0.0);
-        for (size_t i = 0; i < structure_set.unfoldedVector.size(); i++) {
-            seqUnfoldedEnergyVector[i] = structure_set.unfoldedVector[i].getEnergy(codonSeq);
-        }
-        double avgUnfoldedEnergy = mean(seqUnfoldedEnergyVector);
-        double sigma2 = var(seqUnfoldedEnergyVector, avgUnfoldedEnergy);
-
-        return seqNativeEnergy - avgUnfoldedEnergy + (TEMPERATURE * LOG_UNFOLDED_STATES) +
-               (sigma2 / (2.0 * TEMPERATURE));
-    }
-
   public:
-    double nativeDeltaG = 0.0;
-    double nativePFolded = 0.0;
-    StructureSet const &structure_set;
+    std::unique_ptr<FitnessState> clone() const override {
+        return std::make_unique<StabilityState>(*this);
+    };
 
-    explicit Protein(std::vector<char> &startCodonSeq, StructureSet const &structure_set)
-        : structure_set(structure_set) {
-        unfoldedEnergyVector.resize(structure_set.unfoldedVector.size(), 0.0);
-        Update(startCodonSeq);
-        std::cout << nativeDeltaG << "\t" << nativePFolded << "\t" << (1.0 - nativePFolded)
-                  << std::endl;
+    explicit StabilityState(StabilityLandscape const &f) : f{f} {
+        nativeDeltaG = 0.0;
+        nativePFolded = 0.0;
+        nativeEnergy = 0.0;
+        unfoldedEnergyVector.resize(f.unfoldedVector.size(), 0.0);
     }
 
-    void Update(std::vector<char> const &codonSeq) {
-        nativeEnergy = structure_set.native.getEnergy(codonSeq);
+    bool operator==(FitnessState const &other) const override {
+        auto p = dynamic_cast<StabilityState const *>(&other);
+        return (nativeDeltaG == p->nativeDeltaG) and (nativePFolded == p->nativePFolded) and
+               (nativeEnergy == p->nativeEnergy) and
+               (unfoldedEnergyVector == p->unfoldedEnergyVector);
+    }
 
-        for (size_t i = 0; i < structure_set.unfoldedVector.size(); i++) {
-            unfoldedEnergyVector[i] = structure_set.unfoldedVector[i].getEnergy(codonSeq);
+    u_long nbr_sites() const override { return f.nbr_sites(); }
+
+    void update(std::vector<char> const &codon_seq) override {
+        nativeEnergy = f.native.getEnergy(codon_seq);
+
+        for (size_t i = 0; i < f.unfoldedVector.size(); i++) {
+            unfoldedEnergyVector[i] = f.unfoldedVector[i].getEnergy(codon_seq);
         }
         double avgUnfoldedEnergy = mean(unfoldedEnergyVector);
         double sigma2 = var(unfoldedEnergyVector, avgUnfoldedEnergy);
@@ -372,13 +371,12 @@ class Protein {
         nativePFolded = computePFolded(nativeDeltaG);
     }
 
-    void Update(
-        std::vector<char> const &codonSeq, size_t const &site, char codon_from, char codon_to) {
-        nativeEnergy += structure_set.native.getMutantEnergy(codonSeq, site, codon_from, codon_to);
+    void update(std::vector<char> const &codon_seq, u_long site, char codon_to) override {
+        nativeEnergy += f.native.getMutantEnergy(codon_seq, site, codon_seq[site], codon_to);
 
-        for (size_t i = 0; i < structure_set.unfoldedVector.size(); i++) {
-            unfoldedEnergyVector[i] += structure_set.unfoldedVector[i].getMutantEnergy(
-                codonSeq, site, codon_from, codon_to);
+        for (size_t i = 0; i < f.unfoldedVector.size(); i++) {
+            unfoldedEnergyVector[i] +=
+                f.unfoldedVector[i].getMutantEnergy(codon_seq, site, codon_seq[site], codon_to);
         }
         double avgUnfoldedEnergy = mean(unfoldedEnergyVector);
         double sigma2 = var(unfoldedEnergyVector, avgUnfoldedEnergy);
@@ -388,19 +386,19 @@ class Protein {
         nativePFolded = computePFolded(nativeDeltaG);
     }
 
-    double computeMutantSelCoeff(std::vector<char> const &codonSeq, size_t const &site,
-        char codon_from, char codon_to) const {
-        if (codonLexico.codon_to_aa[codon_from] == codonLexico.codon_to_aa[codon_to]) {
+    double selection_coefficient(
+        std::vector<char> const &codon_seq, u_long site, char codon_to) const override {
+        if (codonLexico.codon_to_aa[codon_seq[site]] == codonLexico.codon_to_aa[codon_to]) {
             return 0.0;
         }
-        double nativeMutantEnergy = nativeEnergy + structure_set.native.getMutantEnergy(
-                                                       codonSeq, site, codon_from, codon_to);
+        double nativeMutantEnergy =
+            nativeEnergy + f.native.getMutantEnergy(codon_seq, site, codon_seq[site], codon_to);
 
-        std::vector<double> unfoldedMutantEnergyVector(structure_set.unfoldedVector.size(), 0.0);
-        for (size_t i = 0; i < structure_set.unfoldedVector.size(); i++) {
+        std::vector<double> unfoldedMutantEnergyVector(f.unfoldedVector.size(), 0.0);
+        for (size_t i = 0; i < f.unfoldedVector.size(); i++) {
             unfoldedMutantEnergyVector[i] =
-                unfoldedEnergyVector[i] + structure_set.unfoldedVector[i].getMutantEnergy(
-                                              codonSeq, site, codon_from, codon_to);
+                unfoldedEnergyVector[i] +
+                f.unfoldedVector[i].getMutantEnergy(codon_seq, site, codon_seq[site], codon_to);
         }
         double avgUnfoldedMutantEnergy = mean(unfoldedMutantEnergyVector);
         double sigma2 = var(unfoldedMutantEnergyVector, avgUnfoldedMutantEnergy);
@@ -410,12 +408,27 @@ class Protein {
 
         return computeSelCoeff(nativeDeltaG, mutantDeltaG);
     }
+};
 
-    double computeMutantSelCoeff(
-        std::vector<char> const &fromSeq, std::vector<char> const &toSeq) const {
-        double fromDeltaG = DeltaG(fromSeq);
-        double toDeltaG = DeltaG(toSeq);
-        assert(std::abs(fromDeltaG - toDeltaG) > 1e-12);
-        return computeSelCoeff(fromDeltaG, toDeltaG);
+class StabilityModel : public FitnessModel {
+  public:
+    StabilityModel(
+        std::string const &pdb_folder, u_long exon_size, u_long nbr_exons, double cut_off)
+        : FitnessModel() {
+        fitness_landscapes.reserve(nbr_exons);
+        fitness_states.reserve(nbr_exons);
+
+        for (u_long exon{0}; exon < nbr_exons; exon++) {
+            fitness_landscapes.emplace_back(
+                std::make_unique<StabilityLandscape>(pdb_folder, exon_size, cut_off));
+            fitness_states.emplace_back(std::make_unique<StabilityState>(
+                *dynamic_cast<StabilityLandscape *>(fitness_landscapes.at(exon).get())));
+        }
+        assert(nbr_sites() == exon_size * nbr_exons);
+        std::cout << fitness_landscapes.size() << " exons created." << std::endl;
+    }
+
+    std::string seq() {
+        return dynamic_cast<StabilityLandscape *>(fitness_landscapes.front().get())->seq();
     }
 };

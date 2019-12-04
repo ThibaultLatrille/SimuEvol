@@ -15,7 +15,7 @@ double Pfix(double const &pop_size, double const &selection_coefficient) {
 
 // Method computing the equilibrium frequencies for one site.
 std::array<double, 64> codon_frequencies(std::array<double, 20> const &aa_selection_coefficient,
-                                         NucleotideRateMatrix const &nuc_matrix, double const &pop_size) {
+    NucleotideRateMatrix const &nuc_matrix, double const &pop_size) {
     std::array<double, 64> codon_frequencies{0};
     // For each site of the vector of the site frequencies.
     for (char codon{0}; codon < 64; codon++) {
@@ -28,7 +28,8 @@ std::array<double, 64> codon_frequencies(std::array<double, 20> const &aa_select
 
         if (codonLexico.codon_to_aa[codon] != 20) {
             codon_frequencies[codon] =
-                    codon_freq * exp(4 * aa_selection_coefficient[codonLexico.codon_to_aa[codon]] * pop_size);
+                codon_freq *
+                exp(4 * aa_selection_coefficient[codonLexico.codon_to_aa[codon]] * pop_size);
         } else {
             codon_frequencies[codon] = 0.;
         }
@@ -41,19 +42,50 @@ std::array<double, 64> codon_frequencies(std::array<double, 20> const &aa_select
 }
 
 class FitnessLandscape {
-public:
-    bool additive = false;
+  public:
+    virtual ~FitnessLandscape() = default;
+
+    virtual u_long nbr_sites() const = 0;
+};
+
+class FitnessState {
+  public:
+    virtual std::unique_ptr<FitnessState> clone() const = 0;
+
+    virtual bool operator==(FitnessState const &other) const = 0;
+
+    virtual u_long nbr_sites() const = 0;
+
+    virtual void update(std::vector<char> const &codon_seq) = 0;
+
+    virtual void update(std::vector<char> const &codon_seq, u_long site, char codon_to) = 0;
+
+    virtual double selection_coefficient(
+        std::vector<char> const &codon_seq, u_long site, char codon_to) const = 0;
+
+    virtual std::array<double, 20> aa_selection_coefficients(
+        std::vector<char> const &codon_seq, u_long site) const {
+        std::array<double, 20> aa_sel_coeffs{};
+        for (char aa = 0; aa < 20; aa++) {
+            auto it = std::find(codonLexico.codon_to_aa.begin(), codonLexico.codon_to_aa.end(), aa);
+            assert(it != codonLexico.codon_to_aa.end());
+            char codon_to = std::distance(codonLexico.codon_to_aa.begin(), it);
+            assert(codonLexico.codon_to_aa[codon_to] == aa);
+            aa_sel_coeffs[aa] = selection_coefficient(codon_seq, site, codon_to);
+        }
+        return aa_sel_coeffs;
+    }
 
     // Theoretical computation of the predicted omega
-    std::tuple<double, double>
-    predicted_dn_dn0(std::vector<char> const &codon_seq, NucleotideRateMatrix const &mutation_rate_matrix,
-                     double pop_size) const {
+    std::tuple<double, double> predicted_dn_dn0(std::vector<char> const &codon_seq,
+        NucleotideRateMatrix const &mutation_rate_matrix, double pop_size) const {
         // For all site of the sequence.
         double dn{0.}, dn0{0.};
         for (u_long site = 0; site < nbr_sites(); ++site) {
             auto aa_sel_coeffs = aa_selection_coefficients(codon_seq, site);
             // Codon original before substitution.
-            std::array<double, 64> codon_freqs = codon_frequencies(aa_sel_coeffs, mutation_rate_matrix, pop_size);
+            std::array<double, 64> codon_freqs =
+                codon_frequencies(aa_sel_coeffs, mutation_rate_matrix, pop_size);
 
             for (char codon_from{0}; codon_from < 64; codon_from++) {
                 if (codonLexico.codon_to_aa[codon_from] != 20) {
@@ -69,8 +101,9 @@ public:
                         // amino-acids are synonymous, the rate of fixation is 1.
                         if (codonLexico.codon_to_aa[codon_to] != 20 and
                             codonLexico.codon_to_aa[codon_from] !=
-                            codonLexico.codon_to_aa[codon_to]) {
-                            double rate = codon_freqs[codon_from] * mutation_rate_matrix(n_from, n_to);
+                                codonLexico.codon_to_aa[codon_to]) {
+                            double rate =
+                                codon_freqs[codon_from] * mutation_rate_matrix(n_from, n_to);
                             dn0 += rate;
                             double s = aa_sel_coeffs[codonLexico.codon_to_aa[codon_to]] -
                                        aa_sel_coeffs[codonLexico.codon_to_aa[codon_from]];
@@ -84,10 +117,9 @@ public:
         return std::make_tuple(dn, dn0);
     }
 
-// Theoretical computation of the predicted omega
-    std::tuple<double, double>
-    flow_dn_dn0(std::vector<char> const &codon_seq, NucleotideRateMatrix const &mutation_rate_matrix,
-                double pop_size) const {
+    // Theoretical computation of the predicted omega
+    std::tuple<double, double> flow_dn_dn0(std::vector<char> const &codon_seq,
+        NucleotideRateMatrix const &mutation_rate_matrix, double pop_size) const {
         assert(nbr_sites() == codon_seq.size());
         double dn{0.}, dn0{0.};
         // For all site of the sequence.
@@ -117,65 +149,16 @@ public:
         return std::make_tuple(dn, dn0);
     }
 
-    virtual u_long nbr_sites() const = 0;
-
-    virtual std::array<double, 20> aa_selection_coefficients(const std::vector<char> &codon_seq, u_long site) const = 0;
-
-    virtual double selection_coefficient(const std::vector<char> &codon_seq, u_long site, char codon_to) const = 0;
-
-    virtual double
-    selection_coefficient(const std::vector<char> &codon_seq, std::unordered_map<u_long, char> &diff_sites) const {
-        double s = 0;
-        if (additive) {
-            for (std::pair<const u_long, char> const &diff: diff_sites) {
-                assert(codon_seq[diff.first] != diff.second);
-                s += selection_coefficient(codon_seq, diff.first, diff.second);
-            }
-        } else {
-            std::vector<char> mutable_seq = codon_seq;
-            for (std::pair<const u_long, char> const &diff: diff_sites) {
-                s += selection_coefficient(mutable_seq, diff.first, diff.second);
-                mutable_seq[diff.first] = diff.second;
-            }
-        }
-        return s;
-    };
-
-    virtual double
-    selection_coefficient(const std::vector<char> &codon_seq, std::unordered_map<u_long, char> &diff_sites, u_long site,
-                          char codon_to) const {
-        double s = 0;
-        if (additive) {
-            for (std::pair<const u_long, char> const &diff: diff_sites) {
-                assert(codon_seq[diff.first] != diff.second);
-                s += selection_coefficient(codon_seq, diff.first, diff.second);
-            }
-            s += selection_coefficient(codon_seq, site, codon_to);
-        } else {
-            std::vector<char> mutable_seq = codon_seq;
-            for (std::pair<const u_long, char> const &diff: diff_sites) {
-                s += selection_coefficient(mutable_seq, diff.first, diff.second);
-                mutable_seq[diff.first] = diff.second;
-            }
-            s += selection_coefficient(mutable_seq, site, codon_to);
-        }
-        return s;
-    };
-
-    virtual ~FitnessLandscape() = default;
+    virtual ~FitnessState() = default;
 };
 
-class SequenceFitnessLandscape : public std::vector<std::unique_ptr<FitnessLandscape>> {
-public:
+class FitnessModel {
+  public:
+    std::vector<std::unique_ptr<FitnessLandscape>> fitness_landscapes;
+    std::vector<std::unique_ptr<FitnessState>> fitness_states;
+
     u_long nbr_sites() const {
-        return std::accumulate(this->begin(), this->end(), 0, [](u_long a, auto const &b) {
-            return a + b->nbr_sites();
-        });
+        return std::accumulate(fitness_landscapes.begin(), fitness_landscapes.end(), 0,
+            [](u_long a, auto const &b) { return a + b->nbr_sites(); });
     };
-};
-
-
-class Phenotype {
-public:
-    virtual ~Phenotype() = default;
 };

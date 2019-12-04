@@ -42,7 +42,7 @@ void write_sequence(
 
 std::string join(std::vector<std::string> const &v, char sep) {
     return std::accumulate(v.begin() + 1, v.end(), v[0],
-        [sep](const std::string &acc, std::string b) { return acc + sep + b; });
+        [sep](std::string const &acc, std::string b) { return acc + sep + b; });
 }
 
 std::string d_to_string(double val) {

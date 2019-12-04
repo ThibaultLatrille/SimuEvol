@@ -5,8 +5,8 @@
 
 
 double distance(std::vector<double> const &v) {
-    return std::sqrt(
-            std::accumulate(v.begin(), v.end(), 0.0, [](double a, double const &b) { return a + b * b; }));
+    return std::sqrt(std::accumulate(
+        v.begin(), v.end(), 0.0, [](double a, double const &b) { return a + b * b; }));
 }
 
 double fitness(std::vector<double> const &v, double a = 0.5, int q = 2) {
@@ -23,13 +23,12 @@ std::vector<double> spherical_coord(u_long n, double radius) {
 }
 
 class GeometricLandscape final : public FitnessLandscape {
-public:
+  public:
     // The fitness profiles of amino-acids.
     std::vector<std::array<std::vector<double>, 20>> sites_aa_phenotypes;
     u_long complexity;
 
-    explicit GeometricLandscape(u_long nbr_sites, const u_long &complexity) :
-            complexity{complexity} {
+    GeometricLandscape(u_long nbr_sites, u_long const &complexity) : complexity{complexity} {
         sites_aa_phenotypes.resize(nbr_sites);
         for (auto &site_aa_phenotypes : sites_aa_phenotypes) {
             for (auto &aa_phenotype : site_aa_phenotypes) {
@@ -39,50 +38,77 @@ public:
     }
 
     u_long nbr_sites() const override { return sites_aa_phenotypes.size(); }
-
-    double selection_coefficient(const std::vector<char> &codon_seq, u_long site, char codon_to) const override {
-        std::vector<double> phenotype(complexity, 0);
-        for (u_long dim = 0; dim < complexity; ++dim) {
-            for (u_long i = 0; i < nbr_sites(); ++i) {
-                phenotype[dim] += sites_aa_phenotypes.at(i)
-                        .at(codonLexico.codon_to_aa.at(codon_seq.at(i)))
-                        .at(dim);
-            }
-        }
-        auto mutant_phenotype = phenotype;
-        for (u_long dim = 0; dim < complexity; ++dim) {
-            mutant_phenotype[dim] -=
-                    sites_aa_phenotypes[site][codonLexico.codon_to_aa[codon_seq[site]]][dim];
-            mutant_phenotype[dim] += sites_aa_phenotypes[site][codonLexico.codon_to_aa[codon_to]][dim];
-        }
-        double f = fitness(phenotype);
-        double f1 = fitness(mutant_phenotype);
-        return (f1 - f) / f;
-    };
-
-    std::array<double, 20> aa_selection_coefficients(const std::vector<char> &codon_seq, u_long site) const override {
-        std::array<double, 20> aa_sel_coeffs{};
-        for (char aa = 0; aa < 20; aa++) {
-            auto it = std::find(
-                    codonLexico.codon_to_aa.begin(), codonLexico.codon_to_aa.end(), aa);
-            assert(it != codonLexico.codon_to_aa.end());
-            char codon_to = std::distance(codonLexico.codon_to_aa.begin(), it);
-            assert(codonLexico.codon_to_aa[codon_to] == aa);
-            aa_sel_coeffs[aa] = selection_coefficient(codon_seq, site, codon_to);
-        }
-        return aa_sel_coeffs;
-    }
 };
 
-class SequenceGeometricLandscape : public SequenceFitnessLandscape {
-public:
+class GeometricState final : public FitnessState {
+  private:
+    GeometricLandscape const &f;
+    std::vector<double> phenotype;
 
-    SequenceGeometricLandscape(u_long &exon_size, u_long &nbr_exons, double complexity) : SequenceFitnessLandscape() {
-        this->reserve(nbr_exons);
+  public:
+    std::unique_ptr<FitnessState> clone() const override {
+        return std::make_unique<GeometricState>(*this);
+    };
+
+    explicit GeometricState(GeometricLandscape const &f) : f{f} {
+        phenotype.resize(f.complexity, 0);
+    }
+
+    bool operator==(FitnessState const &other) const override {
+        return phenotype == dynamic_cast<GeometricState const *>(&other)->phenotype;
+    };
+
+    u_long nbr_sites() const override { return f.sites_aa_phenotypes.size(); }
+
+    void update(std::vector<char> const &codon_seq) override {
+        phenotype.resize(f.complexity, 0);
+        for (u_long dim = 0; dim < f.complexity; ++dim) {
+            for (u_long i = 0; i < nbr_sites(); ++i) {
+                phenotype[dim] += f.sites_aa_phenotypes.at(i)
+                                      .at(codonLexico.codon_to_aa.at(codon_seq.at(i)))
+                                      .at(dim);
+            }
+        }
+    }
+
+    void update(std::vector<char> const &codon_seq, u_long site, char codon_to) override {
+        for (u_long dim = 0; dim < f.complexity; ++dim) {
+            phenotype[dim] -= f.sites_aa_phenotypes.at(site)
+                                  .at(codonLexico.codon_to_aa.at(codon_seq.at(site)))
+                                  .at(dim);
+            phenotype[dim] +=
+                f.sites_aa_phenotypes.at(site).at(codonLexico.codon_to_aa.at(codon_to)).at(dim);
+        }
+    }
+
+    double selection_coefficient(
+        std::vector<char> const &codon_seq, u_long site, char codon_to) const override {
+        auto mutant_phenotype = phenotype;
+        for (u_long dim = 0; dim < f.complexity; ++dim) {
+            mutant_phenotype[dim] -=
+                f.sites_aa_phenotypes[site][codonLexico.codon_to_aa[codon_seq[site]]][dim];
+            mutant_phenotype[dim] +=
+                f.sites_aa_phenotypes[site][codonLexico.codon_to_aa[codon_to]][dim];
+        }
+        double fp = fitness(phenotype);
+        double fm = fitness(mutant_phenotype);
+        return (fm - fp) / fp;
+    };
+};
+
+class GeometricModel : public FitnessModel {
+  public:
+    GeometricModel(u_long &exon_size, u_long &nbr_exons, double complexity) : FitnessModel() {
+        fitness_landscapes.reserve(nbr_exons);
+        fitness_states.reserve(nbr_exons);
+
         for (u_long exon{0}; exon < nbr_exons; exon++) {
-            this->emplace_back(std::make_unique<GeometricLandscape>(exon_size, complexity));
+            fitness_landscapes.emplace_back(
+                std::make_unique<GeometricLandscape>(exon_size, complexity));
+            fitness_states.emplace_back(std::make_unique<GeometricState>(
+                *dynamic_cast<GeometricLandscape *>(fitness_landscapes.at(exon).get())));
         }
         assert(nbr_sites() == exon_size * nbr_exons);
-        std::cout << this->size() << " exons created." << std::endl;
+        std::cout << fitness_landscapes.size() << " exons created." << std::endl;
     }
 };
