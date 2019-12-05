@@ -5,21 +5,11 @@
 using namespace TCLAP;
 using namespace std;
 
-class SimuEvolArgParse : public SimuArgParse {
-  public:
-    explicit SimuEvolArgParse(CmdLine &cmd) : SimuArgParse(cmd) {}
-
-    TCLAP::ValueArg<std::string> preferences_path{
-        "f", "preferences", "input site-specific preferences path", true, "", "string", cmd};
-    TCLAP::ValueArg<double> beta{
-        "b", "beta", "Stringency parameter of the fitness profiles", false, 1.0, "double", cmd};
-    TCLAP::ValueArg<u_long> nbr_grid_step{"d", "nbr_grid_step",
-        "Number of intervals in which discretize the brownian motion", false, 100, "u_long", cmd};
-};
-
 int main(int argc, char *argv[]) {
     CmdLine cmd{"SimuDiv", ' ', "0.1"};
-    SimuEvolArgParse args(cmd);
+    SimuSubArgParse args(cmd);
+    TreeArgParse args_tree(cmd);
+    AdditiveArgParse args_fitness(cmd);
     cmd.parse(argc, argv);
 
     generator.seed(args.seed.getValue());
@@ -32,27 +22,27 @@ int main(int argc, char *argv[]) {
         args.nuc_matrix_path.getValue(), mutation_rate_per_generation / generation_time, true);
 
     // Tree
-    double root_age{args.root_age.getValue()};
-    bool branch_wise_correlation{args.branch_wise_correlation.getValue()};
-    Tree tree(args.newick_path.getValue());
+    double root_age{args_tree.root_age.getValue()};
+    bool branch_wise_correlation{args_tree.branch_wise_correlation.getValue()};
+    Tree tree(args_tree.newick_path.getValue());
     tree.set_root_age(root_age);
 
     // Fitness model
-    string preferences_path{args.preferences_path.getValue()};
     u_long exon_size{args.exons.getValue()};
-    SequenceAdditiveModel seq_fit_profiles(preferences_path, 1.0 / 4, exon_size);
+    SequenceAdditiveModel seq_fit_profiles(1.0 / 4, exon_size, args_fitness);
     u_long nbr_sites = seq_fit_profiles.nbr_sites();
     assert(0 <= exon_size and exon_size <= nbr_sites);
 
     // Process discretization
-    double beta{args.beta.getValue()};
+    double beta{args.pop_size.getValue()};
     assert(beta >= 0.0);
     u_long nbr_grid_step = args.nbr_grid_step.getValue();
     assert(nbr_grid_step > 0);
     time_grid_step = root_age / nbr_grid_step;
     LogMultivariate log_multivariate(beta, mutation_rate_per_generation, generation_time);
-    CorrelationMatrix correlation_matrix(args.precision_path.getValue(),
-        args.fix_pop_size.getValue(), args.fix_mut_rate.getValue(), args.fix_gen_time.getValue());
+    CorrelationMatrix correlation_matrix(args_tree.precision_path.getValue(),
+        args_tree.fix_pop_size.getValue(), args_tree.fix_mut_rate.getValue(),
+        args_tree.fix_gen_time.getValue());
     Eigen::SelfAdjointEigenSolver<EMatrix> eigen_solver(correlation_matrix);
     EMatrix transform_matrix =
         eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
@@ -60,10 +50,10 @@ int main(int argc, char *argv[]) {
     // Save the parameters of the simulation
     Trace parameters;
     args.add_to_trace(parameters);
+    args_fitness.add_to_trace(parameters);
+    args_tree.add_to_trace(parameters);
     tree.add_to_trace(parameters);
-    parameters.add("site_preferences_path", preferences_path);
-    parameters.add("preferences_beta", beta);
-    parameters.add("#exons", seq_fit_profiles.nbr_exons());
+    parameters.add("#nbr_exons", seq_fit_profiles.nbr_exons());
     parameters.add("#codonsites", nbr_sites);
     parameters.add("#nucleotidesites", nbr_sites * 3);
     nuc_matrix.add_to_trace(parameters);

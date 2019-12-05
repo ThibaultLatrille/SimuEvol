@@ -414,21 +414,40 @@ std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = 
     {"sub-ΔG", SummaryStatistic()}, {"sub-GFold", SummaryStatistic()},
     {"sub-GUnfold", SummaryStatistic()}};
 
+class FoldingArgParse {
+  protected:
+    TCLAP::CmdLine &cmd;
+
+  public:
+    explicit FoldingArgParse(TCLAP::CmdLine &cmd) : cmd{cmd} {}
+    TCLAP::ValueArg<std::string> pdb_folder{"", "pdb_folder",
+        "The folder containing the .pdb files", false, "data/pdbfiles", "string", cmd};
+    TCLAP::ValueArg<u_long> nbr_exons{
+        "", "nbr_exons", "Number of exons in the protein", false, 5000, "u_long", cmd};
+    TCLAP::ValueArg<double> cut_off{"", "cut_off",
+        "The distance (in angstrom) to determine if 2 sites are in contact", false, 7.0, "double",
+        cmd};
+    void add_to_trace(Trace &trace) {
+        trace.add("#nbr_exons", nbr_exons.getValue());
+        trace.add("cut_off", cut_off.getValue());
+        trace.add("pdb_folder", pdb_folder.getValue());
+    }
+};
+
 class StabilityModel : public FitnessModel {
   public:
-    StabilityModel(
-        std::string const &pdb_folder, u_long exon_size, u_long nbr_exons, double cut_off)
-        : FitnessModel() {
-        fitness_landscapes.reserve(nbr_exons);
-        fitness_states.reserve(nbr_exons);
+    StabilityModel(u_long exon_size, FoldingArgParse &args) : FitnessModel() {
+        fitness_landscapes.reserve(args.nbr_exons.getValue());
+        fitness_states.reserve(args.nbr_exons.getValue());
+        StabilityLandscape landscape(
+            args.pdb_folder.getValue(), exon_size, args.cut_off.getValue());
 
-        for (u_long exon{0}; exon < nbr_exons; exon++) {
-            fitness_landscapes.emplace_back(
-                std::make_unique<StabilityLandscape>(pdb_folder, exon_size, cut_off));
+        for (u_long exon{0}; exon < args.nbr_exons.getValue(); exon++) {
+            fitness_landscapes.emplace_back(std::make_unique<StabilityLandscape>(landscape));
             fitness_states.emplace_back(std::make_unique<StabilityState>(
                 *dynamic_cast<StabilityLandscape *>(fitness_landscapes.at(exon).get())));
         }
-        assert(nbr_sites() == exon_size * nbr_exons);
+        assert(nbr_sites() == exon_size * args.nbr_exons.getValue());
         std::cout << fitness_landscapes.size() << " exons created." << std::endl;
     }
 

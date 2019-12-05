@@ -3,7 +3,7 @@
 #include <array>
 #include <vector>
 #include "fitness.hpp"
-
+#include "tclap/CmdLine.h"
 
 class AdditiveLandscape final : public FitnessLandscape {
   public:
@@ -72,15 +72,33 @@ std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = 
     {"mut-s", SummaryStatistic()}, {"mut-sum", SummaryStatistic()},
     {"sub-sum", SummaryStatistic()}};
 
+class AdditiveArgParse {
+  protected:
+    TCLAP::CmdLine &cmd;
+
+  public:
+    explicit AdditiveArgParse(TCLAP::CmdLine &cmd) : cmd{cmd} {}
+    TCLAP::ValueArg<std::string> preferences_path{
+        "", "preferences", "input site-specific preferences path", true, "", "string", cmd};
+    TCLAP::ValueArg<double> beta{
+        "", "beta", "Stringency parameter of the fitness profiles", false, 1.0, "double", cmd};
+
+    void add_to_trace(Trace &trace) {
+        trace.add("site_preferences_path", preferences_path.getValue());
+        trace.add("site_preferences_beta", beta.getValue());
+    }
+};
+
 class SequenceAdditiveModel : public FitnessModel {
   public:
-    SequenceAdditiveModel(std::string const &file_name, double const &beta, u_long &exon_size)
+    SequenceAdditiveModel(double const &beta_prefactor, u_long &exon_size, AdditiveArgParse &args)
         : FitnessModel() {
         std::vector<std::array<double, 20>> site_aa_coeffs;
 
-        std::ifstream input_stream(file_name);
+        std::ifstream input_stream(args.preferences_path.getValue());
         if (!input_stream)
-            std::cerr << "Preferences file " << file_name << " doesn't exist" << std::endl;
+            std::cerr << "Preferences file " << args.preferences_path.getValue() << " doesn't exist"
+                      << std::endl;
 
         std::string line;
 
@@ -114,7 +132,7 @@ class SequenceAdditiveModel : public FitnessModel {
             }
             for (auto &val : fitness_profil) {
                 val -= min_val;
-                val *= beta;
+                val *= beta_prefactor * args.beta.getValue();
             }
 
             site_aa_coeffs.push_back(fitness_profil);

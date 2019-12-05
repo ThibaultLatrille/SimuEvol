@@ -5,21 +5,11 @@
 using namespace TCLAP;
 using namespace std;
 
-class SimuEvolArgParse : public SimuArgParse {
-  public:
-    explicit SimuEvolArgParse(CmdLine &cmd) : SimuArgParse(cmd) {}
-    TCLAP::ValueArg<double> pop_size{
-        "b", "population_size", "Effective population size", false, 1.0, "double", cmd};
-    TCLAP::ValueArg<u_long> nbr_grid_step{"d", "nbr_grid_step",
-        "Number of intervals in which discretize the brownian motion", false, 100, "u_long", cmd};
-    TCLAP::ValueArg<u_long> complexity{
-        "", "complexity", "Complexity of the fitness landscape", false, 3, "u_long", cmd};
-    TCLAP::ValueArg<u_long> nbr_exons{"", "nbr_exons", "Number of exons", false, 30, "u_long", cmd};
-};
-
 int main(int argc, char *argv[]) {
     CmdLine cmd{"SimuGeo", ' ', "0.1"};
-    SimuEvolArgParse args(cmd);
+    SimuSubArgParse args(cmd);
+    TreeArgParse args_tree(cmd);
+    GeometricArgParse args_fitness(cmd);
     cmd.parse(argc, argv);
 
     generator.seed(args.seed.getValue());
@@ -32,17 +22,14 @@ int main(int argc, char *argv[]) {
         args.nuc_matrix_path.getValue(), mutation_rate_per_generation / generation_time, true);
 
     // Tree
-    double root_age{args.root_age.getValue()};
-    bool branch_wise_correlation{args.branch_wise_correlation.getValue()};
-    Tree tree(args.newick_path.getValue());
+    double root_age{args_tree.root_age.getValue()};
+    bool branch_wise_correlation{args_tree.branch_wise_correlation.getValue()};
+    Tree tree(args_tree.newick_path.getValue());
     tree.set_root_age(root_age);
 
     // Fitness model
-    u_long complexity = args.complexity.getValue();
-    assert(complexity > 0);
-    u_long nbr_exons{args.nbr_exons.getValue()};
     u_long exon_size{args.exons.getValue()};
-    GeometricModel seq_fitness(exon_size, nbr_exons, complexity);
+    GeometricModel seq_fitness(exon_size, args_fitness);
     u_long nbr_sites = seq_fitness.nbr_sites();
     assert(exon_size <= nbr_sites);
 
@@ -53,8 +40,9 @@ int main(int argc, char *argv[]) {
     assert(nbr_grid_step > 0);
     time_grid_step = root_age / nbr_grid_step;
     LogMultivariate log_multivariate(pop_size, mutation_rate_per_generation, generation_time);
-    CorrelationMatrix correlation_matrix(args.precision_path.getValue(),
-        args.fix_pop_size.getValue(), args.fix_mut_rate.getValue(), args.fix_gen_time.getValue());
+    CorrelationMatrix correlation_matrix(args_tree.precision_path.getValue(),
+        args_tree.fix_pop_size.getValue(), args_tree.fix_mut_rate.getValue(),
+        args_tree.fix_gen_time.getValue());
     Eigen::SelfAdjointEigenSolver<EMatrix> eigen_solver(correlation_matrix);
     EMatrix transform_matrix =
         eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
@@ -62,9 +50,9 @@ int main(int argc, char *argv[]) {
     // Save the parameters of the simulation
     Trace parameters;
     args.add_to_trace(parameters);
+    args_fitness.add_to_trace(parameters);
+    args_tree.add_to_trace(parameters);
     tree.add_to_trace(parameters);
-    parameters.add("complexity", complexity);
-    parameters.add("pop_size", pop_size);
     parameters.add("#codonsites", nbr_sites);
     parameters.add("#nucleotidesites", nbr_sites * 3);
     nuc_matrix.add_to_trace(parameters);

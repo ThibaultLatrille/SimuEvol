@@ -1,6 +1,7 @@
 #pragma once
 
 #include "matrices.hpp"
+#include "tclap/CmdLine.h"
 
 double Pfix(double const &pop_size, double const &selection_coefficient) {
     double S = 4 * selection_coefficient * pop_size;
