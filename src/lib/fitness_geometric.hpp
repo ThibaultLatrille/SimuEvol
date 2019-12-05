@@ -71,7 +71,8 @@ class GeometricState final : public FitnessState {
         }
     }
 
-    void update(std::vector<char> const &codon_seq, u_long site, char codon_to) override {
+    void update(
+        std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in) override {
         for (u_long dim = 0; dim < f.complexity; ++dim) {
             phenotype[dim] -= f.sites_aa_phenotypes.at(site)
                                   .at(codonLexico.codon_to_aa.at(codon_seq.at(site)))
@@ -79,10 +80,11 @@ class GeometricState final : public FitnessState {
             phenotype[dim] +=
                 f.sites_aa_phenotypes.at(site).at(codonLexico.codon_to_aa.at(codon_to)).at(dim);
         }
+        if (!burn_in) { summary_stats["sub-distance"].add(distance(phenotype)); }
     }
 
-    double selection_coefficient(
-        std::vector<char> const &codon_seq, u_long site, char codon_to) const override {
+    double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
+        bool burn_in) const override {
         auto mutant_phenotype = phenotype;
         for (u_long dim = 0; dim < f.complexity; ++dim) {
             mutant_phenotype[dim] -=
@@ -92,9 +94,18 @@ class GeometricState final : public FitnessState {
         }
         double fp = fitness(phenotype);
         double fm = fitness(mutant_phenotype);
-        return (fm - fp) / fp;
+        double s = (fm - fp) / fp;
+        if (!burn_in) {
+            summary_stats["mut-s"].add(s);
+            summary_stats["mut-distance"].add(distance(mutant_phenotype));
+        }
+        return s;
     };
 };
+
+std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {
+    {"mut-s", SummaryStatistic()}, {"mut-distance", SummaryStatistic()},
+    {"sub-distance", SummaryStatistic()}};
 
 class GeometricModel : public FitnessModel {
   public:

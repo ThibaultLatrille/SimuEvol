@@ -43,16 +43,23 @@ class AdditiveState final : public FitnessState {
     }
 
 
-    void update(std::vector<char> const &codon_seq, u_long site, char codon_to) override {
+    void update(
+        std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in) override {
         sum_selection_coeff -=
             f.profiles.at(site).at(codonLexico.codon_to_aa.at(codon_seq.at(site)));
         sum_selection_coeff += f.profiles.at(site).at(codonLexico.codon_to_aa.at(codon_to));
+        if (!burn_in) { summary_stats["sub-sum"].add(sum_selection_coeff); }
     }
 
-    double selection_coefficient(
-        std::vector<char> const &codon_seq, u_long site, char codon_to) const override {
-        return f.profiles[site][codonLexico.codon_to_aa[codon_to]] -
-               f.profiles[site][codonLexico.codon_to_aa[codon_seq[site]]];
+    double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
+        bool burn_in) const override {
+        double s = f.profiles[site][codonLexico.codon_to_aa[codon_to]] -
+                   f.profiles[site][codonLexico.codon_to_aa[codon_seq[site]]];
+        if (!burn_in) {
+            summary_stats["mut-s"].add(s);
+            summary_stats["mut-sum"].add(sum_selection_coeff + s);
+        }
+        return s;
     };
 
     std::array<double, 20> aa_selection_coefficients(
@@ -60,6 +67,10 @@ class AdditiveState final : public FitnessState {
         return f.profiles.at(site);
     }
 };
+
+std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {
+    {"mut-s", SummaryStatistic()}, {"mut-sum", SummaryStatistic()},
+    {"sub-sum", SummaryStatistic()}};
 
 class SequenceAdditiveModel : public FitnessModel {
   public:

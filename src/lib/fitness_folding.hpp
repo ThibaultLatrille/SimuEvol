@@ -301,31 +301,18 @@ class StabilityLandscape final : public FitnessLandscape {
     std::string seq() const { return native.proteinSeq; }
 };
 
-// Mean of a vector
-double mean(std::vector<double> const &v) {
-    return std::accumulate(v.begin(), v.end(), 0.0) / v.size();
-}
-
-// Variance of a vector
-double var(std::vector<double> const &v, double s) {
-    double s2 = std::accumulate(v.begin(), v.end(), 0.0, [](double a, double const &b) {
-        return a + b * b;
-    }) / v.size();
-    return s2 - s * s;
-}
-
 double computePFolded(double deltaG) {
     double factor = exp(-deltaG / TEMPERATURE);
     return (factor / (1 + factor));
 }
 
-double computeSelCoeff(double deltaG, double deltaGMutant) {
+double selection_coefficient_ddG(double deltaG, double deltaGMutant) {
     // s = (f' - f)/f where f = e(-D/T)/(1+e(-D/T))
     // return (exp((deltaG - deltaGMutant) / TEMPERATURE) - 1) / (exp(-deltaG / TEMPERATURE) +
     // 1); return computePFolded(deltaGMutant) / computePFolded(deltaG) - 1.0;
     double fm = computePFolded(deltaGMutant), f = computePFolded(deltaG);
     return (fm - f) / f;
-}
+};
 
 class StabilityState final : public FitnessState {
   private:
@@ -363,31 +350,37 @@ class StabilityState final : public FitnessState {
         for (size_t i = 0; i < f.unfoldedVector.size(); i++) {
             unfoldedEnergyVector[i] = f.unfoldedVector[i].getEnergy(codon_seq);
         }
-        double avgUnfoldedEnergy = mean(unfoldedEnergyVector);
-        double sigma2 = var(unfoldedEnergyVector, avgUnfoldedEnergy);
+        double avgUnfoldedEnergy = avg(unfoldedEnergyVector);
+        double sigma2 = variance(unfoldedEnergyVector, avgUnfoldedEnergy);
 
         nativeDeltaG = nativeEnergy - avgUnfoldedEnergy + (TEMPERATURE * LOG_UNFOLDED_STATES) +
                        (sigma2 / (2.0 * TEMPERATURE));
         nativePFolded = computePFolded(nativeDeltaG);
     }
 
-    void update(std::vector<char> const &codon_seq, u_long site, char codon_to) override {
+    void update(
+        std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in) override {
         nativeEnergy += f.native.getMutantEnergy(codon_seq, site, codon_seq[site], codon_to);
 
         for (size_t i = 0; i < f.unfoldedVector.size(); i++) {
             unfoldedEnergyVector[i] +=
                 f.unfoldedVector[i].getMutantEnergy(codon_seq, site, codon_seq[site], codon_to);
         }
-        double avgUnfoldedEnergy = mean(unfoldedEnergyVector);
-        double sigma2 = var(unfoldedEnergyVector, avgUnfoldedEnergy);
+        double avgUnfoldedEnergy = avg(unfoldedEnergyVector);
+        double sigma2 = variance(unfoldedEnergyVector, avgUnfoldedEnergy);
 
         nativeDeltaG = nativeEnergy - avgUnfoldedEnergy + (TEMPERATURE * LOG_UNFOLDED_STATES) +
                        (sigma2 / (2.0 * TEMPERATURE));
         nativePFolded = computePFolded(nativeDeltaG);
+        if (!burn_in) {
+            summary_stats["sub-ΔG"].add(nativeDeltaG);
+            summary_stats["sub-GFold"].add(nativeEnergy);
+            summary_stats["sub-GUnfold"].add(avgUnfoldedEnergy);
+        }
     }
 
-    double selection_coefficient(
-        std::vector<char> const &codon_seq, u_long site, char codon_to) const override {
+    double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
+        bool burn_in) const override {
         if (codonLexico.codon_to_aa[codon_seq[site]] == codonLexico.codon_to_aa[codon_to]) {
             return 0.0;
         }
@@ -400,15 +393,26 @@ class StabilityState final : public FitnessState {
                 unfoldedEnergyVector[i] +
                 f.unfoldedVector[i].getMutantEnergy(codon_seq, site, codon_seq[site], codon_to);
         }
-        double avgUnfoldedMutantEnergy = mean(unfoldedMutantEnergyVector);
-        double sigma2 = var(unfoldedMutantEnergyVector, avgUnfoldedMutantEnergy);
+        double avgUnfoldedMutantEnergy = avg(unfoldedMutantEnergyVector);
+        double sigma2 = variance(unfoldedMutantEnergyVector, avgUnfoldedMutantEnergy);
 
         double mutantDeltaG = nativeMutantEnergy - avgUnfoldedMutantEnergy +
                               (TEMPERATURE * LOG_UNFOLDED_STATES) + (sigma2 / (2.0 * TEMPERATURE));
 
-        return computeSelCoeff(nativeDeltaG, mutantDeltaG);
+        double s = selection_coefficient_ddG(nativeDeltaG, mutantDeltaG);
+        if (!burn_in) {
+            summary_stats["mut-s"].add(s);
+            summary_stats["mut-ΔG"].add(mutantDeltaG);
+            summary_stats["mut-ΔΔG"].add(mutantDeltaG - nativeDeltaG);
+        }
+        return s;
     }
 };
+
+std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {
+    {"mut-s", SummaryStatistic()}, {"mut-ΔG", SummaryStatistic()}, {"mut-ΔΔG", SummaryStatistic()},
+    {"sub-ΔG", SummaryStatistic()}, {"sub-GFold", SummaryStatistic()},
+    {"sub-GUnfold", SummaryStatistic()}};
 
 class StabilityModel : public FitnessModel {
   public:

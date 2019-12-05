@@ -131,11 +131,12 @@ int main(int argc, char *argv[]) {
     trace.add("dnd0_count_tot", dnd0_count_tot);
     trace.add("dnds_event_tot", dnds_event_tot);
     trace.add("dnds_count_tot", dnds_count_tot);
-    trace.add("<Pfix>", pfix_tot / nbr_non_synonymous);
-    trace.add("<s>", s_tot / nbr_non_synonymous);
-    trace.add("<S=4Nes>", S_tot / nbr_non_synonymous);
-    trace.add("<|s|>", s_abs_tot / nbr_non_synonymous);
-    trace.add("<|S=4Nes|>", S_abs_tot / nbr_non_synonymous);
+    for (auto const &ss : FitnessState::summary_stats) {
+        trace.add(ss.first + "-mean", ss.second.mean());
+        trace.add(ss.first + "-var", ss.second.variance());
+        trace.add(ss.first + "-abs-mean", ss.second.abs_mean());
+        trace.add(ss.first + "-var", ss.second.abs_variance());
+    }
     trace.write_tsv(output_path);
 
     tracer_traits.write_tsv(output_path + ".traits");

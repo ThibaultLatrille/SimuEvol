@@ -317,11 +317,11 @@ class Exon {
     void forward(NucleotideRateMatrix const &nuc_matrix, u_long const &population_size,
         BinomialDistr &binomial_distrib, double time_current,
         std::vector<Substitution> &substitutions, u_long &non_syn_mutations, u_long &syn_mutations,
-        bool trace) {
-        mutation(nuc_matrix, binomial_distrib, non_syn_mutations, syn_mutations, trace);
+        bool burn_in) {
+        mutation(nuc_matrix, binomial_distrib, non_syn_mutations, syn_mutations, burn_in);
         selection_and_drift(population_size);
         extinction();
-        fixation(time_current, substitutions, non_syn_mutations, syn_mutations, trace);
+        fixation(time_current, substitutions, non_syn_mutations, syn_mutations, burn_in);
     }
 
     u_long random_nuc_site() const {
@@ -329,7 +329,7 @@ class Exon {
     }
 
     void mutation(NucleotideRateMatrix const &p, BinomialDistr &binomial_distrib,
-        u_long &non_syn_mutations, u_long &syn_mutations, bool trace) {
+        u_long &non_syn_mutations, u_long &syn_mutations, bool burn_in) {
         TimeVar t_start = timeNow();
 
         // Randomly choose the number of mutations at this generation (for this exon)
@@ -401,7 +401,8 @@ class Exon {
             // Update the fitness of the new haplotype
             auto bk = codon_seq.at(codon_site);
             codon_seq[codon_site] = codon_from;
-            double df = fitness_state.ptr->selection_coefficient(codon_seq, codon_site, codon_to);
+            double df =
+                fitness_state.ptr->selection_coefficient(codon_seq, codon_site, codon_to, burn_in);
             codon_seq[codon_site] = bk;
 
             haplotype.sel_coeff += df;
@@ -412,7 +413,7 @@ class Exon {
             haplotype_vector.push_back(haplotype);
 
             // Track the created mutation
-            if (!trace) { continue; }
+            if (burn_in) { continue; }
             if (is_synonymous(codon_from, codon_to)) {
                 syn_mutations++;
                 events.syn_mut++;
@@ -476,7 +477,7 @@ class Exon {
     }
 
     void fixation(double time_current, std::vector<Substitution> &substitutions,
-        u_long &non_syn_mutations, u_long &syn_mutations, bool trace) {
+        u_long &non_syn_mutations, u_long &syn_mutations, bool burn_in) {
         TimeVar t_start = timeNow();
 
         // ! Copy before the loop is necessary, since it can be updated during the loop
@@ -516,7 +517,8 @@ class Exon {
                         return p1.second < p2.second;
                     })->first;
             }
-            double df = fitness_state.ptr->selection_coefficient(codon_seq, site, codon_to);
+            double df =
+                fitness_state.ptr->selection_coefficient(codon_seq, site, codon_to, burn_in);
             codon_seq[site] = codon_to;
 
             // Update the vector of haplotypes
@@ -531,7 +533,7 @@ class Exon {
             }
 
             // Track the created substitution
-            if (!trace) { continue; }
+            if (burn_in) { continue; }
             if (is_synonymous(codon_from, codon_to)) {
                 events.syn_fix++;
             } else {
@@ -572,7 +574,7 @@ class Exon {
             char codon_from = codon_seq[diff.first];
             char codon_to = diff.second;
 
-            double df = fitness_state.ptr->selection_coefficient(codon_seq, site, codon_to);
+            double df = fitness_state.ptr->selection_coefficient(codon_seq, site, codon_to, true);
 
             codon_seq[site] = codon_to;
             for (auto &haplotype : haplotype_vector) {
@@ -761,7 +763,7 @@ class Population {
             }
             for (auto &exon : exons) {
                 exon.forward(nuc_matrix, population_size, binomial_distribs.at(exon.nbr_sites),
-                    time_current, substitutions, non_syn_mutations, syn_mutations, true);
+                    time_current, substitutions, non_syn_mutations, syn_mutations, false);
             }
             assert(check_consistency());
             time_current += generation_time;
@@ -777,7 +779,7 @@ class Population {
             for (auto &exon : exons) {
                 assert(!exon.haplotype_vector.empty());
                 exon.forward(nuc_matrix, population_size, binomial_distribs.at(exon.nbr_sites), 0,
-                    substitutions, non_syn_mutations, syn_mutations, false);
+                    substitutions, non_syn_mutations, syn_mutations, true);
             }
             assert(check_consistency());
         }

@@ -6,7 +6,6 @@
 #include "random.hpp"
 
 double dnds_count_tot{0}, dnds_event_tot{0}, dnd0_count_tot{0}, dnd0_event_tot{0};
-double s_tot{0}, S_tot{0}, s_abs_tot{0}, S_abs_tot{0}, pfix_tot{0};
 
 class Substitution {
   public:
@@ -88,7 +87,7 @@ class Exon {
     // is computed and the method returns 0. time_left: The time available for a substitution event
     // to occur.
     double next_substitution(NucleotideRateMatrix const &nuc_matrix, double beta, double time_start,
-        double time_end, bool only_non_syn) {
+        double time_end, bool burn_in) {
         // Number of possible substitutions is 9 times the number of sites (3 substitutions for each
         // 3 possible positions).
         u_long nbr_substitutions{9 * nbr_sites};
@@ -130,11 +129,11 @@ class Exon {
                 rate_substitution = nuc_matrix(n_from, n_to);
                 if (codonLexico.codon_to_aa[codon_from] != codonLexico.codon_to_aa[codon_to]) {
                     non_syn_mut_flow += rate_substitution;
-                    rate_substitution *= Pfix(
-                        beta, fitness_state.ptr->selection_coefficient(codon_seq, site, codon_to));
+                    rate_substitution *= Pfix(beta, fitness_state.ptr->selection_coefficient(
+                                                        codon_seq, site, codon_to, burn_in));
                     non_syn_sub_flow += rate_substitution;
                 } else {
-                    if (only_non_syn) { continue; }
+                    if (burn_in) { continue; }
                     syn_mut_flow += rate_substitution;
                 }
 
@@ -172,17 +171,21 @@ class Exon {
             assert(non_syn_mut_flow < 10e10);
             assert(syn_mut_flow < 10e10);
 
-            substitutions.emplace(time_start + time_draw, time_draw, non_syn_sub_flow,
-                non_syn_mut_flow, syn_mut_flow, codom_from, codon_to, n_from, n_to, site);
+            if (!burn_in) {
+                substitutions.emplace(time_start + time_draw, time_draw, non_syn_sub_flow,
+                    non_syn_mut_flow, syn_mut_flow, codom_from, codon_to, n_from, n_to, site);
+            }
 
             if (codonLexico.codon_to_aa[codon_seq[site]] != codonLexico.codon_to_aa[codon_to]) {
-                fitness_state.ptr->update(codon_seq, site, codon_to);
+                fitness_state.ptr->update(codon_seq, site, codon_to, burn_in);
             }
             codon_seq[site] = codon_to;
             time_start += time_draw;
         } else {
-            substitutions.emplace(
-                time_end, time_end - time_start, non_syn_sub_flow, non_syn_mut_flow, syn_mut_flow);
+            if (!burn_in) {
+                substitutions.emplace(time_end, time_end - time_start, non_syn_sub_flow,
+                    non_syn_mut_flow, syn_mut_flow);
+            }
             time_start = time_end;
         }
         return time_start;
@@ -361,7 +364,7 @@ class Sequence {
                     char chosen_codon = freq_codon_distr(generator);
                     if (codonLexico.codon_to_aa[chosen_codon] !=
                         codonLexico.codon_to_aa[exon.codon_seq[site]]) {
-                        exon.fitness_state.ptr->update(exon.codon_seq, site, chosen_codon);
+                        exon.fitness_state.ptr->update(exon.codon_seq, site, chosen_codon, true);
                     }
                     exon.codon_seq[site] = chosen_codon;
                 }

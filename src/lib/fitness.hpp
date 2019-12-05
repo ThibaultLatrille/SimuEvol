@@ -50,6 +50,8 @@ class FitnessLandscape {
 
 class FitnessState {
   public:
+    static std::unordered_map<std::string, SummaryStatistic> summary_stats;
+
     virtual std::unique_ptr<FitnessState> clone() const = 0;
 
     virtual bool operator==(FitnessState const &other) const = 0;
@@ -58,10 +60,11 @@ class FitnessState {
 
     virtual void update(std::vector<char> const &codon_seq) = 0;
 
-    virtual void update(std::vector<char> const &codon_seq, u_long site, char codon_to) = 0;
+    virtual void update(
+        std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in) = 0;
 
     virtual double selection_coefficient(
-        std::vector<char> const &codon_seq, u_long site, char codon_to) const = 0;
+        std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in) const = 0;
 
     virtual std::array<double, 20> aa_selection_coefficients(
         std::vector<char> const &codon_seq, u_long site) const {
@@ -71,7 +74,7 @@ class FitnessState {
             assert(it != codonLexico.codon_to_aa.end());
             char codon_to = std::distance(codonLexico.codon_to_aa.begin(), it);
             assert(codonLexico.codon_to_aa[codon_to] == aa);
-            aa_sel_coeffs[aa] = selection_coefficient(codon_seq, site, codon_to);
+            aa_sel_coeffs[aa] = selection_coefficient(codon_seq, site, codon_to, false);
         }
         return aa_sel_coeffs;
     }
