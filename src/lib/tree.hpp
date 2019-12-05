@@ -1,9 +1,9 @@
 #pragma once
 
 #include <cassert>
-#include <fstream>
 #include <set>
 #include <vector>
+#include "io.hpp"
 #include "nhx-parser.hpp"
 
 // a tree with both a vector of parents and a vector of children
@@ -125,6 +125,15 @@ class Tree {
     }
 
     std::string as_string() const { return recursive_string(root()) + "; "; }
+
+    void add_to_trace(Trace& trace) {
+        trace.add("#tree_nodes", nb_nodes());
+        trace.add("#tree_branches", nb_branches());
+        trace.add("#tree_leaves", nb_leaves());
+        trace.add("tree_ultrametric", is_ultrametric());
+        trace.add("tree_min_distance_to_root_in_year", min_distance_to_root());
+        trace.add("tree_max_distance_to_root_in_year", max_distance_to_root());
+    }
 
     BranchIndex branch_index(NodeIndex i) const { return i - 1; }
     NodeIndex node_index(BranchIndex i) const { return i + 1; }

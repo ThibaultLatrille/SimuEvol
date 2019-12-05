@@ -164,4 +164,6 @@ class FitnessModel {
         return std::accumulate(fitness_landscapes.begin(), fitness_landscapes.end(), 0,
             [](u_long a, auto const &b) { return a + b->nbr_sites(); });
     };
+
+    u_long nbr_exons() const { return fitness_landscapes.size(); };
 };

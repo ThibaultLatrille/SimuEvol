@@ -3,7 +3,9 @@
 #include <fstream>
 #include <iostream>
 #include <numeric>
+#include <sstream>
 #include <unordered_map>
+#include <vector>
 
 
 std::string char_to_str(char const &_char) {
@@ -42,7 +44,7 @@ void write_sequence(
 
 std::string join(std::vector<std::string> const &v, char sep) {
     return std::accumulate(v.begin() + 1, v.end(), v[0],
-        [sep](std::string const &acc, std::string b) { return acc + sep + b; });
+        [sep](std::string const &acc, std::string const &b) { return acc + sep + b; });
 }
 
 std::string d_to_string(double val) {

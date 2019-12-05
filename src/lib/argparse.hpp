@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cmath>
 #include <fstream>
+#include "io.hpp"
 #include "tclap/CmdLine.h"
 
 class OutputArgParse {
@@ -43,4 +44,22 @@ class SimuArgParse : public OutputArgParse {
     TCLAP::SwitchArg fix_pop_size{"", "fix_pop_size", "Population size is fixed", cmd, false};
     TCLAP::SwitchArg fix_mut_rate{"", "fix_mut_rate", "Mutation rate is fixed", cmd, false};
     TCLAP::SwitchArg fix_gen_time{"", "fix_gen_time", "Generation time is fixed", cmd, false};
+
+    void add_to_trace(Trace& trace) {
+        std::cout << "Random generator seed: " << seed.getValue() << std::endl;
+        assert(mutation_rate_per_generation.getValue() > 0.0);
+        assert(root_age.getValue() > 0.0);
+        assert(generation_time.getValue() > 0.0);
+        assert(generation_time.getValue() < root_age.getValue());
+        trace.add("fix_pop_size", fix_pop_size.getValue());
+        trace.add("fix_mut_rate", fix_mut_rate.getValue());
+        trace.add("fix_gen_time", fix_gen_time.getValue());
+        trace.add("seed", seed.getValue());
+        trace.add("output_path", output_path.getValue());
+        trace.add("tree_path", newick_path.getValue());
+        trace.add("generation_time", generation_time.getValue());
+        trace.add("exon_size", exons.getValue());
+        trace.add("nucleotide_matrix_path", output_path.getValue());
+        trace.add("mutation_rate_per_generation", mutation_rate_per_generation.getValue());
+    }
 };

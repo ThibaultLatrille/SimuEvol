@@ -690,7 +690,7 @@ class Process {
     }
 
     // Recursively iterate through the subtree and count the number of substitutions.
-    std::tuple<long, long> nbr_substitutions() {
+    void summary(std::string const &output_path, double expected_subs) {
         long nbr_non_syn{0}, nbr_syn{0};
 
         for (std::unique_ptr<Sequence> const &seq : sequences) {
@@ -702,7 +702,47 @@ class Process {
                 [](Substitution const &s) { return s.is_non_synonymous(); });
         }
 
-        return std::make_tuple(nbr_non_syn, nbr_syn);
+
+        dnd0_event_tot /= tree.total_length();
+        dnd0_count_tot /= tree.total_length();
+        dnds_event_tot /= tree.total_length();
+        dnds_count_tot /= tree.total_length();
+
+        std::cout << "dnd0_event_tot is :" << dnd0_event_tot << std::endl;
+        std::cout << "dnd0_count_tot is :" << dnd0_count_tot << std::endl;
+        std::cout << "dnds_event_tot is :" << dnds_event_tot << std::endl;
+        std::cout << "dnds_count_tot is :" << dnds_count_tot << std::endl;
+
+        // .txt output
+        Trace trace;
+        trace.add("#substitutions", nbr_syn + nbr_non_syn);
+        trace.add("#substitutions_per_site",
+            static_cast<double>(nbr_syn + nbr_non_syn) / sequences.begin()->get()->nbr_sites());
+        trace.add("#synonymous_substitutions", nbr_syn);
+        trace.add("#non_synonymous_substitutions", nbr_non_syn);
+        trace.add("dnd0_event_tot", dnd0_event_tot);
+        trace.add("dnd0_count_tot", dnd0_count_tot);
+        trace.add("dnds_event_tot", dnds_event_tot);
+        trace.add("dnds_count_tot", dnds_count_tot);
+        for (auto const &ss : FitnessState::summary_stats) {
+            trace.add(ss.first + "-mean", ss.second.mean());
+            trace.add(ss.first + "-var", ss.second.variance());
+            trace.add(ss.first + "-abs-mean", ss.second.abs_mean());
+            trace.add(ss.first + "-var", ss.second.abs_variance());
+        }
+        trace.write_tsv(output_path);
+
+        tracer_traits.write_tsv(output_path + ".traits");
+        tracer_fossils.write_tsv(output_path + ".fossils");
+        tracer_substitutions.write_tsv(output_path + ".substitutions");
+        tracer_sequences.write_tsv(output_path + ".sequences");
+
+        std::cout << "Simulation computed." << std::endl;
+        std::cout << expected_subs << " expected substitutions." << std::endl;
+        std::cout << nbr_syn + nbr_non_syn << " simulated substitutions." << std::endl;
+        std::cout << "Statistics summarized in: " << output_path + ".tsv" << std::endl;
+        std::cout << "Fasta file in: " << output_path + ".fasta" << std::endl;
+        std::cout << "Alignment (.ali) file in: " << output_path + ".ali" << std::endl;
     }
 };
 
