@@ -34,7 +34,7 @@ class Tree {
                 }
             }
             name_.push_back(node_name);
-            tags_.push_back(Tag());
+            tags_.emplace_back();
             std::string length = input_tree.tag(node, "length");
             if (length.empty()) {
                 length_.push_back(0.0);
@@ -60,6 +60,24 @@ class Tree {
             ultrametric_ = true;
             std::cout << "The tree is ultrametric." << std::endl;
         }
+    }
+
+    explicit Tree(int nbr_steps, double const& length) {
+        root_ = 0;
+        for (NodeIndex node = 0; node <= nbr_steps; node++) {
+            parent_.push_back(node - 1);
+            length_.push_back(node == root_ ? 0.0 : length);
+            children_.emplace_back(
+                node == nbr_steps ? std::set<NodeIndex>() : std::set<NodeIndex>({node + 1}));
+            name_.push_back(std::to_string(node));
+            tags_.emplace_back();
+            if (is_leaf(node)) { nb_leaves_++; }
+        }
+        assert(nb_branches() == nbr_steps);
+        assert(nb_leaves() == 1);
+        min_distance_ = nbr_steps * length;
+        max_distance_ = nbr_steps * length;
+        ultrametric_ = true;
     }
 
     const std::set<NodeIndex>& children(NodeIndex node) const { return children_.at(node); }

@@ -30,9 +30,11 @@ class GeometricLandscape final : public FitnessLandscape {
 
     GeometricLandscape(u_long nbr_sites, u_long const &complexity) : complexity{complexity} {
         sites_aa_phenotypes.resize(nbr_sites);
+        double mean = 0.1;
+        double radius = std::exponential_distribution<double>(1.0 / mean)(generator);
         for (auto &site_aa_phenotypes : sites_aa_phenotypes) {
             for (auto &aa_phenotype : site_aa_phenotypes) {
-                aa_phenotype = spherical_coord(complexity, 0.1);
+                aa_phenotype = spherical_coord(complexity, radius);
             }
         }
     }

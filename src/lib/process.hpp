@@ -19,10 +19,12 @@ class Substitution {
     double non_syn_sub_flow;
     double non_syn_mut_flow;
     double syn_mut_flow;
+    double dndn0;
+    std::array<u_long, 4> dfe;
 
     Substitution(double time_event, double time_between_event, double non_syn_sub_flow,
-        double non_syn_mut_flow, double syn_mut_flow, char codon_from = -1, char codon_to = -1,
-        char n_from = -1, char n_to = -1, u_long site = 0)
+        double non_syn_mut_flow, double syn_mut_flow, double dndn0, char codon_from = -1,
+        char codon_to = -1, char n_from = -1, char n_to = -1, u_long site = 0)
         : site{site},
           codon_from{codon_from},
           codon_to{codon_to},
@@ -32,7 +34,8 @@ class Substitution {
           time_between_event{time_between_event},
           non_syn_sub_flow{non_syn_sub_flow},
           non_syn_mut_flow{non_syn_mut_flow},
-          syn_mut_flow{syn_mut_flow} {}
+          syn_mut_flow{syn_mut_flow},
+          dndn0{dndn0} {}
 
     bool is_dummy() const { return codon_from == codon_to; }
 
@@ -98,7 +101,8 @@ class Exon {
         // Sum of substitution rates.
         double total_substitution_rates{0.};
 
-        double non_syn_sub_flow{0.0}, non_syn_mut_flow{0.0}, syn_mut_flow{0.0};
+        double non_syn_sub_flow{0.0}, non_syn_mut_flow{0.0}, syn_mut_flow{0.0}, dndn0{0.0};
+        u_long ns{0};
 
         // For all site of the sequence.
         for (u_long site{0}; site < nbr_sites; site++) {
@@ -129,9 +133,12 @@ class Exon {
                 rate_substitution = nuc_matrix(n_from, n_to);
                 if (codonLexico.codon_to_aa[codon_from] != codonLexico.codon_to_aa[codon_to]) {
                     non_syn_mut_flow += rate_substitution;
-                    rate_substitution *= Pfix(beta, fitness_state.ptr->selection_coefficient(
-                                                        codon_seq, site, codon_to, burn_in));
+                    double pfix = Pfix(beta, fitness_state.ptr->selection_coefficient(
+                                                 codon_seq, site, codon_to, burn_in));
+                    rate_substitution *= pfix;
                     non_syn_sub_flow += rate_substitution;
+                    dndn0 += pfix;
+                    ns++;
                 } else {
                     if (burn_in) { continue; }
                     syn_mut_flow += rate_substitution;
@@ -142,6 +149,8 @@ class Exon {
                 total_substitution_rates += rate_substitution;
             }
         }
+
+        dndn0 /= ns;
 
         // Increment the time by drawing from an exponential distribution (mean equal to the inverse
         // sum of substitution rates).
@@ -173,7 +182,8 @@ class Exon {
 
             if (!burn_in) {
                 substitutions.emplace(time_start + time_draw, time_draw, non_syn_sub_flow,
-                    non_syn_mut_flow, syn_mut_flow, codom_from, codon_to, n_from, n_to, site);
+                    non_syn_mut_flow, syn_mut_flow, dndn0, codom_from, codon_to, n_from, n_to,
+                    site + position);
             }
 
             if (codonLexico.codon_to_aa[codon_seq[site]] != codonLexico.codon_to_aa[codon_to]) {
@@ -184,7 +194,7 @@ class Exon {
         } else {
             if (!burn_in) {
                 substitutions.emplace(time_end, time_end - time_start, non_syn_sub_flow,
-                    non_syn_mut_flow, syn_mut_flow);
+                    non_syn_mut_flow, syn_mut_flow, dndn0);
             }
             time_start = time_end;
         }
@@ -223,18 +233,21 @@ class Sequence {
     NucleotideRateMatrix nuc_matrix;
 
     EMatrix const &transform_matrix;
+    BiasMultivariate const &bias_vector;
     bool branch_wise;
     std::vector<Substitution> interspersed_substitutions;
     PieceWiseMultivariate piecewise_multivariate{};
 
     Sequence(FitnessModel &seq_fitness, LogMultivariate &log_multi,
-        NucleotideRateMatrix &nucleotide_matrix, EMatrix const &transform_matrix, bool branch_wise)
+        NucleotideRateMatrix &nucleotide_matrix, EMatrix const &transform_matrix,
+        BiasMultivariate const &bias_vector, bool branch_wise)
         : exons{},
           log_multivariate{log_multi},
           beta{log_multivariate.beta()},
           generation_time{log_multivariate.generation_time()},
           nuc_matrix{nucleotide_matrix},
           transform_matrix{transform_matrix},
+          bias_vector{bias_vector},
           branch_wise{branch_wise} {
         u_long pos = 0;
         for (std::unique_ptr<FitnessState> &exon_seq_fitness : seq_fitness.fitness_states) {
@@ -261,11 +274,11 @@ class Sequence {
 
     u_long nbr_nucleotides() const { return 3 * nbr_sites(); }
 
-    void set_from_exon_aa_seq(std::string const &exon_aa_seq) {
+    void set_from_aa_seq(std::string const &aa_seq) {
+        assert(aa_seq.size() == nbr_sites());
         for (auto &exon : exons) {
-            assert(exon_aa_seq.size() == exon.nbr_sites);
             for (u_long site{0}; site < exon.nbr_sites; site++) {
-                char aa_char = exon_aa_seq.at(site);
+                char aa_char = aa_seq.at(exon.position + site);
                 char aa = codonLexico.aa_char_to_aa(aa_char);
                 auto it =
                     std::find(codonLexico.codon_to_aa.begin(), codonLexico.codon_to_aa.end(), aa);
@@ -342,7 +355,9 @@ class Sequence {
                     sub.non_syn_sub_flow += exon.substitutions.front().non_syn_sub_flow;
                     sub.non_syn_mut_flow += exon.substitutions.front().non_syn_mut_flow;
                     sub.syn_mut_flow += exon.substitutions.front().syn_mut_flow;
+                    sub.dndn0 += exon.substitutions.front().dndn0 * exon.nbr_sites;
                 }
+                sub.dndn0 /= nbr_sites();
                 interspersed_substitutions.push_back(sub);
                 exon_next_sub->substitutions.pop();
             }
@@ -402,7 +417,8 @@ class Sequence {
 
     void run_forward(double t_max, Tree const &tree) {
         if (branch_wise) {
-            EVector delta = delta_log_multivariate(t_max / tree.max_distance_to_root());
+            double d = t_max / tree.max_distance_to_root();
+            EVector delta = delta_log_multivariate(d) + d * bias_vector;
             update_brownian(delta / 2);
             piecewise_multivariate.AddMultivariate(t_max, log_multivariate);
             for (auto &exon : exons) { exon.run_substitutions(nuc_matrix, beta, 0.0, t_max); }
@@ -415,7 +431,8 @@ class Sequence {
             double step_in_year = time_grid_step;
             while (time_current < t_max) {
                 if (time_current + step_in_year > t_max) { step_in_year = t_max - time_current; }
-                update_brownian(delta_log_multivariate(step_in_year / tree.max_distance_to_root()));
+                double d = step_in_year / tree.max_distance_to_root();
+                update_brownian(delta_log_multivariate(d) + d * bias_vector);
                 piecewise_multivariate.AddMultivariate(step_in_year, log_multivariate);
                 for (auto &exon : exons) {
                     exon.run_substitutions(
@@ -559,7 +576,10 @@ class Sequence {
         for (auto const &sub : interspersed_substitutions) {
             if (!sub.is_dummy()) {
                 tracer_substitutions.add("NodeName", node_name);
-                tracer_substitutions.add("Time", sub.time_event);
+                tracer_substitutions.add("EndTime", sub.time_event);
+                tracer_substitutions.add(
+                    "AbsoluteStartTime", (time_from_root - tree.node_length(node)) +
+                                             (sub.time_event - sub.time_between_event));
                 tracer_substitutions.add("NucFrom", codonLexico.nucleotides[sub.n_from]);
                 tracer_substitutions.add("NucTo", codonLexico.nucleotides[sub.n_to]);
                 tracer_substitutions.add("CodonFrom", codonLexico.codon_string(sub.codon_from));
@@ -567,6 +587,11 @@ class Sequence {
                 tracer_substitutions.add("AAFrom", codonLexico.codon_aa_string(sub.codon_from));
                 tracer_substitutions.add("AATo", codonLexico.codon_aa_string(sub.codon_to));
                 tracer_substitutions.add("Site", sub.site);
+                tracer_substitutions.add("<dN>>", sub.non_syn_sub_flow);
+                tracer_substitutions.add("<dN0>", sub.non_syn_mut_flow);
+                tracer_substitutions.add("<dN>/<dN0>", sub.non_syn_sub_flow / sub.non_syn_mut_flow);
+                tracer_substitutions.add("<dS>", sub.syn_mut_flow);
+                tracer_substitutions.add("<dN/dN0>", sub.dndn0);
             }
         }
         tracer_sequences.add("NodeName", node_name);
@@ -726,9 +751,9 @@ class Process {
         trace.add("dnds_count_tot", dnds_count_tot);
         for (auto const &ss : FitnessState::summary_stats) {
             trace.add(ss.first + "-mean", ss.second.mean());
-            trace.add(ss.first + "-var", ss.second.variance());
+            trace.add(ss.first + "-std", ss.second.std());
             trace.add(ss.first + "-abs-mean", ss.second.abs_mean());
-            trace.add(ss.first + "-var", ss.second.abs_variance());
+            trace.add(ss.first + "-abs-std", ss.second.abs_std());
         }
         trace.write_tsv(output_path);
 

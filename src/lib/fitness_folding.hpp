@@ -307,12 +307,9 @@ double computePFolded(double deltaG) {
 }
 
 double selection_coefficient_ddG(double deltaG, double deltaGMutant) {
-    // s = (f' - f)/f where f = e(-D/T)/(1+e(-D/T))
-    // return (exp((deltaG - deltaGMutant) / TEMPERATURE) - 1) / (exp(-deltaG / TEMPERATURE) +
-    // 1); return computePFolded(deltaGMutant) / computePFolded(deltaG) - 1.0;
     double fm = computePFolded(deltaGMutant), f = computePFolded(deltaG);
     return (fm - f) / f;
-};
+}
 
 class StabilityState final : public FitnessState {
   private:
@@ -402,7 +399,8 @@ class StabilityState final : public FitnessState {
         double s = selection_coefficient_ddG(nativeDeltaG, mutantDeltaG);
         if (!burn_in) {
             summary_stats["mut-s"].add(s);
-            summary_stats["mut-ΔG"].add(mutantDeltaG);
+            summary_stats["mut-ΔG-native"].add(nativeDeltaG);
+            summary_stats["mut-ΔG-mutant"].add(mutantDeltaG);
             summary_stats["mut-ΔΔG"].add(mutantDeltaG - nativeDeltaG);
         }
         return s;
@@ -410,7 +408,8 @@ class StabilityState final : public FitnessState {
 };
 
 std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {
-    {"mut-s", SummaryStatistic()}, {"mut-ΔG", SummaryStatistic()}, {"mut-ΔΔG", SummaryStatistic()},
+    {"mut-s", SummaryStatistic()}, {"mut-ΔG-native", SummaryStatistic()},
+    {"mut-ΔG-mutant", SummaryStatistic()}, {"mut-ΔΔG", SummaryStatistic()},
     {"sub-ΔG", SummaryStatistic()}, {"sub-GFold", SummaryStatistic()},
     {"sub-GUnfold", SummaryStatistic()}};
 
@@ -423,7 +422,7 @@ class FoldingArgParse {
     TCLAP::ValueArg<std::string> pdb_folder{"", "pdb_folder",
         "The folder containing the .pdb files", false, "data/pdbfiles", "string", cmd};
     TCLAP::ValueArg<u_long> nbr_exons{
-        "", "nbr_exons", "Number of exons in the protein", false, 5000, "u_long", cmd};
+        "", "nbr_exons", "Number of exons in the protein", false, 12, "u_long", cmd};
     TCLAP::ValueArg<double> cut_off{"", "cut_off",
         "The distance (in angstrom) to determine if 2 sites are in contact", false, 7.0, "double",
         cmd};
@@ -451,7 +450,13 @@ class StabilityModel : public FitnessModel {
         std::cout << fitness_landscapes.size() << " exons created." << std::endl;
     }
 
-    std::string seq() {
-        return dynamic_cast<StabilityLandscape *>(fitness_landscapes.front().get())->seq();
+    std::string aa_seq() {
+        std::string s{};
+        for (u_long exon{0}; exon < nbr_exons(); exon++) {
+            std::string tmp =
+                dynamic_cast<StabilityLandscape *>(fitness_landscapes.at(exon).get())->seq();
+            s += std::string(tmp.begin(), tmp.end());
+        }
+        return s;
     }
 };

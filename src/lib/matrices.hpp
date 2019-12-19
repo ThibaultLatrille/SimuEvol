@@ -369,3 +369,16 @@ class CorrelationMatrix : public Matrix3x3 {
         }
     }
 };
+
+class BiasMultivariate : public Vector3x1 {
+  public:
+    explicit BiasMultivariate() : Vector3x1(Vector3x1::Zero()) {}
+
+    explicit BiasMultivariate(double bias_population_size, double bias_mutation_rate_per_generation,
+        double bias_generation_time)
+        : Vector3x1(Vector3x1::Zero()) {
+        (*this)(dim_population_size) = bias_population_size;
+        (*this)(dim_mutation_rate_per_generation) = bias_mutation_rate_per_generation;
+        (*this)(dim_generation_time) = bias_generation_time;
+    };
+};

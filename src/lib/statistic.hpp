@@ -4,24 +4,27 @@
 #include <vector>
 
 class SummaryStatistic {
-    double abs_s{0}, s{0}, s2{0};
-    u_long size{0};
+    double long abs_s{0}, s{0}, s2{0};
+    unsigned long long size{0};
 
   public:
     SummaryStatistic() = default;
 
     void add(double const &v) {
+        if (v > 1e12) { std::cerr << s << std::endl; }
         s += v;
         abs_s += std::abs(v);
         s2 += v * v;
         size++;
     }
 
-    double mean() const { return s / size; }
-    double variance() const { return s2 / size - mean() * mean(); }
+    double mean() const { return static_cast<double>(s / size); }
+    double variance() const { return static_cast<double>(s2 / size) - mean() * mean(); }
+    double std() const { return sqrt(variance()); }
 
-    double abs_mean() const { return abs_s / size; }
-    double abs_variance() const { return s2 / size - abs_mean() * abs_mean(); }
+    double abs_mean() const { return static_cast<double>(abs_s / size); }
+    double abs_variance() const { return static_cast<double>(s2 / size) - abs_mean() * abs_mean(); }
+    double abs_std() const { return sqrt(abs_variance()); }
 };
 
 // Function for sum

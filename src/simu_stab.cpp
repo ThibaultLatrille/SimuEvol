@@ -1,15 +1,15 @@
 #include "argparse.hpp"
-#include "fitness_geometric.hpp"
+#include "fitness_stability.hpp"
 #include "process.hpp"
 
 using namespace TCLAP;
 using namespace std;
 
 int main(int argc, char *argv[]) {
-    CmdLine cmd{"SimuGeo", ' ', "0.1"};
+    CmdLine cmd{"SimuStab", ' ', "0.1"};
     SimuSubArgParse args(cmd);
     TreeArgParse args_tree(cmd);
-    GeometricArgParse args_fitness(cmd);
+    FoldingArgParse args_fitness(cmd);
     cmd.parse(argc, argv);
 
     generator.seed(args.seed.getValue());
@@ -25,14 +25,15 @@ int main(int argc, char *argv[]) {
     double root_age{args_tree.root_age.getValue()};
     bool branch_wise_correlation{args_tree.branch_wise_correlation.getValue()};
     Tree tree = args_tree.newick_path.getValue().empty()
-                ? Tree(args_tree.nbr_branches.getValue(), root_age)
-                : Tree(args_tree.newick_path.getValue());
+                    ? Tree(args_tree.nbr_branches.getValue(), root_age)
+                    : Tree(args_tree.newick_path.getValue());
     if (tree.nb_leaves() > 1) { tree.set_root_age(root_age); }
 
     // Fitness model
     u_long exon_size{args.exons.getValue()};
-    GeometricModel seq_fitness(exon_size, args_fitness);
+    StabilityModel seq_fitness(exon_size, args_fitness);
     u_long nbr_sites = seq_fitness.nbr_sites();
+    assert(exon_size <= 300);
     assert(exon_size <= nbr_sites);
 
     // Process discretization
@@ -51,7 +52,6 @@ int main(int argc, char *argv[]) {
     EMatrix transform_matrix =
         eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
 
-    // Save the parameters of the simulation
     Trace parameters;
     args.add_to_trace(parameters);
     args_fitness.add_to_trace(parameters);
@@ -67,12 +67,14 @@ int main(int argc, char *argv[]) {
     init_alignments(output_path, tree.nb_leaves(), nbr_sites * 3);
     auto root_sequence = make_unique<Sequence>(seq_fitness, log_multivariate, nuc_matrix,
         transform_matrix, bias_multivariate, branch_wise_correlation);
-    u_long burn_in_aa_changes = exon_size * 2;
+    cout << "Starting from the optimal sequence." << endl;
+    root_sequence->set_from_aa_seq(seq_fitness.aa_seq());
+    u_long burn_in_aa_changes = 5 * exon_size;
     u_long equilibrium_nbr_rounds = 15;
     cout << "DNA Sequence optimizing site marginals for " << equilibrium_nbr_rounds
          << " rounds, and running for " << burn_in_aa_changes << " amino-acid changes (per exon)"
          << endl;
-    root_sequence->at_equilibrium(equilibrium_nbr_rounds);
+    root_sequence->at_equilibrium(equilibrium_nbr_rounds, 1.0e2);
     root_sequence->burn_in(burn_in_aa_changes);
 
     // Simulation along the tree

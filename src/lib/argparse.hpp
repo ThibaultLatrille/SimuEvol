@@ -93,14 +93,20 @@ class TreeArgParse {
     explicit TreeArgParse(TCLAP::CmdLine& cmd) : cmd{cmd} {}
     TCLAP::ValueArg<double> root_age{"", "root_age", "Age of the root", false, 50e6, "double", cmd};
     TCLAP::ValueArg<std::string> newick_path{
-        "", "newick", "input newick tree path", true, "", "string", cmd};
+        "", "newick", "input newick tree path", false, "", "string", cmd};
+    TCLAP::ValueArg<double> nbr_branches{
+        "", "nbr_branches", "Nbr of sucessive branches if no tree is inputed", false, 2, "unsigned", cmd};
     TCLAP::ValueArg<std::string> precision_path{
         "", "precision_matrix", "input precision matrix path", false, "", "string", cmd};
     TCLAP::SwitchArg branch_wise_correlation{"", "branch_wise_correlation",
         "The Correlated parameters are determined branch-wise", cmd, false};
-    TCLAP::SwitchArg fix_pop_size{"", "fix_pop_size", "Population size is fixed", cmd, false};
-    TCLAP::SwitchArg fix_mut_rate{"", "fix_mut_rate", "Mutation rate is fixed", cmd, false};
-    TCLAP::SwitchArg fix_gen_time{"", "fix_gen_time", "Generation time is fixed", cmd, false};
+    TCLAP::SwitchArg fix_pop_size{"", "fix_pop_size", "Log-Brownian on population size is null", cmd, false};
+    TCLAP::SwitchArg fix_mut_rate{"", "fix_mut_rate", "Log-Brownian on mutation rate is null", cmd, false};
+    TCLAP::SwitchArg fix_gen_time{"", "fix_gen_time", "Log-Brownian on generation time is null", cmd, false};
+
+    TCLAP::ValueArg<double> bias_pop_size{"", "bias_pop_size", "Log-Bias on population size", false, 0., "double", cmd};
+    TCLAP::ValueArg<double> bias_mut_rate{"", "bias_mut_rate", "Log-Bias on mutation rate", false, 0., "double", cmd};
+    TCLAP::ValueArg<double> bias_gen_time{"", "bias_gen_time", "Log-Bias on generation time", false, 0., "double", cmd};
 
     void add_to_trace(Trace& trace) {
         assert(root_age.getValue() > 0.0);
@@ -108,17 +114,11 @@ class TreeArgParse {
         trace.add("fix_pop_size", fix_pop_size.getValue());
         trace.add("fix_mut_rate", fix_mut_rate.getValue());
         trace.add("fix_gen_time", fix_gen_time.getValue());
+        trace.add("bias_pop_size", bias_pop_size.getValue());
+        trace.add("bias_mut_rate", bias_mut_rate.getValue());
+        trace.add("bias_gen_time", bias_gen_time.getValue());
         trace.add("tree_path", newick_path.getValue());
         trace.add("precision_matrix", precision_path.getValue());
         trace.add("branch_wise_correlation", branch_wise_correlation.getValue());
     }
-};
-
-class RunArgParse {
-  protected:
-    TCLAP::CmdLine& cmd;
-
-  public:
-    explicit RunArgParse(TCLAP::CmdLine& cmd) : cmd{cmd} {}
-    void add_to_trace(Trace& trace) {}
 };

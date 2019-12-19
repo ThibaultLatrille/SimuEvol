@@ -24,8 +24,10 @@ int main(int argc, char *argv[]) {
     // Tree
     double root_age{args_tree.root_age.getValue()};
     bool branch_wise_correlation{args_tree.branch_wise_correlation.getValue()};
-    Tree tree(args_tree.newick_path.getValue());
-    tree.set_root_age(root_age);
+    Tree tree = args_tree.newick_path.getValue().empty()
+                    ? Tree(args_tree.nbr_branches.getValue(), root_age)
+                    : Tree(args_tree.newick_path.getValue());
+    if (tree.nb_leaves() > 1) { tree.set_root_age(root_age); }
 
     // Fitness model
     u_long exon_size{args.exons.getValue()};
@@ -41,6 +43,8 @@ int main(int argc, char *argv[]) {
     assert(nbr_grid_step > 0);
     time_grid_step = root_age / nbr_grid_step;
     LogMultivariate log_multivariate(pop_size, mutation_rate_per_generation, generation_time);
+    BiasMultivariate bias_multivariate(args_tree.bias_pop_size.getValue(),
+        args_tree.bias_mut_rate.getValue(), args_tree.bias_gen_time.getValue());
     CorrelationMatrix correlation_matrix(args_tree.precision_path.getValue(),
         args_tree.fix_pop_size.getValue(), args_tree.fix_mut_rate.getValue(),
         args_tree.fix_gen_time.getValue());
@@ -61,8 +65,8 @@ int main(int argc, char *argv[]) {
 
     // Initialisation of the root sequence
     init_alignments(output_path, tree.nb_leaves(), nbr_sites * 3);
-    auto root_sequence = make_unique<Sequence>(
-        seq_fitness, log_multivariate, nuc_matrix, transform_matrix, branch_wise_correlation);
+    auto root_sequence = make_unique<Sequence>(seq_fitness, log_multivariate, nuc_matrix,
+        transform_matrix, bias_multivariate, branch_wise_correlation);
     string equilibrium_filename = output_path + ".equilibrium";
     ifstream input_seq(equilibrium_filename + ".fasta");
     if (input_seq) {
@@ -72,7 +76,7 @@ int main(int argc, char *argv[]) {
         cout << "DNA Sequence at equilibrium found and starting from it." << endl;
     } else {
         cout << "AA Sequence found (in pdb) and starting from it." << endl;
-        root_sequence->set_from_exon_aa_seq(seq_fitness.seq());
+        root_sequence->set_from_aa_seq(seq_fitness.aa_seq());
     }
     u_long burn_in_aa_changes = 5 * exon_size;
     u_long equilibrium_nbr_rounds = 15;

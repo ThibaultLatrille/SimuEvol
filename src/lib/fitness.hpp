@@ -75,7 +75,7 @@ class FitnessState {
             assert(it != codonLexico.codon_to_aa.end());
             char codon_to = std::distance(codonLexico.codon_to_aa.begin(), it);
             assert(codonLexico.codon_to_aa[codon_to] == aa);
-            aa_sel_coeffs[aa] = selection_coefficient(codon_seq, site, codon_to, false);
+            aa_sel_coeffs[aa] = selection_coefficient(codon_seq, site, codon_to, true);
         }
         return aa_sel_coeffs;
     }
