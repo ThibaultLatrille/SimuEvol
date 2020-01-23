@@ -87,6 +87,7 @@ class Trace {
     void add(std::string const &key, char val) { add(key, char_to_str(val)); }
     void add(std::string const &key, int val) { add(key, std::to_string(val)); }
     void add(std::string const &key, u_long val) { add(key, std::to_string(val)); }
+    void add(std::string const &key, unsigned long long val) { add(key, std::to_string(val)); }
     void add(std::string const &key, long val) { add(key, std::to_string(val)); }
     void add(std::string const &key, unsigned val) { add(key, std::to_string(val)); }
     void add(std::string const &key, double val) { add(key, d_to_string(val)); }

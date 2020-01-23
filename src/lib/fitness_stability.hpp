@@ -6,8 +6,11 @@
 class StabilityLandscape final : public FitnessLandscape {
   public:
     std::vector<char> optimal_aa_seq;
+    double dG_min{-10};
+    double ddG{0.1};
 
-    explicit StabilityLandscape(int nbr_sites) : optimal_aa_seq(nbr_sites, 0) {
+    explicit StabilityLandscape(int nbr_sites, double dG_min, double ddG)
+        : optimal_aa_seq(nbr_sites, 0), dG_min{dG_min}, ddG{ddG} {
         auto d = std::uniform_int_distribution<char>(0, 19);
         for (auto &site : optimal_aa_seq) { site = d(generator); }
     }
@@ -30,30 +33,29 @@ class StabilityState final : public FitnessState {
     StabilityLandscape const &f;
 
     unsigned distance{0};
-    double dG{-10};
-    double ddG{0.1};
+    double dG;
 
   public:
     std::unique_ptr<FitnessState> clone() const override {
         return std::make_unique<StabilityState>(*this);
     };
 
-    explicit StabilityState(StabilityLandscape const &f) : f{f} {}
+    explicit StabilityState(StabilityLandscape const &f) : f{f}, dG{f.dG_min} {}
 
     bool operator==(FitnessState const &other) const override {
         auto p = dynamic_cast<StabilityState const *>(&other);
-        return (distance == p->distance) and (dG == p->dG) and (ddG == p->ddG);
+        return (distance == p->distance) and (dG == p->dG);
     }
 
     u_long nbr_sites() const override { return f.nbr_sites(); }
 
     void update(std::vector<char> const &codon_seq) override {
         distance = 0;
-        dG = -10;
+        dG = f.dG_min;
         for (size_t site = 0; site < codon_seq.size(); ++site) {
             if (codonLexico.codon_to_aa.at(codon_seq.at(site)) != f.optimal_aa_seq.at(site)) {
                 distance++;
-                dG += ddG;
+                dG += f.ddG;
             }
         }
     }
@@ -63,11 +65,11 @@ class StabilityState final : public FitnessState {
         if (codonLexico.codon_to_aa.at(codon_seq.at(site)) == f.optimal_aa_seq.at(site)) {
             // We were optimal
             distance++;
-            dG += ddG;
+            dG += f.ddG;
         } else if (codonLexico.codon_to_aa.at(codon_to) == f.optimal_aa_seq.at(site)) {
             // We were not optimal, and we are going optimal
             distance--;
-            dG -= ddG;
+            dG -= f.ddG;
         }
         if (!burn_in) { summary_stats["sub-ΔG"].add(dG); }
     }
@@ -80,10 +82,10 @@ class StabilityState final : public FitnessState {
         }
         if (codonLexico.codon_to_aa.at(codon_seq.at(site)) == f.optimal_aa_seq.at(site)) {
             // We were optimal
-            mutantdG += ddG;
+            mutantdG += f.ddG;
         } else if (codonLexico.codon_to_aa.at(codon_to) == f.optimal_aa_seq.at(site)) {
             // We were not optimal, and we are going optimal
-            mutantdG -= ddG;
+            mutantdG -= f.ddG;
         }
         double s = selection_coefficient_ddG(dG, mutantdG);
         if (!burn_in) {
@@ -99,23 +101,31 @@ std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = 
     {"mut-s", SummaryStatistic()}, {"mut-ΔG", SummaryStatistic()}, {"mut-ΔΔG", SummaryStatistic()},
     {"sub-ΔG", SummaryStatistic()}};
 
-class FoldingArgParse {
+class StabilityArgParse {
   protected:
     TCLAP::CmdLine &cmd;
 
   public:
-    explicit FoldingArgParse(TCLAP::CmdLine &cmd) : cmd{cmd} {}
+    explicit StabilityArgParse(TCLAP::CmdLine &cmd) : cmd{cmd} {}
     TCLAP::ValueArg<u_long> nbr_exons{
         "", "nbr_exons", "Number of exons in the protein", false, 5000, "u_long", cmd};
-    void add_to_trace(Trace &trace) { trace.add("#nbr_exons", nbr_exons.getValue()); }
+    TCLAP::ValueArg<double> dg_min{
+        "", "dg_min", "ΔG minimum for the optimal sequence", false, -10, "double", cmd};
+    TCLAP::ValueArg<double> ddg{"", "ddg",
+        "ΔΔG for each mutation going away from the optimal sequence", false, 0.1, "double", cmd};
+    void add_to_trace(Trace &trace) {
+        trace.add("#nbr_exons", nbr_exons.getValue());
+        trace.add("ΔG-minimum", dg_min.getValue());
+        trace.add("ΔΔG-mutation", ddg.getValue());
+    }
 };
 
 class StabilityModel : public FitnessModel {
   public:
-    StabilityModel(u_long exon_size, FoldingArgParse &args) : FitnessModel() {
+    StabilityModel(u_long exon_size, StabilityArgParse &args) : FitnessModel() {
         fitness_landscapes.reserve(args.nbr_exons.getValue());
         fitness_states.reserve(args.nbr_exons.getValue());
-        StabilityLandscape landscape(exon_size);
+        StabilityLandscape landscape(exon_size, args.dg_min.getValue(), args.ddg.getValue());
 
         for (u_long exon{0}; exon < args.nbr_exons.getValue(); exon++) {
             fitness_landscapes.emplace_back(std::make_unique<StabilityLandscape>(landscape));

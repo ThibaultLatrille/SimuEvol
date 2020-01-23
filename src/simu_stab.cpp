@@ -9,7 +9,7 @@ int main(int argc, char *argv[]) {
     CmdLine cmd{"SimuStab", ' ', "0.1"};
     SimuSubArgParse args(cmd);
     TreeArgParse args_tree(cmd);
-    FoldingArgParse args_fitness(cmd);
+    StabilityArgParse args_fitness(cmd);
     cmd.parse(argc, argv);
 
     generator.seed(args.seed.getValue());
@@ -33,7 +33,6 @@ int main(int argc, char *argv[]) {
     u_long exon_size{args.exons.getValue()};
     StabilityModel seq_fitness(exon_size, args_fitness);
     u_long nbr_sites = seq_fitness.nbr_sites();
-    assert(exon_size <= 300);
     assert(exon_size <= nbr_sites);
 
     // Process discretization

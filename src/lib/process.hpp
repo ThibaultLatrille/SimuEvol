@@ -7,6 +7,37 @@
 
 double dnds_count_tot{0}, dnds_event_tot{0}, dnd0_count_tot{0}, dnd0_event_tot{0};
 
+class DFE {
+  public:
+    unsigned long long strongly_deleterious{0};
+    unsigned long long weakly_deleterious{0};
+    unsigned long long weakly_advantageous{0};
+    unsigned long long strongly_advantageous{0};
+
+    DFE() = default;
+
+    void operator+=(const DFE &other) {
+        this->strongly_deleterious += other.strongly_deleterious;
+        this->weakly_deleterious += other.weakly_deleterious;
+        this->weakly_advantageous += other.weakly_advantageous;
+        this->strongly_advantageous += other.strongly_advantageous;
+    }
+
+    void add(Trace &trace) const {
+        trace.add("strongly_deleterious", strongly_deleterious);
+        trace.add("weakly_deleterious", weakly_deleterious);
+        trace.add("weakly_advantageous", weakly_advantageous);
+        trace.add("strongly_advantageous", strongly_advantageous);
+        trace.add("advantageous_over_deleterious",
+            static_cast<double>(strongly_advantageous + weakly_advantageous) /
+                static_cast<double>(weakly_deleterious + strongly_deleterious));
+        trace.add("strongly_advantageous_over_deleterious",
+            static_cast<double>(strongly_advantageous) / static_cast<double>(strongly_deleterious));
+        trace.add("weakly_advantageous_over_deleterious",
+            static_cast<double>(weakly_advantageous) / static_cast<double>(weakly_deleterious));
+    }
+};
+
 class Substitution {
   public:
     u_long site;
@@ -20,11 +51,11 @@ class Substitution {
     double non_syn_mut_flow;
     double syn_mut_flow;
     double dndn0;
-    std::array<u_long, 4> dfe;
+    DFE dfe;
 
     Substitution(double time_event, double time_between_event, double non_syn_sub_flow,
         double non_syn_mut_flow, double syn_mut_flow, double dndn0, char codon_from = -1,
-        char codon_to = -1, char n_from = -1, char n_to = -1, u_long site = 0)
+        char codon_to = -1, char n_from = -1, char n_to = -1, u_long site = 0, DFE const &dfe = {})
         : site{site},
           codon_from{codon_from},
           codon_to{codon_to},
@@ -35,7 +66,8 @@ class Substitution {
           non_syn_sub_flow{non_syn_sub_flow},
           non_syn_mut_flow{non_syn_mut_flow},
           syn_mut_flow{syn_mut_flow},
-          dndn0{dndn0} {}
+          dndn0{dndn0},
+          dfe{dfe} {}
 
     bool is_dummy() const { return codon_from == codon_to; }
 
@@ -93,6 +125,7 @@ class Exon {
         double time_end, bool burn_in) {
         // Number of possible substitutions is 9 times the number of sites (3 substitutions for each
         // 3 possible positions).
+        DFE dfe{};
         u_long nbr_substitutions{9 * nbr_sites};
 
         // Vector of substitution rates.
@@ -133,12 +166,18 @@ class Exon {
                 rate_substitution = nuc_matrix(n_from, n_to);
                 if (codonLexico.codon_to_aa[codon_from] != codonLexico.codon_to_aa[codon_to]) {
                     non_syn_mut_flow += rate_substitution;
-                    double pfix = Pfix(beta, fitness_state.ptr->selection_coefficient(
-                                                 codon_seq, site, codon_to, burn_in));
+                    double s = fitness_state.ptr->selection_coefficient(
+                        codon_seq, site, codon_to, burn_in);
+                    double pfix = Pfix(beta, s);
                     rate_substitution *= pfix;
                     non_syn_sub_flow += rate_substitution;
                     dndn0 += pfix;
                     ns++;
+                    if (pfix > 1) {
+                        (pfix > 10) ? dfe.strongly_advantageous++ : dfe.weakly_advantageous++;
+                    } else {
+                        (pfix < 0.1) ? dfe.strongly_deleterious++ : dfe.weakly_deleterious++;
+                    }
                 } else {
                     if (burn_in) { continue; }
                     syn_mut_flow += rate_substitution;
@@ -183,7 +222,7 @@ class Exon {
             if (!burn_in) {
                 substitutions.emplace(time_start + time_draw, time_draw, non_syn_sub_flow,
                     non_syn_mut_flow, syn_mut_flow, dndn0, codom_from, codon_to, n_from, n_to,
-                    site + position);
+                    site + position, dfe);
             }
 
             if (codonLexico.codon_to_aa[codon_seq[site]] != codonLexico.codon_to_aa[codon_to]) {
@@ -351,11 +390,14 @@ class Sequence {
                 sub.non_syn_sub_flow = 0;
                 sub.non_syn_mut_flow = 0;
                 sub.syn_mut_flow = 0;
+                sub.dfe = DFE();
                 for (auto const &exon : exons) {
-                    sub.non_syn_sub_flow += exon.substitutions.front().non_syn_sub_flow;
-                    sub.non_syn_mut_flow += exon.substitutions.front().non_syn_mut_flow;
-                    sub.syn_mut_flow += exon.substitutions.front().syn_mut_flow;
-                    sub.dndn0 += exon.substitutions.front().dndn0 * exon.nbr_sites;
+                    Substitution const &p = exon.substitutions.front();
+                    sub.non_syn_sub_flow += p.non_syn_sub_flow;
+                    sub.non_syn_mut_flow += p.non_syn_mut_flow;
+                    sub.syn_mut_flow += p.syn_mut_flow;
+                    sub.dndn0 += p.dndn0 * exon.nbr_sites;
+                    sub.dfe += p.dfe;
                 }
                 sub.dndn0 /= nbr_sites();
                 interspersed_substitutions.push_back(sub);
@@ -718,7 +760,9 @@ class Process {
     void summary(std::string const &output_path, double expected_subs) {
         long nbr_non_syn{0}, nbr_syn{0};
 
+        DFE dfe{};
         for (std::unique_ptr<Sequence> const &seq : sequences) {
+            for (auto const &s : seq->interspersed_substitutions) { dfe += s.dfe; }
             nbr_syn += count_if(seq->interspersed_substitutions.begin(),
                 seq->interspersed_substitutions.end(),
                 [](Substitution const &s) { return s.is_synonymous(); });
@@ -748,7 +792,7 @@ class Process {
         trace.add("dnd0_event_tot", dnd0_event_tot);
         trace.add("dnd0_count_tot", dnd0_count_tot);
         trace.add("dnds_event_tot", dnds_event_tot);
-        trace.add("dnds_count_tot", dnds_count_tot);
+        dfe.add(trace);
         for (auto const &ss : FitnessState::summary_stats) {
             trace.add(ss.first + "-mean", ss.second.mean());
             trace.add(ss.first + "-std", ss.second.std());
