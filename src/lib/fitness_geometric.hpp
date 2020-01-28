@@ -9,11 +9,6 @@ double distance(std::vector<double> const &v) {
         v.begin(), v.end(), 0.0, [](double a, double const &b) { return a + b * b; }));
 }
 
-double fitness(std::vector<double> const &v, double a = 0.5, int q = 2) {
-    return exp(-a * pow(distance(v), q));
-}
-
-
 std::vector<double> spherical_coord(u_long n, double radius) {
     std::vector<double> coord(n, 0);
     for (u_long i = 0; i < n; ++i) { coord[i] = normal_distrib(generator); }
@@ -27,14 +22,18 @@ class GeometricLandscape final : public FitnessLandscape {
     // The fitness profiles of amino-acids.
     std::vector<std::array<std::vector<double>, 20>> sites_aa_phenotypes;
     u_long complexity;
+    double peakness;
+    double epistasis;
+    double radius;
 
-    GeometricLandscape(u_long nbr_sites, u_long const &complexity) : complexity{complexity} {
+    GeometricLandscape(u_long nbr_sites, u_long const &complexity, double const &peakness,
+        double const &epistasis, double const &radius)
+        : complexity{complexity}, peakness{peakness}, epistasis{epistasis}, radius{radius} {
         sites_aa_phenotypes.resize(nbr_sites);
-        double mean = 0.1;
-        double radius = std::exponential_distribution<double>(1.0 / mean)(generator);
+        double r = std::exponential_distribution<double>(1.0 / radius)(generator);
         for (auto &site_aa_phenotypes : sites_aa_phenotypes) {
             for (auto &aa_phenotype : site_aa_phenotypes) {
-                aa_phenotype = spherical_coord(complexity, radius);
+                aa_phenotype = spherical_coord(complexity, r);
             }
         }
     }
@@ -85,6 +84,10 @@ class GeometricState final : public FitnessState {
         if (!burn_in) { summary_stats["sub-distance"].add(distance(phenotype)); }
     }
 
+    double fitness(std::vector<double> const &v) const {
+        return exp(-f.peakness * pow(distance(v), f.epistasis));
+    }
+
     double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
         bool burn_in) const override {
         auto mutant_phenotype = phenotype;
@@ -115,11 +118,24 @@ class GeometricArgParse {
 
   public:
     explicit GeometricArgParse(TCLAP::CmdLine &cmd) : cmd{cmd} {}
+    TCLAP::ValueArg<double> peakness{"", "peakness",
+        "'alpha' parameter (peakness) of the fitness function (exp(-alpha*(d^beta))", false, 1e-3,
+        "double", cmd};
+    TCLAP::ValueArg<double> epistasis{"", "epistasis",
+        "'beta' parameter (epistasis) of fitness function (exp(-alpha*(d^beta))", false, 2.0,
+        "double", cmd};
     TCLAP::ValueArg<u_long> complexity{
         "", "complexity", "Complexity of the fitness landscape", false, 3, "u_long", cmd};
+    TCLAP::ValueArg<double> radius{"", "radius", "Radius of mutations", false, 0.1, "double", cmd};
     TCLAP::ValueArg<u_long> nbr_exons{"", "nbr_exons", "Number of exons", false, 30, "u_long", cmd};
     void add_to_trace(Trace &trace) {
         assert(complexity.getValue() > 0);
+        assert(peakness.getValue() > 0);
+        assert(epistasis.getValue() > 0);
+        assert(radius.getValue() > 0);
+        trace.add("radius", radius.getValue());
+        trace.add("peakness", peakness.getValue());
+        trace.add("epistasis", epistasis.getValue());
         trace.add("#nbr_exons", nbr_exons.getValue());
         trace.add("complexity", complexity.getValue());
     }
@@ -133,7 +149,8 @@ class GeometricModel : public FitnessModel {
 
         for (u_long exon{0}; exon < args.nbr_exons.getValue(); exon++) {
             fitness_landscapes.emplace_back(
-                std::make_unique<GeometricLandscape>(exon_size, args.complexity.getValue()));
+                std::make_unique<GeometricLandscape>(exon_size, args.complexity.getValue(),
+                    args.peakness.getValue(), args.epistasis.getValue(), args.radius.getValue()));
             fitness_states.emplace_back(std::make_unique<GeometricState>(
                 *dynamic_cast<GeometricLandscape *>(fitness_landscapes.at(exon).get())));
         }

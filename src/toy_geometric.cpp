@@ -5,37 +5,37 @@
 using namespace TCLAP;
 using namespace std;
 
-double computeFitness(double const &d, double const &sigma) { return exp(-abs(d) / sigma); }
-
-double selection_coef(double const &d, double const &dMutant, double const &sigma) {
-    double fm = computeFitness(dMutant, sigma), f = computeFitness(d, sigma);
-    return (fm - f) / f;
-}
-
-double Pfix(double const &pop_size, double const &d, double const &delta_d, double const &sigma) {
-    double S = 4 * selection_coef(d, d + delta_d, sigma) * pop_size;
-    if ((abs(S)) < 1e-4) {
-        return 1 + S / 2;
-    } else {
-        return S / (1.0 - exp(-S));
-    }
-}
-
 class Sequence {
     unsigned nbr_sites;
     unsigned nbr_right;
     double pop_size;
     double distance;
-    double d_change;
-    double sigma;
+    double radius;
+    double peakness;
+    double epistasis;
     std::unordered_map<std::string, SummaryStatistic> summary_stats;
 
-    void next_substitution(bool burn_in) {
-        double right_pfix = Pfix(pop_size, distance, d_change, sigma);
-        double right_flow =
-            right_pfix * (nbr_sites - nbr_right) / nbr_sites;
+    double computeFitness(double const &d) { return exp(-peakness * pow(abs(d), epistasis)); }
 
-        double left_pfix = Pfix(pop_size, distance, -d_change, sigma);
+    double selection_coef(double const &d, double const &dMutant) {
+        double fm = computeFitness(dMutant), f = computeFitness(d);
+        return (fm - f) / f;
+    }
+
+    double Pfix(double const &beta, double const &d, double const &delta_d) {
+        double S = 4 * selection_coef(d, d + delta_d) * beta;
+        if ((abs(S)) < 1e-4) {
+            return 1 + S / 2;
+        } else {
+            return S / (1.0 - exp(-S));
+        }
+    }
+
+    void next_substitution(bool burn_in) {
+        double right_pfix = Pfix(pop_size, distance, radius);
+        double right_flow = right_pfix * (nbr_sites - nbr_right) / nbr_sites;
+
+        double left_pfix = Pfix(pop_size, distance, -radius);
         double left_flow = left_pfix * nbr_right / nbr_sites;
 
         double sub_flow = right_flow + left_flow;
@@ -43,10 +43,10 @@ class Sequence {
 
         if (draw < right_flow) {
             nbr_right++;
-            distance += d_change;
+            distance += radius;
         } else {
             nbr_right--;
-            distance -= d_change;
+            distance -= radius;
         }
 
         if (!burn_in) {
@@ -58,13 +58,16 @@ class Sequence {
     }
 
   public:
-    explicit Sequence(
-        unsigned nbr_sites, double const &pop_size, double const &d_change, double const &sigma)
-        : nbr_sites{nbr_sites}, nbr_right{nbr_sites / 2},
-          pop_size{pop_size}, distance{0},
-          d_change{d_change},
-          sigma{sigma} {
-        distance = d_change * (nbr_right - (static_cast<double>(nbr_sites) / 2));
+    explicit Sequence(unsigned nbr_sites, double const &pop_size, double const &radius,
+        double const &peakness, double const &epistasis)
+        : nbr_sites{nbr_sites},
+          nbr_right{nbr_sites / 2},
+          pop_size{pop_size},
+          distance{0},
+          radius{radius},
+          peakness{peakness},
+          epistasis{epistasis} {
+        distance = radius * (nbr_right - (static_cast<double>(nbr_sites) / 2));
         summary_stats["nbr_right"] = SummaryStatistic();
         summary_stats["distance"] = SummaryStatistic();
         summary_stats["RatioSubFlow"] = SummaryStatistic();
@@ -97,10 +100,14 @@ class CombinatorialStability : public OutputArgParse {
         "", "population_size", "population size", false, 1e4, "double", cmd};
     TCLAP::ValueArg<unsigned> nbr_sites{
         "", "nbr_sites", "Number of sites", false, 300, "unsigned", cmd};
-    TCLAP::ValueArg<double> d_change{
-        "", "d_change", "change in distance by each mutation", false, 0.1, "double", cmd};
-    TCLAP::ValueArg<double> sigma{
-        "", "sigma", "sigma of the geometric distribution", false, 1e3, "double", cmd};
+    TCLAP::ValueArg<double> radius{
+        "", "radius", "radius of mutations", false, 0.1, "double", cmd};
+    TCLAP::ValueArg<double> peakness{"", "peakness",
+        "'alpha' parameter (peakness) of the fitness function (exp(-alpha*(d^beta))", false, 0.5,
+        "double", cmd};
+    TCLAP::ValueArg<double> epistasis{"", "epistasis",
+        "'beta' parameter (epistasis) of fitness function (exp(-alpha*(d^beta))", false, 2.0,
+        "double", cmd};
 };
 
 int main(int argc, char *argv[]) {
@@ -127,7 +134,8 @@ int main(int argc, char *argv[]) {
     tsv.close();
 
     assert(pop_size > 1);
-    Sequence seq(nbr_sites, pop_size, args.d_change.getValue(), args.sigma.getValue());
+    Sequence seq(nbr_sites, pop_size, args.radius.getValue(), args.peakness.getValue(),
+        args.epistasis.getValue());
     seq.run_substitutions(nbr_sites * 100, true);
     seq.run_substitutions(nbr_sites * 100, false);
     seq.trace(output_path);
