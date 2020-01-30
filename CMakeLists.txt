@@ -11,7 +11,7 @@ if(COVERAGE_MODE)
     set(CMAKE_CXX_FLAGS "-O0 -fprofile-arcs -ftest-coverage ${ALWAYSON_CXX_FLAGS}") # coverage mode
     message("-- INFO: Compiling in coverage mode.\n-- INFO: flags are: " ${CMAKE_CXX_FLAGS})
 elseif(DEBUG_MODE)
-    set(CMAKE_CXX_FLAGS "-O2 -g ${ALWAYSON_CXX_FLAGS}") # debug mode
+    set(CMAKE_CXX_FLAGS "-O0 -g ${ALWAYSON_CXX_FLAGS}") # debug mode
     message("-- INFO: Compiling in debug mode.\n-- INFO: flags are: " ${CMAKE_CXX_FLAGS})
 else()
     set(CMAKE_CXX_FLAGS "-O3 -DNDEBUG ${ALWAYSON_CXX_FLAGS}") # release mode
@@ -24,7 +24,7 @@ include_directories("src/lib")
 include_directories("utils")
 
 add_executable(SimuDiv src/simu_div.cpp)
-add_executable(SimuDFE src/simu_dfe.cpp)
+add_executable(SimuDfe src/simu_dfe.cpp)
 add_executable(SimuGeo src/simu_geo.cpp)
 add_executable(SimuFold src/simu_fold.cpp)
 add_executable(SimuRelax src/simu_relax.cpp)

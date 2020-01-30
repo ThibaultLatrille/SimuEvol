@@ -35,8 +35,8 @@ class Sequence {
 
     void next_substitution(bool burn_in) {
         double deleterious_pfix = Pfix(pop_size, dG, ddG);
-        double deleterious_flow =
-            deleterious_pfix * nbr_states * (nbr_sites - nb_non_optimal) / (nbr_sites * nbr_states);
+        double deleterious_flow = deleterious_pfix * (nbr_states - 1) *
+                                  (nbr_sites - nb_non_optimal) / (nbr_sites * nbr_states);
 
         double advantageous_pfix = Pfix(pop_size, dG, -ddG);
         double advantageous_flow = advantageous_pfix * nb_non_optimal / (nbr_sites * nbr_states);
@@ -81,8 +81,6 @@ class Sequence {
             cout << ss.first + "-std=" << ss.second.std() << endl;
             trace.add(ss.first + "-mean", ss.second.mean());
             trace.add(ss.first + "-std", ss.second.std());
-            trace.add(ss.first + "-abs-mean", ss.second.abs_mean());
-            trace.add(ss.first + "-abs-std", ss.second.abs_std());
         }
         trace.write_tsv(output);
     }

@@ -341,7 +341,7 @@ class StabilityState final : public FitnessState {
 
     u_long nbr_sites() const override { return f.nbr_sites(); }
 
-    void update(std::vector<char> const &codon_seq) override {
+    void update(std::vector<char> const &codon_seq, double const &pop_size) override {
         nativeEnergy = f.native.getEnergy(codon_seq);
 
         for (size_t i = 0; i < f.unfoldedVector.size(); i++) {
@@ -355,8 +355,8 @@ class StabilityState final : public FitnessState {
         nativePFolded = computePFolded(nativeDeltaG);
     }
 
-    void update(
-        std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in) override {
+    void update(std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in,
+        double const &pop_size) override {
         nativeEnergy += f.native.getMutantEnergy(codon_seq, site, codon_seq[site], codon_to);
 
         for (size_t i = 0; i < f.unfoldedVector.size(); i++) {
@@ -377,7 +377,7 @@ class StabilityState final : public FitnessState {
     }
 
     double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
-        bool burn_in) const override {
+        bool burn_in, double const &pop_size) const override {
         if (codonLexico.codon_to_aa[codon_seq[site]] == codonLexico.codon_to_aa[codon_to]) {
             return 0.0;
         }

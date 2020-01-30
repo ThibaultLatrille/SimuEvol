@@ -59,23 +59,23 @@ class FitnessState {
 
     virtual u_long nbr_sites() const = 0;
 
-    virtual void update(std::vector<char> const &codon_seq) = 0;
+    virtual void update(std::vector<char> const &codon_seq, double const &pop_size) = 0;
 
     virtual void update(
-        std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in) = 0;
+        std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in, double const &pop_size) = 0;
 
     virtual double selection_coefficient(
-        std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in) const = 0;
+        std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in, double const &pop_size) const = 0;
 
     virtual std::array<double, 20> aa_selection_coefficients(
-        std::vector<char> const &codon_seq, u_long site) const {
+        std::vector<char> const &codon_seq, u_long site, double const &pop_size) const {
         std::array<double, 20> aa_sel_coeffs{};
         for (char aa = 0; aa < 20; aa++) {
             auto it = std::find(codonLexico.codon_to_aa.begin(), codonLexico.codon_to_aa.end(), aa);
             assert(it != codonLexico.codon_to_aa.end());
             char codon_to = std::distance(codonLexico.codon_to_aa.begin(), it);
             assert(codonLexico.codon_to_aa[codon_to] == aa);
-            aa_sel_coeffs[aa] = selection_coefficient(codon_seq, site, codon_to, true);
+            aa_sel_coeffs[aa] = selection_coefficient(codon_seq, site, codon_to, true, pop_size);
         }
         return aa_sel_coeffs;
     }
@@ -86,7 +86,7 @@ class FitnessState {
         // For all site of the sequence.
         double dn{0.}, dn0{0.};
         for (u_long site = 0; site < nbr_sites(); ++site) {
-            auto aa_sel_coeffs = aa_selection_coefficients(codon_seq, site);
+            auto aa_sel_coeffs = aa_selection_coefficients(codon_seq, site, pop_size);
             // Codon original before substitution.
             std::array<double, 64> codon_freqs =
                 codon_frequencies(aa_sel_coeffs, mutation_rate_matrix, pop_size);
@@ -128,7 +128,7 @@ class FitnessState {
         double dn{0.}, dn0{0.};
         // For all site of the sequence.
         for (u_long site = 0; site < nbr_sites(); ++site) {
-            auto aa_sel_coeffs = aa_selection_coefficients(codon_seq, site);
+            auto aa_sel_coeffs = aa_selection_coefficients(codon_seq, site, pop_size);
             // For all possible neighbors.
             for (auto &neighbor : codonLexico.codon_to_neighbors[codon_seq[site]]) {
                 // Codon after mutation, Nucleotide original and Nucleotide after mutation.

@@ -43,6 +43,7 @@ void write_sequence(
 }
 
 std::string join(std::vector<std::string> const &v, char sep) {
+    if (v.empty()) { return ""; }
     return std::accumulate(v.begin() + 1, v.end(), v[0],
         [sep](std::string const &acc, std::string const &b) { return acc + sep + b; });
 }

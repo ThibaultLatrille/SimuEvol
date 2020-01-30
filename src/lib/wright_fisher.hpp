@@ -123,8 +123,6 @@ class Substitution {
     double time_between;
     u_long non_syn_mut_flow;
     u_long syn_mut_flow;
-    double delta_logfitness;
-    double mean_logfitness;
 };
 
 class Polymorphism {
@@ -277,9 +275,9 @@ class Exon {
           haplotype_vector{} {
         // Draw codon from codon frequencies
         for (u_long site{0}; site < nbr_sites; site++) {
-            std::array<double, 64> codon_freqs =
-                codon_frequencies(fitness_state.ptr->aa_selection_coefficients(codon_seq, site),
-                    nuc_matrix, population_size);
+            std::array<double, 64> codon_freqs = codon_frequencies(
+                fitness_state.ptr->aa_selection_coefficients(codon_seq, site, population_size),
+                nuc_matrix, population_size);
             std::discrete_distribution<char> freq_codon_distr(
                 codon_freqs.begin(), codon_freqs.end());
             codon_seq[site] = freq_codon_distr(generator);
@@ -318,10 +316,12 @@ class Exon {
         BinomialDistr &binomial_distrib, double time_current,
         std::vector<Substitution> &substitutions, u_long &non_syn_mutations, u_long &syn_mutations,
         bool burn_in) {
-        mutation(nuc_matrix, binomial_distrib, non_syn_mutations, syn_mutations, burn_in);
+        mutation(nuc_matrix, binomial_distrib, non_syn_mutations, syn_mutations, burn_in,
+            population_size);
         selection_and_drift(population_size);
         extinction();
-        fixation(time_current, substitutions, non_syn_mutations, syn_mutations, burn_in);
+        fixation(time_current, substitutions, non_syn_mutations, syn_mutations, burn_in,
+            population_size);
     }
 
     u_long random_nuc_site() const {
@@ -329,7 +329,8 @@ class Exon {
     }
 
     void mutation(NucleotideRateMatrix const &p, BinomialDistr &binomial_distrib,
-        u_long &non_syn_mutations, u_long &syn_mutations, bool burn_in) {
+        u_long &non_syn_mutations, u_long &syn_mutations, bool burn_in,
+        double const &population_size) {
         TimeVar t_start = timeNow();
 
         // Randomly choose the number of mutations at this generation (for this exon)
@@ -401,8 +402,8 @@ class Exon {
             // Update the fitness of the new haplotype
             auto bk = codon_seq.at(codon_site);
             codon_seq[codon_site] = codon_from;
-            double df =
-                fitness_state.ptr->selection_coefficient(codon_seq, codon_site, codon_to, burn_in);
+            double df = fitness_state.ptr->selection_coefficient(
+                codon_seq, codon_site, codon_to, burn_in, population_size);
             codon_seq[codon_site] = bk;
 
             haplotype.sel_coeff += df;
@@ -477,7 +478,8 @@ class Exon {
     }
 
     void fixation(double time_current, std::vector<Substitution> &substitutions,
-        u_long &non_syn_mutations, u_long &syn_mutations, bool burn_in) {
+        u_long &non_syn_mutations, u_long &syn_mutations, bool burn_in,
+        double const &population_size) {
         TimeVar t_start = timeNow();
 
         // ! Copy before the loop is necessary, since it can be updated during the loop
@@ -517,8 +519,8 @@ class Exon {
                         return p1.second < p2.second;
                     })->first;
             }
-            double df =
-                fitness_state.ptr->selection_coefficient(codon_seq, site, codon_to, burn_in);
+            double df = fitness_state.ptr->selection_coefficient(
+                codon_seq, site, codon_to, burn_in, population_size);
             codon_seq[site] = codon_to;
 
             // Update the vector of haplotypes
@@ -558,7 +560,7 @@ class Exon {
         timer.fixation += duration(timeNow() - t_start);
     }
 
-    void sample_one_individual() {
+    void sample_one_individual(double const &population_size) {
         // Compute the distribution of haplotype frequency in the population
         std::vector<u_long> nbr_copies(haplotype_vector.size(), 0);
         std::transform(haplotype_vector.begin(), haplotype_vector.end(), nbr_copies.begin(),
@@ -574,7 +576,8 @@ class Exon {
             char codon_from = codon_seq[diff.first];
             char codon_to = diff.second;
 
-            double df = fitness_state.ptr->selection_coefficient(codon_seq, site, codon_to, true);
+            double df = fitness_state.ptr->selection_coefficient(
+                codon_seq, site, codon_to, true, population_size);
 
             codon_seq[site] = codon_to;
             for (auto &haplotype : haplotype_vector) {
@@ -919,7 +922,7 @@ class Population {
             return;
         }
 
-        sample_one_individual();
+        sample_one_individual(population_size);
 
         // If the node is a leaf, output the DNA sequence and name.
         write_sequence(output_filename, node_name, get_dna_str());
@@ -1121,8 +1124,8 @@ class Population {
         syn_mutations = 0;
     }
 
-    void sample_one_individual() {
-        for (auto &exon : exons) { exon.sample_one_individual(); }
+    void sample_one_individual(double const &population_size) {
+        for (auto &exon : exons) { exon.sample_one_individual(population_size); }
     }
 
     // Method returning the DNA std::string corresponding to the codon sequence.

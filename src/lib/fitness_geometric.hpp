@@ -25,12 +25,21 @@ class GeometricLandscape final : public FitnessLandscape {
     double peakness;
     double epistasis;
     double radius;
+    double radius_std;
 
     GeometricLandscape(u_long nbr_sites, u_long const &complexity, double const &peakness,
-        double const &epistasis, double const &radius)
-        : complexity{complexity}, peakness{peakness}, epistasis{epistasis}, radius{radius} {
+        double const &epistasis, double const &radius, double const &radius_std)
+        : complexity{complexity},
+          peakness{peakness},
+          epistasis{epistasis},
+          radius{radius},
+          radius_std{radius_std} {
         sites_aa_phenotypes.resize(nbr_sites);
-        double r = std::exponential_distribution<double>(1.0 / radius)(generator);
+        double r{radius};
+        if (radius_std != 0.0) {
+            r = std::gamma_distribution<double>((radius / radius_std) * (radius / radius_std),
+                radius_std * radius_std / radius)(generator);
+        }
         for (auto &site_aa_phenotypes : sites_aa_phenotypes) {
             for (auto &aa_phenotype : site_aa_phenotypes) {
                 aa_phenotype = spherical_coord(complexity, r);
@@ -61,7 +70,7 @@ class GeometricState final : public FitnessState {
 
     u_long nbr_sites() const override { return f.sites_aa_phenotypes.size(); }
 
-    void update(std::vector<char> const &codon_seq) override {
+    void update(std::vector<char> const &codon_seq, double const &pop_size) override {
         phenotype.resize(f.complexity, 0);
         for (u_long dim = 0; dim < f.complexity; ++dim) {
             for (u_long i = 0; i < nbr_sites(); ++i) {
@@ -72,8 +81,8 @@ class GeometricState final : public FitnessState {
         }
     }
 
-    void update(
-        std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in) override {
+    void update(std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in,
+        double const &pop_size) override {
         for (u_long dim = 0; dim < f.complexity; ++dim) {
             phenotype[dim] -= f.sites_aa_phenotypes.at(site)
                                   .at(codonLexico.codon_to_aa.at(codon_seq.at(site)))
@@ -89,7 +98,7 @@ class GeometricState final : public FitnessState {
     }
 
     double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
-        bool burn_in) const override {
+        bool burn_in, double const &pop_size) const override {
         auto mutant_phenotype = phenotype;
         for (u_long dim = 0; dim < f.complexity; ++dim) {
             mutant_phenotype[dim] -=
@@ -126,14 +135,20 @@ class GeometricArgParse {
         "double", cmd};
     TCLAP::ValueArg<u_long> complexity{
         "", "complexity", "Complexity of the fitness landscape", false, 3, "u_long", cmd};
-    TCLAP::ValueArg<double> radius{"", "radius", "Radius of mutations", false, 0.1, "double", cmd};
+    TCLAP::ValueArg<double> radius{
+        "", "radius", "Mean radius of mutations", false, 0.1, "double", cmd};
+    TCLAP::ValueArg<double> radius_std{
+        "", "radius_std", "Standard Deviation radius of mutations", false, 0.1, "double", cmd};
     TCLAP::ValueArg<u_long> nbr_exons{"", "nbr_exons", "Number of exons", false, 30, "u_long", cmd};
+
     void add_to_trace(Trace &trace) {
         assert(complexity.getValue() > 0);
         assert(peakness.getValue() > 0);
         assert(epistasis.getValue() > 0);
         assert(radius.getValue() > 0);
+        assert(radius_std.getValue() >= 0);
         trace.add("radius", radius.getValue());
+        trace.add("radius_std", radius_std.getValue());
         trace.add("peakness", peakness.getValue());
         trace.add("epistasis", epistasis.getValue());
         trace.add("#nbr_exons", nbr_exons.getValue());
@@ -148,9 +163,9 @@ class GeometricModel : public FitnessModel {
         fitness_states.reserve(args.nbr_exons.getValue());
 
         for (u_long exon{0}; exon < args.nbr_exons.getValue(); exon++) {
-            fitness_landscapes.emplace_back(
-                std::make_unique<GeometricLandscape>(exon_size, args.complexity.getValue(),
-                    args.peakness.getValue(), args.epistasis.getValue(), args.radius.getValue()));
+            fitness_landscapes.emplace_back(std::make_unique<GeometricLandscape>(exon_size,
+                args.complexity.getValue(), args.peakness.getValue(), args.epistasis.getValue(),
+                args.radius.getValue(), args.radius_std.getValue()));
             fitness_states.emplace_back(std::make_unique<GeometricState>(
                 *dynamic_cast<GeometricLandscape *>(fitness_landscapes.at(exon).get())));
         }

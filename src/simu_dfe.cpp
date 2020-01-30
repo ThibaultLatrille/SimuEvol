@@ -9,7 +9,7 @@ int main(int argc, char *argv[]) {
     CmdLine cmd{"SimuDiv", ' ', "0.1"};
     SimuSubArgParse args(cmd);
     TreeArgParse args_tree(cmd);
-    AdditiveArgParse args_fitness(cmd);
+    DfeArgParse args_fitness(cmd);
     cmd.parse(argc, argv);
 
     generator.seed(args.seed.getValue());
@@ -25,13 +25,13 @@ int main(int argc, char *argv[]) {
     double root_age{args_tree.root_age.getValue()};
     bool branch_wise_correlation{args_tree.branch_wise_correlation.getValue()};
     Tree tree = args_tree.newick_path.getValue().empty()
-                ? Tree(args_tree.nbr_branches.getValue(), root_age)
-                : Tree(args_tree.newick_path.getValue());
+                    ? Tree(args_tree.nbr_branches.getValue(), root_age)
+                    : Tree(args_tree.newick_path.getValue());
     if (tree.nb_leaves() > 1) { tree.set_root_age(root_age); }
 
     // Fitness model
     u_long exon_size{args.exons.getValue()};
-    SequenceAdditiveModel seq_fit_profiles(1.0 / 4, exon_size, args_fitness);
+    SequenceDfeModel seq_fit_profiles(exon_size, args_fitness);
     u_long nbr_sites = seq_fit_profiles.nbr_sites();
     assert(0 <= exon_size and exon_size <= nbr_sites);
 

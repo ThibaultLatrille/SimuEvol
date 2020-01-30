@@ -49,7 +49,7 @@ class StabilityState final : public FitnessState {
 
     u_long nbr_sites() const override { return f.nbr_sites(); }
 
-    void update(std::vector<char> const &codon_seq) override {
+    void update(std::vector<char> const &codon_seq, double const &pop_size) override {
         distance = 0;
         dG = f.dG_min;
         for (size_t site = 0; site < codon_seq.size(); ++site) {
@@ -60,8 +60,8 @@ class StabilityState final : public FitnessState {
         }
     }
 
-    void update(
-        std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in) override {
+    void update(std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in,
+        double const &pop_size) override {
         if (codonLexico.codon_to_aa.at(codon_seq.at(site)) == f.optimal_aa_seq.at(site)) {
             // We were optimal
             distance++;
@@ -71,11 +71,15 @@ class StabilityState final : public FitnessState {
             distance--;
             dG -= f.ddG;
         }
-        if (!burn_in) { summary_stats["sub-ΔG"].add(dG); }
+        if (!burn_in) {
+            summary_stats["sub-distance/#sites"].add(static_cast<double>(distance) / nbr_sites());
+            summary_stats["sub-distance"].add(distance);
+            summary_stats["sub-ΔG"].add(dG);
+        }
     }
 
     double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
-        bool burn_in) const override {
+        bool burn_in, double const &pop_size) const override {
         double mutantdG = dG;
         if (codonLexico.codon_to_aa[codon_seq[site]] == codonLexico.codon_to_aa[codon_to]) {
             return 0.0;
@@ -99,7 +103,8 @@ class StabilityState final : public FitnessState {
 
 std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {
     {"mut-s", SummaryStatistic()}, {"mut-ΔG", SummaryStatistic()}, {"mut-ΔΔG", SummaryStatistic()},
-    {"sub-ΔG", SummaryStatistic()}};
+    {"sub-ΔG", SummaryStatistic()}, {"sub-distance/#sites", SummaryStatistic()},
+    {"sub-distance", SummaryStatistic()}};
 
 class StabilityArgParse {
   protected:

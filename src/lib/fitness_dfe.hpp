@@ -3,58 +3,82 @@
 #include <array>
 #include <vector>
 #include "fitness.hpp"
+#include "random.hpp"
 #include "tclap/CmdLine.h"
 
-class AdditiveLandscape final : public FitnessLandscape {
+class DfeParameters final : public FitnessLandscape {
   public:
-    // The fitness profiles of amino-acids.
-    std::vector<std::array<double, 20>> profiles;
+    u_long exon_size;
+    bool reflected;
+    double mean;
+    double shape;
+    double scale;
 
-    explicit AdditiveLandscape(std::vector<std::array<double, 20>> &profiles)
-        : profiles{profiles} {}
+    explicit DfeParameters(u_long exon_size, bool reflected, double mean, double shape)
+        : exon_size{exon_size}, reflected{reflected}, mean{mean}, shape{shape} {
+        if (shape != 0.0) { scale = mean / shape; }
+    }
 
-    u_long nbr_sites() const override { return profiles.size(); }
+    double selection_coefficient(u_long site, char aa_to, double const &pop_size) const {
+        auto bk_seed = generator();
+        generator.seed(site * 20 + aa_to);
+        double s{-mean};
+        if (shape != 0.0) { s = -std::gamma_distribution<double>(shape, scale)(generator); }
+        if (reflected) {
+            // Estimating the distribution of fitness effects from DNA sequence data: Implications
+            // for the molecular clock. Gwenaël Piganeau and Adam Eyre-Walker, PNAS, 2003.
+            // https://doi.org/10.1073/pnas.1833064100
+            double S = -4 * pop_size * s;
+            double x = exp(S) / (exp(S) + 1);
+            assert(0.5 <= x && x <= 1.0);
+            double draw = std::uniform_real_distribution<double>(0.0, 1.0)(generator);
+            if (draw > x) {
+                s = -s;
+                assert(s >= 0);
+            }
+        }
+        generator.seed(bk_seed);
+        return s;
+    }
+
+    u_long nbr_sites() const override { return exon_size; }
 };
 
-class AdditiveState final : public FitnessState {
+class DfeState final : public FitnessState {
   private:
-    AdditiveLandscape const &f;
+    DfeParameters const &f;
     double sum_selection_coeff;
 
   public:
     std::unique_ptr<FitnessState> clone() const override {
-        return std::make_unique<AdditiveState>(*this);
+        return std::make_unique<DfeState>(*this);
     };
 
-    explicit AdditiveState(AdditiveLandscape const &f) : f{f} { sum_selection_coeff = 0; }
+    explicit DfeState(DfeParameters const &f) : f{f} { sum_selection_coeff = 0; }
 
     bool operator==(FitnessState const &other) const override {
-        return sum_selection_coeff ==
-               dynamic_cast<AdditiveState const *>(&other)->sum_selection_coeff;
+        return sum_selection_coeff == dynamic_cast<DfeState const *>(&other)->sum_selection_coeff;
     };
 
     u_long nbr_sites() const override { return f.nbr_sites(); }
 
-    void update(std::vector<char> const &codon_seq) override {
+    void update(std::vector<char> const &codon_seq, double const &pop_size) override {
         sum_selection_coeff = 0;
         for (u_long i = 0; i < nbr_sites(); ++i) {
-            sum_selection_coeff += f.profiles.at(i).at(codonLexico.codon_to_aa.at(codon_seq.at(i)));
+            sum_selection_coeff += f.selection_coefficient(i, codonLexico.codon_to_aa[codon_seq.at(i)], pop_size);
         }
     }
 
-
-    void update(
-        std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in) override {
-        sum_selection_coeff -=
-            f.profiles.at(site).at(codonLexico.codon_to_aa.at(codon_seq.at(site)));
-        sum_selection_coeff += f.profiles.at(site).at(codonLexico.codon_to_aa.at(codon_to));
+    void update(std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in,
+        double const &pop_size) override {
+        sum_selection_coeff +=
+            f.selection_coefficient(site, codonLexico.codon_to_aa[codon_to], pop_size);
         if (!burn_in) { summary_stats["sub-sum"].add(sum_selection_coeff); }
     }
 
     double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
-        bool burn_in) const override {
-        double s = f.profiles[site][codonLexico.codon_to_aa[codon_to]] -
-                   f.profiles[site][codonLexico.codon_to_aa[codon_seq[site]]];
+        bool burn_in, double const &pop_size) const override {
+        double s = f.selection_coefficient(site, codonLexico.codon_to_aa[codon_to], pop_size);
         if (!burn_in) {
             summary_stats["mut-s"].add(s);
             summary_stats["mut-sum"].add(sum_selection_coeff + s);
@@ -63,8 +87,12 @@ class AdditiveState final : public FitnessState {
     };
 
     std::array<double, 20> aa_selection_coefficients(
-        std::vector<char> const &codon_seq, u_long site) const override {
-        return f.profiles.at(site);
+        std::vector<char> const &codon_seq, u_long site, double const &pop_size) const override {
+        std::array<double, 20> profiles{};
+        for (char aa = 0; aa < 20; ++aa) {
+            profiles[aa] = f.selection_coefficient(site, aa, pop_size);
+        }
+        return profiles;
     }
 };
 
@@ -72,90 +100,44 @@ std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = 
     {"mut-s", SummaryStatistic()}, {"mut-sum", SummaryStatistic()},
     {"sub-sum", SummaryStatistic()}};
 
-class AdditiveArgParse {
+class DfeArgParse {
   protected:
     TCLAP::CmdLine &cmd;
 
   public:
-    explicit AdditiveArgParse(TCLAP::CmdLine &cmd) : cmd{cmd} {}
-    TCLAP::ValueArg<std::string> preferences_path{
-        "", "preferences", "input site-specific preferences path", true, "", "string", cmd};
-    TCLAP::ValueArg<double> beta{
-        "", "beta", "Stringency parameter of the fitness profiles", false, 1.0, "double", cmd};
+    explicit DfeArgParse(TCLAP::CmdLine &cmd) : cmd{cmd} {}
+    TCLAP::ValueArg<bool> gamma_reflected{
+        "", "gamma_reflected", "True if reflected gamma.", false, false, "bool", cmd};
+    TCLAP::ValueArg<double> gamma_mean{
+        "", "gamma_mean", "Mean value of selection coefficient effect", false, 1.0, "double", cmd};
+    TCLAP::ValueArg<double> gamma_shape{
+        "", "gamma_shape", "Shape of the gamma distribution", false, 1.0, "double", cmd};
+    TCLAP::ValueArg<u_long> nbr_exons{"", "nbr_exons", "Number of exons", false, 30, "u_long", cmd};
+
 
     void add_to_trace(Trace &trace) {
-        trace.add("site_preferences_path", preferences_path.getValue());
-        trace.add("site_preferences_beta", beta.getValue());
+        assert(gamma_mean.getValue() >= 0);
+        assert(gamma_shape.getValue() >= 0);
+        trace.add("#nbr_exons", nbr_exons.getValue());
+        trace.add("gamma_distribution_reflected", gamma_reflected.getValue());
+        trace.add("gamma_distribution_mean", gamma_mean.getValue());
+        trace.add("gamma_distribution_shape", gamma_shape.getValue());
     }
 };
 
-class SequenceAdditiveModel : public FitnessModel {
+class SequenceDfeModel : public FitnessModel {
   public:
-    SequenceAdditiveModel(double const &beta_prefactor, u_long &exon_size, AdditiveArgParse &args)
-        : FitnessModel() {
-        std::vector<std::array<double, 20>> site_aa_coeffs;
-
-        std::ifstream input_stream(args.preferences_path.getValue());
-        if (!input_stream)
-            std::cerr << "Preferences file " << args.preferences_path.getValue() << " doesn't exist"
-                      << std::endl;
-
-        std::string line;
-
-        // skip the header of the file
-        getline(input_stream, line);
-        char sep{' '};
-        u_long nbr_col = 0;
-        for (char sep_test : std::vector<char>({' ', ',', '\t'})) {
-            u_long n = static_cast<u_long>(std::count(line.begin(), line.end(), sep_test));
-            if (n > nbr_col) {
-                sep = sep_test;
-                nbr_col = n + 1;
-            }
-        }
-        nbr_col -= 20;
-
-        while (getline(input_stream, line)) {
-            std::array<double, 20> fitness_profil{0};
-            std::string word;
-            istringstream line_stream(line);
-            u_long counter{0};
-
-            double min_val = 0;
-            while (getline(line_stream, word, sep)) {
-                if (counter >= nbr_col) {
-                    double val = std::log(stod(word));
-                    if (val < min_val) { min_val = val; }
-                    fitness_profil[counter - nbr_col] = val;
-                }
-                counter++;
-            }
-            for (auto &val : fitness_profil) {
-                val -= min_val;
-                val *= beta_prefactor * args.beta.getValue();
-            }
-
-            site_aa_coeffs.push_back(fitness_profil);
-        }
-        if (exon_size == 0) { exon_size = site_aa_coeffs.size(); }
-        auto dv = std::div(static_cast<long>(site_aa_coeffs.size()), exon_size);
-        if (dv.rem != 0) { dv.quot++; }
-        fitness_landscapes.reserve(dv.quot);
-        fitness_states.reserve(dv.quot);
-        for (int exon{0}; exon < dv.quot; exon++) {
-            size_t begin_exon = exon * exon_size;
-            size_t end_exon = std::min(begin_exon + exon_size, site_aa_coeffs.size());
-
-            std::vector<std::array<double, 20>> exon_site_aa_coeffs(
-                site_aa_coeffs.begin() + begin_exon, site_aa_coeffs.begin() + end_exon);
+    SequenceDfeModel(u_long &exon_size, DfeArgParse &args) : FitnessModel() {
+        fitness_landscapes.reserve(args.nbr_exons.getValue());
+        fitness_states.reserve(args.nbr_exons.getValue());
+        for (u_long exon{0}; exon < args.nbr_exons.getValue(); exon++) {
             fitness_landscapes.emplace_back(
-                std::make_unique<AdditiveLandscape>(exon_site_aa_coeffs));
-
-            fitness_states.emplace_back(std::make_unique<AdditiveState>(
-                *dynamic_cast<AdditiveLandscape *>(fitness_landscapes.at(exon).get())));
+                std::make_unique<DfeParameters>(exon_size, args.gamma_reflected.getValue(),
+                    args.gamma_mean.getValue(), args.gamma_shape.getValue()));
+            fitness_states.emplace_back(std::make_unique<DfeState>(
+                *dynamic_cast<DfeParameters *>(fitness_landscapes.at(exon).get())));
         }
-        assert(nbr_sites() == site_aa_coeffs.size());
+        assert(nbr_sites() == exon_size * args.nbr_exons.getValue());
         std::cout << fitness_landscapes.size() << " exons created." << std::endl;
-        if (dv.rem != 0) { std::cout << "Last exon is " << dv.rem << " sites long." << std::endl; }
     }
 };

@@ -35,7 +35,7 @@ class AdditiveState final : public FitnessState {
 
     u_long nbr_sites() const override { return f.nbr_sites(); }
 
-    void update(std::vector<char> const &codon_seq) override {
+    void update(std::vector<char> const &codon_seq, double const &pop_size) override {
         sum_selection_coeff = 0;
         for (u_long i = 0; i < nbr_sites(); ++i) {
             sum_selection_coeff += f.profiles.at(i).at(codonLexico.codon_to_aa.at(codon_seq.at(i)));
@@ -43,8 +43,8 @@ class AdditiveState final : public FitnessState {
     }
 
 
-    void update(
-        std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in) override {
+    void update(std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in,
+        double const &pop_size) override {
         sum_selection_coeff -=
             f.profiles.at(site).at(codonLexico.codon_to_aa.at(codon_seq.at(site)));
         sum_selection_coeff += f.profiles.at(site).at(codonLexico.codon_to_aa.at(codon_to));
@@ -52,7 +52,7 @@ class AdditiveState final : public FitnessState {
     }
 
     double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
-        bool burn_in) const override {
+        bool burn_in, double const &pop_size) const override {
         double s = f.profiles[site][codonLexico.codon_to_aa[codon_to]] -
                    f.profiles[site][codonLexico.codon_to_aa[codon_seq[site]]];
         if (!burn_in) {
@@ -63,7 +63,7 @@ class AdditiveState final : public FitnessState {
     };
 
     std::array<double, 20> aa_selection_coefficients(
-        std::vector<char> const &codon_seq, u_long site) const override {
+        std::vector<char> const &codon_seq, u_long site, double const &pop_size) const override {
         return f.profiles.at(site);
     }
 };

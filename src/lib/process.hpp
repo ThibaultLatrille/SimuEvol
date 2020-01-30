@@ -9,32 +9,28 @@ double dnds_count_tot{0}, dnds_event_tot{0}, dnd0_count_tot{0}, dnd0_event_tot{0
 
 class DFE {
   public:
-    unsigned long long strongly_deleterious{0};
-    unsigned long long weakly_deleterious{0};
-    unsigned long long weakly_advantageous{0};
-    unsigned long long strongly_advantageous{0};
+    unsigned long long deleterious{0};
+    unsigned long long advantageous{0};
+    double sub_deleterious{0};
+    double sub_advantageous{0};
+    double sel_coeff_subs{0};
 
     DFE() = default;
 
     void operator+=(const DFE &other) {
-        this->strongly_deleterious += other.strongly_deleterious;
-        this->weakly_deleterious += other.weakly_deleterious;
-        this->weakly_advantageous += other.weakly_advantageous;
-        this->strongly_advantageous += other.strongly_advantageous;
+        this->deleterious += other.deleterious;
+        this->advantageous += other.advantageous;
+        this->sub_deleterious += other.sub_deleterious;
+        this->sub_advantageous += other.sub_advantageous;
+        this->sel_coeff_subs += other.sel_coeff_subs;
     }
 
     void add(Trace &trace) const {
-        trace.add("strongly_deleterious", strongly_deleterious);
-        trace.add("weakly_deleterious", weakly_deleterious);
-        trace.add("weakly_advantageous", weakly_advantageous);
-        trace.add("strongly_advantageous", strongly_advantageous);
         trace.add("advantageous_over_deleterious",
-            static_cast<double>(strongly_advantageous + weakly_advantageous) /
-                static_cast<double>(weakly_deleterious + strongly_deleterious));
-        trace.add("strongly_advantageous_over_deleterious",
-            static_cast<double>(strongly_advantageous) / static_cast<double>(strongly_deleterious));
-        trace.add("weakly_advantageous_over_deleterious",
-            static_cast<double>(weakly_advantageous) / static_cast<double>(weakly_deleterious));
+            static_cast<double>(advantageous) / static_cast<double>(deleterious));
+        trace.add("sub_advantageous_minus_deleterious", sub_advantageous - sub_deleterious);
+        trace.add("sub_advantageous_over_deleterious", sub_advantageous / sub_deleterious);
+        trace.add("selection_coefficient_substitutions", sel_coeff_subs);
     }
 };
 
@@ -100,13 +96,13 @@ class Exon {
 
     // Constructor of Exon.
     // size: the size of the DNA sequence.
-    Exon(std::unique_ptr<FitnessState> &f_state, u_long const &position)
+    Exon(std::unique_ptr<FitnessState> &f_state, u_long const &position, double const &pop_size)
         : nbr_sites{f_state->nbr_sites()},
           position{position},
           codon_seq(nbr_sites, 0),
           fitness_state{std::move(f_state)} {
         assert(substitutions.empty());
-        fitness_state.ptr->update(codon_seq);
+        fitness_state.ptr->update(codon_seq, pop_size);
     }
 
     bool operator==(Exon const &other) const {
@@ -167,17 +163,20 @@ class Exon {
                 if (codonLexico.codon_to_aa[codon_from] != codonLexico.codon_to_aa[codon_to]) {
                     non_syn_mut_flow += rate_substitution;
                     double s = fitness_state.ptr->selection_coefficient(
-                        codon_seq, site, codon_to, burn_in);
+                        codon_seq, site, codon_to, burn_in, beta);
                     double pfix = Pfix(beta, s);
                     rate_substitution *= pfix;
                     non_syn_sub_flow += rate_substitution;
                     dndn0 += pfix;
                     ns++;
                     if (pfix > 1) {
-                        (pfix > 10) ? dfe.strongly_advantageous++ : dfe.weakly_advantageous++;
+                        dfe.advantageous++;
+                        dfe.sub_advantageous += pfix;
                     } else {
-                        (pfix < 0.1) ? dfe.strongly_deleterious++ : dfe.weakly_deleterious++;
+                        dfe.deleterious++;
+                        dfe.sub_deleterious += pfix;
                     }
+                    dfe.sel_coeff_subs += s * pfix;
                 } else {
                     if (burn_in) { continue; }
                     syn_mut_flow += rate_substitution;
@@ -226,7 +225,7 @@ class Exon {
             }
 
             if (codonLexico.codon_to_aa[codon_seq[site]] != codonLexico.codon_to_aa[codon_to]) {
-                fitness_state.ptr->update(codon_seq, site, codon_to, burn_in);
+                fitness_state.ptr->update(codon_seq, site, codon_to, burn_in, beta);
             }
             codon_seq[site] = codon_to;
             time_start += time_draw;
@@ -290,7 +289,7 @@ class Sequence {
           branch_wise{branch_wise} {
         u_long pos = 0;
         for (std::unique_ptr<FitnessState> &exon_seq_fitness : seq_fitness.fitness_states) {
-            exons.emplace_back(Exon(exon_seq_fitness, pos));
+            exons.emplace_back(Exon(exon_seq_fitness, pos, beta));
             pos += exons.back().nbr_sites;
         }
     }
@@ -325,7 +324,7 @@ class Sequence {
                 char codon_to = std::distance(codonLexico.codon_to_aa.begin(), it);
                 exon.codon_seq[site] = codon_to;
             }
-            exon.fitness_state.ptr->update(exon.codon_seq);
+            exon.fitness_state.ptr->update(exon.codon_seq, beta);
         }
     }
 
@@ -339,7 +338,7 @@ class Sequence {
                 char codon_to = codonLexico.triplet_to_codon(n1, n2, n3);
                 exon.codon_seq[site] = codon_to;
             }
-            exon.fitness_state.ptr->update(exon.codon_seq);
+            exon.fitness_state.ptr->update(exon.codon_seq, beta);
         }
     }
 
@@ -413,15 +412,17 @@ class Sequence {
         for (u_long i = 0; i < nbr_rounds; i++) {
             for (auto &exon : exons) {
                 for (u_long site{0}; site < exon.nbr_sites; site++) {
-                    std::array<double, 64> codon_freqs = codon_frequencies(
-                        exon.fitness_state.ptr->aa_selection_coefficients(exon.codon_seq, site),
-                        nuc_matrix, init_pop_size);
+                    std::array<double, 64> codon_freqs =
+                        codon_frequencies(exon.fitness_state.ptr->aa_selection_coefficients(
+                                              exon.codon_seq, site, init_pop_size),
+                            nuc_matrix, init_pop_size);
                     std::discrete_distribution<char> freq_codon_distr(
                         codon_freqs.begin(), codon_freqs.end());
                     char chosen_codon = freq_codon_distr(generator);
                     if (codonLexico.codon_to_aa[chosen_codon] !=
                         codonLexico.codon_to_aa[exon.codon_seq[site]]) {
-                        exon.fitness_state.ptr->update(exon.codon_seq, site, chosen_codon, true);
+                        exon.fitness_state.ptr->update(
+                            exon.codon_seq, site, chosen_codon, true, init_pop_size);
                     }
                     exon.codon_seq[site] = chosen_codon;
                 }
@@ -796,8 +797,6 @@ class Process {
         for (auto const &ss : FitnessState::summary_stats) {
             trace.add(ss.first + "-mean", ss.second.mean());
             trace.add(ss.first + "-std", ss.second.std());
-            trace.add(ss.first + "-abs-mean", ss.second.abs_mean());
-            trace.add(ss.first + "-abs-std", ss.second.abs_std());
         }
         trace.write_tsv(output_path);
 
