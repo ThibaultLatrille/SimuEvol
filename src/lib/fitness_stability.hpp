@@ -11,6 +11,7 @@ class StabilityLandscape final : public FitnessLandscape {
 
     explicit StabilityLandscape(int nbr_sites, double dG_min, double ddG)
         : optimal_aa_seq(nbr_sites, 0), dG_min{dG_min}, ddG{ddG} {
+        additive_phenotype = true;
         auto d = std::uniform_int_distribution<char>(0, 19);
         for (auto &site : optimal_aa_seq) { site = d(generator); }
     }
@@ -40,7 +41,7 @@ class StabilityState final : public FitnessState {
         return std::make_unique<StabilityState>(*this);
     };
 
-    explicit StabilityState(StabilityLandscape const &f) : f{f}, dG{f.dG_min} {}
+    explicit StabilityState(StabilityLandscape const &f) : FitnessState(f), f{f}, dG{f.dG_min} {}
 
     bool operator==(FitnessState const &other) const override {
         auto p = dynamic_cast<StabilityState const *>(&other);
@@ -77,6 +78,17 @@ class StabilityState final : public FitnessState {
             summary_stats["sub-ΔG"].add(dG);
         }
     }
+
+    double selection_coefficient(FitnessState const &mutant, bool burn_in) const override {
+        auto mutantdG = dynamic_cast<StabilityState const *>(&mutant)->dG;
+        double s = selection_coefficient_ddG(dG, mutantdG);
+        if (!burn_in) {
+            summary_stats["mut-s"].add(s);
+            summary_stats["mut-ΔG"].add(mutantdG);
+            summary_stats["mut-ΔΔG"].add(mutantdG - dG);
+        }
+        return s;
+    };
 
     double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
         bool burn_in, double const &pop_size) const override {

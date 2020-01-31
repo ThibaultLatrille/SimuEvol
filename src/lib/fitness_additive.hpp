@@ -10,8 +10,9 @@ class AdditiveLandscape final : public FitnessLandscape {
     // The fitness profiles of amino-acids.
     std::vector<std::array<double, 20>> profiles;
 
-    explicit AdditiveLandscape(std::vector<std::array<double, 20>> &profiles)
-        : profiles{profiles} {}
+    explicit AdditiveLandscape(std::vector<std::array<double, 20>> &profiles) : profiles{profiles} {
+        additive_phenotype = true;
+    }
 
     u_long nbr_sites() const override { return profiles.size(); }
 };
@@ -19,37 +20,43 @@ class AdditiveLandscape final : public FitnessLandscape {
 class AdditiveState final : public FitnessState {
   private:
     AdditiveLandscape const &f;
-    double sum_selection_coeff;
+    double log_fitness{.0};
 
   public:
     std::unique_ptr<FitnessState> clone() const override {
         return std::make_unique<AdditiveState>(*this);
     };
 
-    explicit AdditiveState(AdditiveLandscape const &f) : f{f} { sum_selection_coeff = 0; }
+    explicit AdditiveState(AdditiveLandscape const &f) : FitnessState(f), f{f} {}
 
     bool operator==(FitnessState const &other) const override {
-        return sum_selection_coeff ==
-               dynamic_cast<AdditiveState const *>(&other)->sum_selection_coeff;
+        return log_fitness == dynamic_cast<AdditiveState const *>(&other)->log_fitness;
     };
 
     u_long nbr_sites() const override { return f.nbr_sites(); }
 
     void update(std::vector<char> const &codon_seq, double const &pop_size) override {
-        sum_selection_coeff = 0;
+        log_fitness = 0;
         for (u_long i = 0; i < nbr_sites(); ++i) {
-            sum_selection_coeff += f.profiles.at(i).at(codonLexico.codon_to_aa.at(codon_seq.at(i)));
+            log_fitness += f.profiles.at(i).at(codonLexico.codon_to_aa.at(codon_seq.at(i)));
         }
     }
 
-
     void update(std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in,
         double const &pop_size) override {
-        sum_selection_coeff -=
-            f.profiles.at(site).at(codonLexico.codon_to_aa.at(codon_seq.at(site)));
-        sum_selection_coeff += f.profiles.at(site).at(codonLexico.codon_to_aa.at(codon_to));
-        if (!burn_in) { summary_stats["sub-sum"].add(sum_selection_coeff); }
+        log_fitness -= f.profiles.at(site).at(codonLexico.codon_to_aa.at(codon_seq.at(site)));
+        log_fitness += f.profiles.at(site).at(codonLexico.codon_to_aa.at(codon_to));
+        if (!burn_in) { summary_stats["sub-sum"].add(log_fitness); }
     }
+
+    double selection_coefficient(FitnessState const &mutant, bool burn_in) const override {
+        double s = dynamic_cast<AdditiveState const *>(&mutant)->log_fitness - log_fitness;
+        if (!burn_in) {
+            summary_stats["mut-s"].add(s);
+            summary_stats["mut-sum"].add(log_fitness + s);
+        }
+        return s;
+    };
 
     double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
         bool burn_in, double const &pop_size) const override {
@@ -57,7 +64,7 @@ class AdditiveState final : public FitnessState {
                    f.profiles[site][codonLexico.codon_to_aa[codon_seq[site]]];
         if (!burn_in) {
             summary_stats["mut-s"].add(s);
-            summary_stats["mut-sum"].add(sum_selection_coeff + s);
+            summary_stats["mut-sum"].add(log_fitness + s);
         }
         return s;
     };

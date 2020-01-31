@@ -34,6 +34,7 @@ class GeometricLandscape final : public FitnessLandscape {
           epistasis{epistasis},
           radius{radius},
           radius_std{radius_std} {
+        additive_phenotype = true;
         sites_aa_phenotypes.resize(nbr_sites);
         double r{radius};
         if (radius_std != 0.0) {
@@ -60,7 +61,7 @@ class GeometricState final : public FitnessState {
         return std::make_unique<GeometricState>(*this);
     };
 
-    explicit GeometricState(GeometricLandscape const &f) : f{f} {
+    explicit GeometricState(GeometricLandscape const &f) : FitnessState(f), f{f} {
         phenotype.resize(f.complexity, 0);
     }
 
@@ -97,6 +98,22 @@ class GeometricState final : public FitnessState {
         return exp(-f.peakness * pow(distance(v), f.epistasis));
     }
 
+
+    double selection_coefficient(std::vector<double> const &mutant_phenotype) const {
+        double fp = fitness(phenotype);
+        return (fitness(mutant_phenotype) - fp) / fp;
+    }
+
+    double selection_coefficient(FitnessState const &mutant, bool burn_in) const override {
+        auto mutant_cast = dynamic_cast<GeometricState const *>(&mutant);
+        double s = selection_coefficient(mutant_cast->phenotype);
+        if (!burn_in) {
+            summary_stats["mut-s"].add(s);
+            summary_stats["mut-distance"].add(distance(mutant_cast->phenotype));
+        }
+        return s;
+    };
+
     double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
         bool burn_in, double const &pop_size) const override {
         auto mutant_phenotype = phenotype;
@@ -106,9 +123,7 @@ class GeometricState final : public FitnessState {
             mutant_phenotype[dim] +=
                 f.sites_aa_phenotypes[site][codonLexico.codon_to_aa[codon_to]][dim];
         }
-        double fp = fitness(phenotype);
-        double fm = fitness(mutant_phenotype);
-        double s = (fm - fp) / fp;
+        double s = selection_coefficient(mutant_phenotype);
         if (!burn_in) {
             summary_stats["mut-s"].add(s);
             summary_stats["mut-distance"].add(distance(mutant_phenotype));

@@ -102,11 +102,11 @@ class Exon {
           codon_seq(nbr_sites, 0),
           fitness_state{std::move(f_state)} {
         assert(substitutions.empty());
-        fitness_state.ptr->update(codon_seq, pop_size);
+        fitness_state->update(codon_seq, pop_size);
     }
 
     bool operator==(Exon const &other) const {
-        return *(fitness_state.ptr) == *(other.fitness_state.ptr);
+        return *fitness_state == *other.fitness_state;
     };
 
     bool operator!=(Exon const &other) const { return !(*this == other); };
@@ -162,7 +162,7 @@ class Exon {
                 rate_substitution = nuc_matrix(n_from, n_to);
                 if (codonLexico.codon_to_aa[codon_from] != codonLexico.codon_to_aa[codon_to]) {
                     non_syn_mut_flow += rate_substitution;
-                    double s = fitness_state.ptr->selection_coefficient(
+                    double s = fitness_state->selection_coefficient(
                         codon_seq, site, codon_to, burn_in, beta);
                     double pfix = Pfix(beta, s);
                     rate_substitution *= pfix;
@@ -225,7 +225,7 @@ class Exon {
             }
 
             if (codonLexico.codon_to_aa[codon_seq[site]] != codonLexico.codon_to_aa[codon_to]) {
-                fitness_state.ptr->update(codon_seq, site, codon_to, burn_in, beta);
+                fitness_state->update(codon_seq, site, codon_to, burn_in, beta);
             }
             codon_seq[site] = codon_to;
             time_start += time_draw;
@@ -324,7 +324,7 @@ class Sequence {
                 char codon_to = std::distance(codonLexico.codon_to_aa.begin(), it);
                 exon.codon_seq[site] = codon_to;
             }
-            exon.fitness_state.ptr->update(exon.codon_seq, beta);
+            exon.fitness_state->update(exon.codon_seq, beta);
         }
     }
 
@@ -338,7 +338,7 @@ class Sequence {
                 char codon_to = codonLexico.triplet_to_codon(n1, n2, n3);
                 exon.codon_seq[site] = codon_to;
             }
-            exon.fitness_state.ptr->update(exon.codon_seq, beta);
+            exon.fitness_state->update(exon.codon_seq, beta);
         }
     }
 
@@ -413,7 +413,7 @@ class Sequence {
             for (auto &exon : exons) {
                 for (u_long site{0}; site < exon.nbr_sites; site++) {
                     std::array<double, 64> codon_freqs =
-                        codon_frequencies(exon.fitness_state.ptr->aa_selection_coefficients(
+                        codon_frequencies(exon.fitness_state->aa_selection_coefficients(
                                               exon.codon_seq, site, init_pop_size),
                             nuc_matrix, init_pop_size);
                     std::discrete_distribution<char> freq_codon_distr(
@@ -421,7 +421,7 @@ class Sequence {
                     char chosen_codon = freq_codon_distr(generator);
                     if (codonLexico.codon_to_aa[chosen_codon] !=
                         codonLexico.codon_to_aa[exon.codon_seq[site]]) {
-                        exon.fitness_state.ptr->update(
+                        exon.fitness_state->update(
                             exon.codon_seq, site, chosen_codon, true, init_pop_size);
                     }
                     exon.codon_seq[site] = chosen_codon;
@@ -494,7 +494,7 @@ class Sequence {
         for (auto const &exon : exons) {
             double exon_dn{0}, exon_d0{0};
             std::tie(exon_dn, exon_d0) =
-                exon.fitness_state.ptr->predicted_dn_dn0(exon.codon_seq, rates, relative_pop);
+                exon.fitness_state->predicted_dn_dn0(exon.codon_seq, rates, relative_pop);
             dn += exon_dn;
             dn0 += exon_d0;
         }
@@ -507,7 +507,7 @@ class Sequence {
 
         for (size_t i = 0; i < nbr_exons(); i++) {
             double exon_dn{0}, exon_dn0{0};
-            std::tie(exon_dn, exon_dn0) = exons[i].fitness_state.ptr->flow_dn_dn0(
+            std::tie(exon_dn, exon_dn0) = exons[i].fitness_state->flow_dn_dn0(
                 parent.exons[i].codon_seq, rates, relative_pop);
             dn += exon_dn;
             dn0 += exon_dn0;

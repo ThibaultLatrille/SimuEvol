@@ -65,6 +65,8 @@ test: debug
 	build/SimuDfe --newick data/trees/mammal_subtree.tre.annotated --nuc_matrix data/matrices/nucleotide_GTR.tsv --precision_matrix data/matrices/precision3x3.tsv --exon_size 50 --nbr_exons 2 --population_size 1e4 --gamma_mean 1e-5 --output test/SimuDiv_gal4
 	@echo "\n\e[35m\e[1m== SimuPoly run ==============================================================\e[0m"
 	build/SimuPoly --preferences data/preferences/gal4.prefs --newick data/trees/mammal_subtree.tre.annotated --nuc_matrix data/matrices/nucleotide_GTR.tsv --precision_matrix data/matrices/precision3x3.tsv --exon_size 25 --noise_sigma 0.1 --output test/SimuPoly_gal4
+	@echo "\n\e[35m\e[1m== PolyDfe run ==============================================================\e[0m"
+	build/PolyDfe --newick data/trees/mammal_subtree.tre.annotated --nuc_matrix data/matrices/nucleotide_GTR.tsv --precision_matrix data/matrices/precision3x3.tsv --exon_size 50 --nbr_exons 2 --population_size 200 --gamma_mean 1e-3 --noise_sigma 0.1 --output test/SimuPoly_gal4
 	@echo "\n\e[35m\e[1m== SimuGeo run ===============================================================\e[0m"
 	build/SimuGeo --complexity 3 --newick data/trees/mammal_subtree.tre.annotated --nuc_matrix data/matrices/nucleotide_GTR.tsv --precision_matrix data/matrices/precision3x3.tsv --exon_size 200 --nbr_exons 5 --output test/SimuGeo
 	@echo "\n\e[35m\e[1m== SimuRelax run =============================================================\e[0m"

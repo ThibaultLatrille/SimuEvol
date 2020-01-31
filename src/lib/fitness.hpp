@@ -44,6 +44,8 @@ std::array<double, 64> codon_frequencies(std::array<double, 20> const &aa_select
 
 class FitnessLandscape {
   public:
+    bool additive_phenotype{false};
+
     virtual ~FitnessLandscape() = default;
 
     virtual u_long nbr_sites() const = 0;
@@ -51,6 +53,10 @@ class FitnessLandscape {
 
 class FitnessState {
   public:
+    FitnessLandscape const &landscape;
+
+    explicit FitnessState(FitnessLandscape const &landscape) : landscape{landscape} {}
+
     static std::unordered_map<std::string, SummaryStatistic> summary_stats;
 
     virtual std::unique_ptr<FitnessState> clone() const = 0;
@@ -61,11 +67,26 @@ class FitnessState {
 
     virtual void update(std::vector<char> const &codon_seq, double const &pop_size) = 0;
 
-    virtual void update(
-        std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in, double const &pop_size) = 0;
+    virtual void update(std::vector<char> const &codon_seq, u_long site, char codon_to,
+        bool burn_in, double const &pop_size) = 0;
 
-    virtual double selection_coefficient(
-        std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in, double const &pop_size) const = 0;
+    void update(std::vector<char> const &codon_seq,
+        std::unordered_map<u_long, char> const &diff_sites, u_long site, char codon_to,
+        bool burn_in, double const &pop_size) {
+        if (landscape.additive_phenotype or diff_sites.empty() or
+            (diff_sites.size() == 1 and diff_sites.count(site) == 1)) {
+            update(codon_seq, site, codon_to, burn_in, pop_size);
+        }
+        // We could also backup the changes and rollback after update
+        auto copy_seq = codon_seq;
+        for (auto const &diff : diff_sites) { copy_seq[diff.first] = diff.second; }
+        update(copy_seq, site, codon_to, burn_in, pop_size);
+    }
+
+    virtual double selection_coefficient(FitnessState const &mutant, bool burn_in) const = 0;
+
+    virtual double selection_coefficient(std::vector<char> const &codon_seq, u_long site,
+        char codon_to, bool burn_in, double const &pop_size) const = 0;
 
     virtual std::array<double, 20> aa_selection_coefficients(
         std::vector<char> const &codon_seq, u_long site, double const &pop_size) const {

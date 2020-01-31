@@ -212,13 +212,15 @@ class Haplotype {
     u_long nbr_copies{0};
     double sel_coeff{0.0};
     std::unordered_map<u_long, char> diff_sites;
+    ClonableUniquePtr<FitnessState> fitness_state;
 
     explicit Haplotype() = default;
 
     // Constructor of Reference_seq.
     // size: the size of the DNA sequence.
-    Haplotype(u_long const nbr_copies, double const sel_coeff)
-        : nbr_copies{nbr_copies}, sel_coeff{sel_coeff} {};
+    Haplotype(
+        u_long const nbr_copies, double const sel_coeff, ClonableUniquePtr<FitnessState> f_state)
+        : nbr_copies{nbr_copies}, sel_coeff{sel_coeff}, fitness_state{std::move(f_state)} {};
 
     bool check_consistency(u_long nbr_sites) const {
         for (auto &diff : diff_sites) {
@@ -230,15 +232,15 @@ class Haplotype {
         return true;
     }
 
-    static struct {
+    struct GreaterThan {
         bool operator()(Haplotype const &left, Haplotype const &right) {
             return left.nbr_copies > right.nbr_copies;
         }
 
-        bool operator()(Haplotype const &left, float right) { return left.nbr_copies > right; }
+        bool operator()(Haplotype const &left, u_long right) { return left.nbr_copies > right; }
 
-        bool operator()(float left, Haplotype const &right) { return left > right.nbr_copies; }
-    } GreaterThan;
+        bool operator()(u_long left, Haplotype const &right) { return left > right.nbr_copies; }
+    };
 };
 
 // Class representing a genetically linked sequences (exons are unlinked between them)
@@ -276,14 +278,14 @@ class Exon {
         // Draw codon from codon frequencies
         for (u_long site{0}; site < nbr_sites; site++) {
             std::array<double, 64> codon_freqs = codon_frequencies(
-                fitness_state.ptr->aa_selection_coefficients(codon_seq, site, population_size),
+                fitness_state->aa_selection_coefficients(codon_seq, site, population_size),
                 nuc_matrix, population_size);
             std::discrete_distribution<char> freq_codon_distr(
                 codon_freqs.begin(), codon_freqs.end());
             codon_seq[site] = freq_codon_distr(generator);
         }
-
-        haplotype_vector.emplace_back(2 * population_size, 0.0);
+        fitness_state->update(codon_seq, population_size);
+        haplotype_vector.emplace_back(Haplotype(2 * population_size, 0.0, fitness_state));
         assert(check_consistency(population_size));
     }
 
@@ -390,23 +392,26 @@ class Exon {
                 triplet_nuc.at(0), triplet_nuc.at(1), triplet_nuc.at(2));
             if (codonLexico.codon_to_aa.at(codon_to) == 20) { continue; }
 
-            // Depending on whether the mutation is back to the reference sequence
             Haplotype haplotype = haplotype_vector.at(hap_id);
+
+            if (!is_synonymous(codon_from, codon_to)) {
+                // Update the fitness of the new haplotype
+                auto bk = codon_seq.at(codon_site);
+                codon_seq[codon_site] = codon_from;
+                haplotype.fitness_state->update(codon_seq, haplotype.diff_sites, codon_site,
+                    codon_to, burn_in, population_size);
+                haplotype.sel_coeff +=
+                    fitness_state->selection_coefficient(*haplotype.fitness_state.get(), burn_in);
+                codon_seq[codon_site] = bk;
+            }
+
+            // Depending on whether the mutation is back to the reference sequence
             if (codon_to == codon_seq.at(codon_site)) {
                 assert(haplotype.diff_sites.count(codon_site) > 0);
                 haplotype.diff_sites.erase(codon_site);
             } else {
                 haplotype.diff_sites[codon_site] = codon_to;
             }
-
-            // Update the fitness of the new haplotype
-            auto bk = codon_seq.at(codon_site);
-            codon_seq[codon_site] = codon_from;
-            double df = fitness_state.ptr->selection_coefficient(
-                codon_seq, codon_site, codon_to, burn_in, population_size);
-            codon_seq[codon_site] = bk;
-
-            haplotype.sel_coeff += df;
 
             // Update the vector of haplotypes
             haplotype_vector.at(hap_id).nbr_copies--;
@@ -462,14 +467,15 @@ class Exon {
         if (haplotype_vector.size() == 1) { return; }
 
         // Sort the vector of haplotypes by number of copies
-        if (!is_sorted(haplotype_vector.begin(), haplotype_vector.end(), Haplotype::GreaterThan)) {
-            sort(haplotype_vector.begin(), haplotype_vector.end(), Haplotype::GreaterThan);
+        if (!is_sorted(
+                haplotype_vector.begin(), haplotype_vector.end(), Haplotype::GreaterThan{})) {
+            sort(haplotype_vector.begin(), haplotype_vector.end(), Haplotype::GreaterThan{});
         }
 
         // Remove haplotypes with 0 copies
         if (haplotype_vector.back().nbr_copies == 0) {
             auto low_bound = lower_bound(
-                haplotype_vector.begin(), haplotype_vector.end(), 0, Haplotype::GreaterThan);
+                haplotype_vector.begin(), haplotype_vector.end(), 0, Haplotype::GreaterThan{});
             if (low_bound != haplotype_vector.end()) {
                 haplotype_vector.erase(low_bound, haplotype_vector.end());
             }
@@ -519,10 +525,13 @@ class Exon {
                         return p1.second < p2.second;
                     })->first;
             }
-            double df = fitness_state.ptr->selection_coefficient(
-                codon_seq, site, codon_to, burn_in, population_size);
+            double df = .0;
+            if (!is_synonymous(codon_from, codon_to)) {
+                df = fitness_state->selection_coefficient(
+                    codon_seq, site, codon_to, burn_in, population_size);
+                fitness_state->update(codon_seq, site, codon_to, burn_in, population_size);
+            }
             codon_seq[site] = codon_to;
-
             // Update the vector of haplotypes
             for (auto &haplotype : haplotype_vector) {
                 haplotype.sel_coeff -= df;
@@ -560,37 +569,22 @@ class Exon {
         timer.fixation += duration(timeNow() - t_start);
     }
 
-    void sample_one_individual(double const &population_size) {
+    void sample_one_individual(double const &pop_size) {
         // Compute the distribution of haplotype frequency in the population
-        std::vector<u_long> nbr_copies(haplotype_vector.size(), 0);
+        std::vector<unsigned> nbr_copies(haplotype_vector.size(), 0);
         std::transform(haplotype_vector.begin(), haplotype_vector.end(), nbr_copies.begin(),
             [](Haplotype const &h) { return h.nbr_copies; });
-        u_long rand_hap =
+        unsigned rand_hap =
             std::discrete_distribution<u_long>(nbr_copies.begin(), nbr_copies.end())(generator);
 
-        auto diffs = haplotype_vector[rand_hap].diff_sites;
-        // For each site (different to the reference) of the most common haplotype
-        for (auto const &diff : diffs) {
-            // Update the vector of haplotypes
-            u_long site = diff.first;
-            char codon_from = codon_seq[diff.first];
-            char codon_to = diff.second;
-
-            double df = fitness_state.ptr->selection_coefficient(
-                codon_seq, site, codon_to, true, population_size);
-
-            codon_seq[site] = codon_to;
-            for (auto &haplotype : haplotype_vector) {
-                haplotype.sel_coeff -= df;
-                if (haplotype.diff_sites.count(site) > 0 and
-                    haplotype.diff_sites.at(site) == codon_to) {
-                    haplotype.diff_sites.erase(site);
-                } else if (haplotype.diff_sites.count(site) == 0) {
-                    haplotype.diff_sites[site] = codon_from;
-                }
-            }
+        for (auto const &diff : haplotype_vector[rand_hap].diff_sites) {
+            codon_seq[diff.first] = diff.second;
         }
-        assert(haplotype_vector[rand_hap].diff_sites.empty());
+        haplotype_vector.resize(1);
+        haplotype_vector.front().fitness_state->update(codon_seq, pop_size);
+        haplotype_vector.front().nbr_copies = sum(nbr_copies);
+        haplotype_vector.front().sel_coeff = 0.0;
+        haplotype_vector.front().diff_sites.clear();
     }
 
     std::tuple<double, double> flow(NucleotideRateMatrix const &nuc_matrix) const {
@@ -797,7 +791,7 @@ class Population {
         for (auto const &exon : exons) {
             double exon_dn{0}, exon_d0{0};
             std::tie(exon_dn, exon_d0) =
-                exon.fitness_state.ptr->predicted_dn_dn0(exon.codon_seq, rates, pop_size);
+                exon.fitness_state->predicted_dn_dn0(exon.codon_seq, rates, pop_size);
             dn += exon_dn;
             dn0 += exon_d0;
         }
@@ -810,8 +804,8 @@ class Population {
 
         for (size_t i = 0; i < exons.size(); i++) {
             double exon_dn{0}, exon_dn0{0};
-            std::tie(exon_dn, exon_dn0) = exons[i].fitness_state.ptr->flow_dn_dn0(
-                parent.exons.at(i).codon_seq, rates, pop_size);
+            std::tie(exon_dn, exon_dn0) =
+                exons[i].fitness_state->flow_dn_dn0(parent.exons.at(i).codon_seq, rates, pop_size);
             dn += exon_dn;
             dn0 += exon_dn0;
         }
@@ -921,11 +915,6 @@ class Population {
             tracer_fossils.add("UpperBound", age * 1.1);
             return;
         }
-
-        sample_one_individual(population_size);
-
-        // If the node is a leaf, output the DNA sequence and name.
-        write_sequence(output_filename, node_name, get_dna_str());
 
         // VCF file on the sample
         Polymorphism exome_poly(sample_size);
@@ -1107,6 +1096,10 @@ class Population {
         tracer_traits.add(
             "LogMutationRatePerGeneration", log_multivariate.log_mutation_rate_per_generation());
 
+        // If the node is a leaf, output the DNA sequence and name.
+        sample_one_individual(population_size);
+        write_sequence(output_filename, node_name, get_dna_str());
+
         timer.exportation += duration(timeNow() - t_start);
     }
 
@@ -1124,8 +1117,8 @@ class Population {
         syn_mutations = 0;
     }
 
-    void sample_one_individual(double const &population_size) {
-        for (auto &exon : exons) { exon.sample_one_individual(population_size); }
+    void sample_one_individual(double const &pop_size) {
+        for (auto &exon : exons) { exon.sample_one_individual(pop_size); }
     }
 
     // Method returning the DNA std::string corresponding to the codon sequence.

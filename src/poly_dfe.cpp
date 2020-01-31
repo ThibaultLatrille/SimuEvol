@@ -1,5 +1,5 @@
 #include "argparse.hpp"
-#include "fitness_additive.hpp"
+#include "fitness_dfe.hpp"
 #include "wright_fisher.hpp"
 
 using namespace TCLAP;
@@ -8,7 +8,7 @@ using namespace std;
 int main(int argc, char *argv[]) {
     CmdLine cmd{"Polydfe", ' ', "0.1"};
     SimuPolyArgParse args(cmd);
-    AdditiveArgParse args_fitness(cmd);
+    DfeArgParse args_fitness(cmd);
     TreeArgParse args_tree(cmd);
     cmd.parse(argc, argv);
 
@@ -30,8 +30,6 @@ int main(int argc, char *argv[]) {
     double generation_time{args.generation_time.getValue()};
     assert(generation_time > 0.0);
     assert(generation_time < root_age);
-    double beta{args_fitness.beta.getValue()};
-    assert(beta >= 0.0);
     bool branch_wise_correlation{args_tree.branch_wise_correlation.getValue()};
     u_long pop_size{static_cast<u_long>(args.pop_size.getValue())};
     u_long sample_size{args.sample_size.getValue()};
@@ -43,7 +41,7 @@ int main(int argc, char *argv[]) {
     assert(noise_theta < 1.0);
 
     u_long exon_size{args.exons.getValue()};
-    SequenceAdditiveModel seq_fit_profiles(beta / (4 * pop_size), exon_size, args_fitness);
+    SequenceDfeModel seq_fit_profiles(exon_size, args_fitness);
     u_long nbr_sites = seq_fit_profiles.nbr_sites();
     assert(0 <= exon_size and exon_size <= nbr_sites);
 

@@ -325,7 +325,7 @@ class StabilityState final : public FitnessState {
         return std::make_unique<StabilityState>(*this);
     };
 
-    explicit StabilityState(StabilityLandscape const &f) : f{f} {
+    explicit StabilityState(StabilityLandscape const &f) : FitnessState(f), f{f} {
         nativeDeltaG = 0.0;
         nativePFolded = 0.0;
         nativeEnergy = 0.0;
@@ -375,6 +375,18 @@ class StabilityState final : public FitnessState {
             summary_stats["sub-GUnfold"].add(avgUnfoldedEnergy);
         }
     }
+
+    double selection_coefficient(FitnessState const &mutant, bool burn_in) const override {
+        auto mutantDeltaG = dynamic_cast<StabilityState const *>(&mutant)->nativeDeltaG;
+        double s = selection_coefficient_ddG(nativeDeltaG, mutantDeltaG);
+        if (!burn_in) {
+            summary_stats["mut-s"].add(s);
+            summary_stats["mut-ΔG-native"].add(nativeDeltaG);
+            summary_stats["mut-ΔG-mutant"].add(mutantDeltaG);
+            summary_stats["mut-ΔΔG"].add(mutantDeltaG - nativeDeltaG);
+        }
+        return s;
+    };
 
     double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
         bool burn_in, double const &pop_size) const override {
