@@ -25,8 +25,8 @@ int main(int argc, char *argv[]) {
     double root_age{args_tree.root_age.getValue()};
     bool branch_wise_correlation{args_tree.branch_wise_correlation.getValue()};
     Tree tree = args_tree.newick_path.getValue().empty()
-                ? Tree(args_tree.nbr_branches.getValue(), root_age)
-                : Tree(args_tree.newick_path.getValue());
+                    ? Tree(args_tree.nbr_branches.getValue(), root_age)
+                    : Tree(args_tree.newick_path.getValue());
     if (tree.nb_leaves() > 1) { tree.set_root_age(root_age); }
 
     // Fitness model

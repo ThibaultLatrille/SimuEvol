@@ -98,8 +98,7 @@ class CombinatorialStability : public OutputArgParse {
         "", "population_size", "population size", false, 1e4, "double", cmd};
     TCLAP::ValueArg<unsigned> nbr_sites{
         "", "nbr_sites", "Number of sites", false, 300, "unsigned", cmd};
-    TCLAP::ValueArg<double> radius{
-        "", "radius", "radius of mutations", false, 4e-5, "double", cmd};
+    TCLAP::ValueArg<double> radius{"", "radius", "radius of mutations", false, 4e-5, "double", cmd};
     TCLAP::ValueArg<double> peakness{"", "peakness",
         "'alpha' parameter (peakness) of the fitness function (exp(-alpha*(d^beta))", false, 0.5,
         "double", cmd};

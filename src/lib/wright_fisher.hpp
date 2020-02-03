@@ -399,8 +399,8 @@ class Exon {
                 // Update the fitness of the new haplotype
                 auto bk = codon_seq.at(codon_site);
                 codon_seq[codon_site] = codon_from;
-                haplotype.fitness_state->update(codon_seq, haplotype.diff_sites, codon_site,
-                    codon_to, true, population_size);
+                haplotype.fitness_state->update(
+                    codon_seq, haplotype.diff_sites, codon_site, codon_to, true, population_size);
                 haplotype.sel_coeff =
                     fitness_state->selection_coefficient(*haplotype.fitness_state, burn_in);
                 codon_seq[codon_site] = bk;
