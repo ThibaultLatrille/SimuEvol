@@ -9,8 +9,8 @@ double dnds_count_tot{0}, dnds_event_tot{0}, dnd0_count_tot{0}, dnd0_event_tot{0
 
 class DFE {
   public:
-    unsigned long long deleterious{0};
-    unsigned long long advantageous{0};
+    u_long deleterious{0};
+    u_long advantageous{0};
     double sub_deleterious{0};
     double sub_advantageous{0};
     double sel_coeff_subs{0};
@@ -105,9 +105,7 @@ class Exon {
         fitness_state->update(codon_seq, pop_size);
     }
 
-    bool operator==(Exon const &other) const {
-        return *fitness_state == *other.fitness_state;
-    };
+    bool operator==(Exon const &other) const { return *fitness_state == *other.fitness_state; };
 
     bool operator!=(Exon const &other) const { return !(*this == other); };
 
@@ -507,8 +505,8 @@ class Sequence {
 
         for (size_t i = 0; i < nbr_exons(); i++) {
             double exon_dn{0}, exon_dn0{0};
-            std::tie(exon_dn, exon_dn0) = exons[i].fitness_state->flow_dn_dn0(
-                parent.exons[i].codon_seq, rates, relative_pop);
+            std::tie(exon_dn, exon_dn0) =
+                exons[i].fitness_state->flow_dn_dn0(parent.exons[i].codon_seq, rates, relative_pop);
             dn += exon_dn;
             dn0 += exon_dn0;
         }

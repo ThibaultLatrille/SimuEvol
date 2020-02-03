@@ -301,13 +301,15 @@ class StabilityLandscape final : public FitnessLandscape {
     std::string seq() const { return native.proteinSeq; }
 };
 
-double computePFolded(double deltaG) {
+double fitness(double deltaG) {
     double factor = exp(-deltaG / TEMPERATURE);
     return (factor / (1 + factor));
 }
 
+double logfitness(double deltaG) { return log(fitness(deltaG)); }
+
 double selection_coefficient_ddG(double deltaG, double deltaGMutant) {
-    double fm = computePFolded(deltaGMutant), f = computePFolded(deltaG);
+    double fm = fitness(deltaGMutant), f = fitness(deltaG);
     return (fm - f) / f;
 }
 
@@ -316,7 +318,6 @@ class StabilityState final : public FitnessState {
     StabilityLandscape const &f;
 
     double nativeDeltaG = 0.0;
-    double nativePFolded = 0.0;
     double nativeEnergy = 0.0;
     std::vector<double> unfoldedEnergyVector;
 
@@ -327,14 +328,13 @@ class StabilityState final : public FitnessState {
 
     explicit StabilityState(StabilityLandscape const &f) : FitnessState(f), f{f} {
         nativeDeltaG = 0.0;
-        nativePFolded = 0.0;
         nativeEnergy = 0.0;
         unfoldedEnergyVector.resize(f.unfoldedVector.size(), 0.0);
     }
 
     bool operator==(FitnessState const &other) const override {
         auto p = dynamic_cast<StabilityState const *>(&other);
-        return (nativeDeltaG == p->nativeDeltaG) and (nativePFolded == p->nativePFolded) and
+        return log_fitness == other.log_fitness and (nativeDeltaG == p->nativeDeltaG) and
                (nativeEnergy == p->nativeEnergy) and
                (unfoldedEnergyVector == p->unfoldedEnergyVector);
     }
@@ -352,7 +352,7 @@ class StabilityState final : public FitnessState {
 
         nativeDeltaG = nativeEnergy - avgUnfoldedEnergy + (TEMPERATURE * LOG_UNFOLDED_STATES) +
                        (sigma2 / (2.0 * TEMPERATURE));
-        nativePFolded = computePFolded(nativeDeltaG);
+        log_fitness = logfitness(nativeDeltaG);
     }
 
     void update(std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in,
@@ -368,25 +368,14 @@ class StabilityState final : public FitnessState {
 
         nativeDeltaG = nativeEnergy - avgUnfoldedEnergy + (TEMPERATURE * LOG_UNFOLDED_STATES) +
                        (sigma2 / (2.0 * TEMPERATURE));
-        nativePFolded = computePFolded(nativeDeltaG);
+        log_fitness = logfitness(nativeDeltaG);
         if (!burn_in) {
+            summary_stats["sub-log-fitness"].add(log_fitness);
             summary_stats["sub-ΔG"].add(nativeDeltaG);
             summary_stats["sub-GFold"].add(nativeEnergy);
             summary_stats["sub-GUnfold"].add(avgUnfoldedEnergy);
         }
     }
-
-    double selection_coefficient(FitnessState const &mutant, bool burn_in) const override {
-        auto mutantDeltaG = dynamic_cast<StabilityState const *>(&mutant)->nativeDeltaG;
-        double s = selection_coefficient_ddG(nativeDeltaG, mutantDeltaG);
-        if (!burn_in) {
-            summary_stats["mut-s"].add(s);
-            summary_stats["mut-ΔG-native"].add(nativeDeltaG);
-            summary_stats["mut-ΔG-mutant"].add(mutantDeltaG);
-            summary_stats["mut-ΔΔG"].add(mutantDeltaG - nativeDeltaG);
-        }
-        return s;
-    };
 
     double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
         bool burn_in, double const &pop_size) const override {
@@ -422,8 +411,8 @@ class StabilityState final : public FitnessState {
 std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {
     {"mut-s", SummaryStatistic()}, {"mut-ΔG-native", SummaryStatistic()},
     {"mut-ΔG-mutant", SummaryStatistic()}, {"mut-ΔΔG", SummaryStatistic()},
-    {"sub-ΔG", SummaryStatistic()}, {"sub-GFold", SummaryStatistic()},
-    {"sub-GUnfold", SummaryStatistic()}};
+    {"sub-ΔG", SummaryStatistic()}, {"sub-log-fitness", SummaryStatistic()},
+    {"sub-GFold", SummaryStatistic()}, {"sub-GUnfold", SummaryStatistic()}};
 
 class FoldingArgParse {
   protected:

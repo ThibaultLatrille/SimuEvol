@@ -6,7 +6,7 @@ using namespace TCLAP;
 using namespace std;
 
 int main(int argc, char *argv[]) {
-    CmdLine cmd{"SimuDiv", ' ', "0.1"};
+    CmdLine cmd{"SimuProfile", ' ', "0.1"};
     SimuSubArgParse args(cmd);
     TreeArgParse args_tree(cmd);
     AdditiveArgParse args_fitness(cmd);
@@ -33,7 +33,7 @@ int main(int argc, char *argv[]) {
     u_long exon_size{args.exons.getValue()};
     SequenceAdditiveModel seq_fit_profiles(1.0 / 4, exon_size, args_fitness);
     u_long nbr_sites = seq_fit_profiles.nbr_sites();
-    assert(0 <= exon_size and exon_size <= nbr_sites);
+    assert(exon_size <= nbr_sites);
 
     // Process discretization
     double beta{args.pop_size.getValue()};

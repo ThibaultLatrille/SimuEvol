@@ -1,14 +1,14 @@
 #include "argparse.hpp"
-#include "fitness_dfe.hpp"
+#include "fitness_stability.hpp"
 #include "wright_fisher.hpp"
 
 using namespace TCLAP;
 using namespace std;
 
 int main(int argc, char *argv[]) {
-    CmdLine cmd{"PolyDfe", ' ', "0.1"};
+    CmdLine cmd{"PolyStab", ' ', "0.1"};
     SimuPolyArgParse args(cmd);
-    DfeArgParse args_fitness(cmd);
+    StabilityArgParse args_fitness(cmd);
     TreeArgParse args_tree(cmd);
     cmd.parse(argc, argv);
 
@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
     assert(noise_theta < 1.0);
 
     u_long exon_size{args.exons.getValue()};
-    SequenceDfeModel seq_fit_profiles(exon_size, args_fitness);
+    StabilityModel seq_fit_profiles(exon_size, args_fitness);
     u_long nbr_sites = seq_fit_profiles.nbr_sites();
     assert(exon_size <= nbr_sites);
 

@@ -276,6 +276,7 @@ class Exon {
           fitness_state{std::move(f_state)},
           haplotype_vector{} {
         // Draw codon from codon frequencies
+        fitness_state->update(codon_seq, population_size);
         for (u_long site{0}; site < nbr_sites; site++) {
             std::array<double, 64> codon_freqs = codon_frequencies(
                 fitness_state->aa_selection_coefficients(codon_seq, site, population_size),
@@ -285,7 +286,7 @@ class Exon {
             codon_seq[site] = freq_codon_distr(generator);
         }
         fitness_state->update(codon_seq, population_size);
-        haplotype_vector.emplace_back(Haplotype(2 * population_size, 0.0, fitness_state));
+        haplotype_vector.emplace_back(2 * population_size, 0.0, fitness_state);
         assert(check_consistency(population_size));
     }
 
@@ -399,9 +400,9 @@ class Exon {
                 auto bk = codon_seq.at(codon_site);
                 codon_seq[codon_site] = codon_from;
                 haplotype.fitness_state->update(codon_seq, haplotype.diff_sites, codon_site,
-                    codon_to, burn_in, population_size);
-                haplotype.sel_coeff +=
-                    fitness_state->selection_coefficient(*haplotype.fitness_state.get(), burn_in);
+                    codon_to, true, population_size);
+                haplotype.sel_coeff =
+                    fitness_state->selection_coefficient(*haplotype.fitness_state, burn_in);
                 codon_seq[codon_site] = bk;
             }
 
@@ -456,7 +457,6 @@ class Exon {
             fit_tot -= fitnesses.at(i_hap);
         }
         assert(children_tot <= 2 * population_size);
-        assert(children_tot >= 0);
         haplotype_vector.back().nbr_copies = children_tot;
         timer.selection += duration(timeNow() - t_start);
     }
@@ -525,16 +525,16 @@ class Exon {
                         return p1.second < p2.second;
                     })->first;
             }
-            double df = .0;
             if (!is_synonymous(codon_from, codon_to)) {
-                df = fitness_state->selection_coefficient(
-                    codon_seq, site, codon_to, burn_in, population_size);
                 fitness_state->update(codon_seq, site, codon_to, burn_in, population_size);
+                for (auto &haplotype : haplotype_vector) {
+                    haplotype.sel_coeff =
+                        fitness_state->selection_coefficient(*fitness_state, true);
+                }
             }
             codon_seq[site] = codon_to;
             // Update the vector of haplotypes
             for (auto &haplotype : haplotype_vector) {
-                haplotype.sel_coeff -= df;
                 if (haplotype.diff_sites.at(site) == codon_to) {
                     haplotype.diff_sites.erase(site);
                 } else {
@@ -580,11 +580,8 @@ class Exon {
         for (auto const &diff : haplotype_vector[rand_hap].diff_sites) {
             codon_seq[diff.first] = diff.second;
         }
-        haplotype_vector.resize(1);
-        haplotype_vector.front().fitness_state->update(codon_seq, pop_size);
-        haplotype_vector.front().nbr_copies = sum(nbr_copies);
-        haplotype_vector.front().sel_coeff = 0.0;
-        haplotype_vector.front().diff_sites.clear();
+        fitness_state->update(codon_seq, pop_size);
+        haplotype_vector.emplace_back(2 * pop_size, 0.0, fitness_state);
     }
 
     std::tuple<double, double> flow(NucleotideRateMatrix const &nuc_matrix) const {
@@ -662,7 +659,7 @@ class Population {
           branch_wise{branch_wise} {
         u_long pos = 0;
         for (std::unique_ptr<FitnessState> &exon_seq_fitness : seq_fitness.fitness_states) {
-            exons.emplace_back(Exon(exon_seq_fitness, pos, population_size, nuc_matrix));
+            exons.emplace_back(exon_seq_fitness, pos, population_size, nuc_matrix);
             pos += exons.back().nbr_sites;
         }
         update_binomial_distribs();

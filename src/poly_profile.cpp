@@ -6,7 +6,7 @@ using namespace TCLAP;
 using namespace std;
 
 int main(int argc, char *argv[]) {
-    CmdLine cmd{"SimuPoly", ' ', "0.1"};
+    CmdLine cmd{"PolyProfile", ' ', "0.1"};
     SimuPolyArgParse args(cmd);
     AdditiveArgParse args_fitness(cmd);
     TreeArgParse args_tree(cmd);
@@ -45,7 +45,7 @@ int main(int argc, char *argv[]) {
     u_long exon_size{args.exons.getValue()};
     SequenceAdditiveModel seq_fit_profiles(beta / (4 * pop_size), exon_size, args_fitness);
     u_long nbr_sites = seq_fit_profiles.nbr_sites();
-    assert(0 <= exon_size and exon_size <= nbr_sites);
+    assert(exon_size <= nbr_sites);
 
     Tree tree(newick_path);
     tree.set_root_age(root_age);

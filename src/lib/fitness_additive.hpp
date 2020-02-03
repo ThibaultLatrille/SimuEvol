@@ -20,7 +20,6 @@ class AdditiveLandscape final : public FitnessLandscape {
 class AdditiveState final : public FitnessState {
   private:
     AdditiveLandscape const &f;
-    double log_fitness{.0};
 
   public:
     std::unique_ptr<FitnessState> clone() const override {
@@ -30,7 +29,7 @@ class AdditiveState final : public FitnessState {
     explicit AdditiveState(AdditiveLandscape const &f) : FitnessState(f), f{f} {}
 
     bool operator==(FitnessState const &other) const override {
-        return log_fitness == dynamic_cast<AdditiveState const *>(&other)->log_fitness;
+        return log_fitness == other.log_fitness;
     };
 
     u_long nbr_sites() const override { return f.nbr_sites(); }
@@ -46,17 +45,8 @@ class AdditiveState final : public FitnessState {
         double const &pop_size) override {
         log_fitness -= f.profiles.at(site).at(codonLexico.codon_to_aa.at(codon_seq.at(site)));
         log_fitness += f.profiles.at(site).at(codonLexico.codon_to_aa.at(codon_to));
-        if (!burn_in) { summary_stats["sub-sum"].add(log_fitness); }
+        if (!burn_in) { summary_stats["sub-log-fitness"].add(log_fitness); }
     }
-
-    double selection_coefficient(FitnessState const &mutant, bool burn_in) const override {
-        double s = dynamic_cast<AdditiveState const *>(&mutant)->log_fitness - log_fitness;
-        if (!burn_in) {
-            summary_stats["mut-s"].add(s);
-            summary_stats["mut-sum"].add(log_fitness + s);
-        }
-        return s;
-    };
 
     double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
         bool burn_in, double const &pop_size) const override {
@@ -64,7 +54,7 @@ class AdditiveState final : public FitnessState {
                    f.profiles[site][codonLexico.codon_to_aa[codon_seq[site]]];
         if (!burn_in) {
             summary_stats["mut-s"].add(s);
-            summary_stats["mut-sum"].add(log_fitness + s);
+            summary_stats["mut-log-fitness"].add(log_fitness + s);
         }
         return s;
     };
@@ -76,8 +66,8 @@ class AdditiveState final : public FitnessState {
 };
 
 std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {
-    {"mut-s", SummaryStatistic()}, {"mut-sum", SummaryStatistic()},
-    {"sub-sum", SummaryStatistic()}};
+    {"mut-s", SummaryStatistic()}, {"mut-log-fitness", SummaryStatistic()},
+    {"sub-log-fitness", SummaryStatistic()}};
 
 class AdditiveArgParse {
   protected:

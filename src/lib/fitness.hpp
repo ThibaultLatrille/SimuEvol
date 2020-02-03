@@ -54,8 +54,10 @@ class FitnessLandscape {
 class FitnessState {
   public:
     FitnessLandscape const &landscape;
+    double log_fitness;
 
-    explicit FitnessState(FitnessLandscape const &landscape) : landscape{landscape} {}
+    explicit FitnessState(FitnessLandscape const &landscape)
+        : landscape{landscape}, log_fitness{.0} {}
 
     static std::unordered_map<std::string, SummaryStatistic> summary_stats;
 
@@ -83,7 +85,11 @@ class FitnessState {
         update(copy_seq, site, codon_to, burn_in, pop_size);
     }
 
-    virtual double selection_coefficient(FitnessState const &mutant, bool burn_in) const = 0;
+    double selection_coefficient(FitnessState const &mutant, bool burn_in) const {
+        double s = mutant.log_fitness - log_fitness;
+        if (!burn_in) { summary_stats["mut-s"].add(s); }
+        return s;
+    };
 
     virtual double selection_coefficient(std::vector<char> const &codon_seq, u_long site,
         char codon_to, bool burn_in, double const &pop_size) const = 0;

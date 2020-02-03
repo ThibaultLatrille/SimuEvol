@@ -48,7 +48,6 @@ class DfeParameters final : public FitnessLandscape {
 class DfeState final : public FitnessState {
   private:
     DfeParameters const &f;
-    double log_fitness{0.0};
 
   public:
     std::unique_ptr<FitnessState> clone() const override {
@@ -58,7 +57,7 @@ class DfeState final : public FitnessState {
     explicit DfeState(DfeParameters const &f) : FitnessState(f), f{f} {}
 
     bool operator==(FitnessState const &other) const override {
-        return log_fitness == dynamic_cast<DfeState const *>(&other)->log_fitness;
+        return log_fitness == other.log_fitness;
     };
 
     u_long nbr_sites() const override { return f.nbr_sites(); }
@@ -76,15 +75,6 @@ class DfeState final : public FitnessState {
         log_fitness += f.selection_coefficient(site, codonLexico.codon_to_aa[codon_to], pop_size);
         if (!burn_in) { summary_stats["sub-log-fitness"].add(log_fitness); }
     }
-
-    double selection_coefficient(FitnessState const &mutant, bool burn_in) const override {
-        double s = dynamic_cast<DfeState const *>(&mutant)->log_fitness - log_fitness;
-        if (!burn_in) {
-            summary_stats["mut-s"].add(s);
-            summary_stats["mut-log-fitness"].add(log_fitness + s);
-        }
-        return s;
-    };
 
     double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
         bool burn_in, double const &pop_size) const override {

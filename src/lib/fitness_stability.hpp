@@ -19,13 +19,16 @@ class StabilityLandscape final : public FitnessLandscape {
     u_long nbr_sites() const override { return optimal_aa_seq.size(); }
 };
 
-double computePFolded(double deltaG) {
+
+double fitness(double deltaG) {
     double factor = exp(-deltaG);
     return (factor / (1 + factor));
 }
 
+double logfitness(double deltaG) { return log(fitness(deltaG)); }
+
 double selection_coefficient_ddG(double deltaG, double deltaGMutant) {
-    double fm = computePFolded(deltaGMutant), f = computePFolded(deltaG);
+    double fm = fitness(deltaGMutant), f = fitness(deltaG);
     return (fm - f) / f;
 }
 
@@ -45,7 +48,7 @@ class StabilityState final : public FitnessState {
 
     bool operator==(FitnessState const &other) const override {
         auto p = dynamic_cast<StabilityState const *>(&other);
-        return (distance == p->distance) and (dG == p->dG);
+        return log_fitness == other.log_fitness and (distance == p->distance) and (dG == p->dG);
     }
 
     u_long nbr_sites() const override { return f.nbr_sites(); }
@@ -59,6 +62,7 @@ class StabilityState final : public FitnessState {
                 dG += f.ddG;
             }
         }
+        log_fitness = logfitness(dG);
     }
 
     void update(std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in,
@@ -72,23 +76,14 @@ class StabilityState final : public FitnessState {
             distance--;
             dG -= f.ddG;
         }
+        log_fitness = logfitness(dG);
         if (!burn_in) {
+            summary_stats["sub-log-fitness"].add(log_fitness);
             summary_stats["sub-distance/#sites"].add(static_cast<double>(distance) / nbr_sites());
             summary_stats["sub-distance"].add(distance);
             summary_stats["sub-ΔG"].add(dG);
         }
     }
-
-    double selection_coefficient(FitnessState const &mutant, bool burn_in) const override {
-        auto mutantdG = dynamic_cast<StabilityState const *>(&mutant)->dG;
-        double s = selection_coefficient_ddG(dG, mutantdG);
-        if (!burn_in) {
-            summary_stats["mut-s"].add(s);
-            summary_stats["mut-ΔG"].add(mutantdG);
-            summary_stats["mut-ΔΔG"].add(mutantdG - dG);
-        }
-        return s;
-    };
 
     double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
         bool burn_in, double const &pop_size) const override {
@@ -115,8 +110,8 @@ class StabilityState final : public FitnessState {
 
 std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {
     {"mut-s", SummaryStatistic()}, {"mut-ΔG", SummaryStatistic()}, {"mut-ΔΔG", SummaryStatistic()},
-    {"sub-ΔG", SummaryStatistic()}, {"sub-distance/#sites", SummaryStatistic()},
-    {"sub-distance", SummaryStatistic()}};
+    {"sub-ΔG", SummaryStatistic()}, {"sub-log-fitness", SummaryStatistic()},
+    {"sub-distance/#sites", SummaryStatistic()}, {"sub-distance", SummaryStatistic()}};
 
 class StabilityArgParse {
   protected:

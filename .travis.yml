@@ -24,12 +24,12 @@ matrix:
       apt:
         sources:
         - ubuntu-toolchain-r-test
-        - llvm-toolchain-precise-3.6
+        - llvm-toolchain-precise
         packages:
         - g++-5
-        - clang-3.6
+        - clang
     env:
-    - COMPILER=clang++-3.6
+    - COMPILER=clang++
     - OMPI_CXX=$COMPILER
     script:
     - make && make test

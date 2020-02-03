@@ -51,6 +51,7 @@ class GeometricLandscape final : public FitnessLandscape {
     u_long nbr_sites() const override { return sites_aa_phenotypes.size(); }
 };
 
+
 class GeometricState final : public FitnessState {
   private:
     GeometricLandscape const &f;
@@ -66,7 +67,8 @@ class GeometricState final : public FitnessState {
     }
 
     bool operator==(FitnessState const &other) const override {
-        return phenotype == dynamic_cast<GeometricState const *>(&other)->phenotype;
+        return log_fitness == other.log_fitness and
+               phenotype == dynamic_cast<GeometricState const *>(&other)->phenotype;
     };
 
     u_long nbr_sites() const override { return f.sites_aa_phenotypes.size(); }
@@ -80,6 +82,7 @@ class GeometricState final : public FitnessState {
                                       .at(dim);
             }
         }
+        log_fitness = logfitness(phenotype);
     }
 
     void update(std::vector<char> const &codon_seq, u_long site, char codon_to, bool burn_in,
@@ -91,28 +94,25 @@ class GeometricState final : public FitnessState {
             phenotype[dim] +=
                 f.sites_aa_phenotypes.at(site).at(codonLexico.codon_to_aa.at(codon_to)).at(dim);
         }
-        if (!burn_in) { summary_stats["sub-distance"].add(distance(phenotype)); }
+        log_fitness = logfitness(phenotype);
+        if (!burn_in) {
+            summary_stats["sub-log-fitness"].add(log_fitness);
+            summary_stats["sub-distance"].add(distance(phenotype));
+        }
     }
 
     double fitness(std::vector<double> const &v) const {
         return exp(-f.peakness * pow(distance(v), f.epistasis));
     }
 
+    double logfitness(std::vector<double> const &v) const {
+        return -f.peakness * pow(distance(v), f.epistasis);
+    }
 
-    double selection_coefficient(std::vector<double> const &mutant_phenotype) const {
+    double selection_coefficient_phenotype(std::vector<double> const &mutant_phenotype) const {
         double fp = fitness(phenotype);
         return (fitness(mutant_phenotype) - fp) / fp;
     }
-
-    double selection_coefficient(FitnessState const &mutant, bool burn_in) const override {
-        auto mutant_cast = dynamic_cast<GeometricState const *>(&mutant);
-        double s = selection_coefficient(mutant_cast->phenotype);
-        if (!burn_in) {
-            summary_stats["mut-s"].add(s);
-            summary_stats["mut-distance"].add(distance(mutant_cast->phenotype));
-        }
-        return s;
-    };
 
     double selection_coefficient(std::vector<char> const &codon_seq, u_long site, char codon_to,
         bool burn_in, double const &pop_size) const override {
@@ -123,7 +123,7 @@ class GeometricState final : public FitnessState {
             mutant_phenotype[dim] +=
                 f.sites_aa_phenotypes[site][codonLexico.codon_to_aa[codon_to]][dim];
         }
-        double s = selection_coefficient(mutant_phenotype);
+        double s = selection_coefficient_phenotype(mutant_phenotype);
         if (!burn_in) {
             summary_stats["mut-s"].add(s);
             summary_stats["mut-distance"].add(distance(mutant_phenotype));
@@ -134,7 +134,7 @@ class GeometricState final : public FitnessState {
 
 std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {
     {"mut-s", SummaryStatistic()}, {"mut-distance", SummaryStatistic()},
-    {"sub-distance", SummaryStatistic()}};
+    {"sub-log-fitness", SummaryStatistic()}, {"sub-distance", SummaryStatistic()}};
 
 class GeometricArgParse {
   protected:
