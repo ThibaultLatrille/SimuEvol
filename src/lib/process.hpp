@@ -795,6 +795,8 @@ class Process {
         for (auto const &ss : FitnessState::summary_stats) {
             trace.add(ss.first + "-mean", ss.second.mean());
             trace.add(ss.first + "-std", ss.second.std());
+            trace.add(ss.first + "-abs-mean", ss.second.abs_mean());
+            trace.add(ss.first + "-abs-std", ss.second.abs_std());
         }
         trace.write_tsv(output_path);
 

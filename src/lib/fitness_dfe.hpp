@@ -106,8 +106,8 @@ class DfeArgParse {
 
   public:
     explicit DfeArgParse(TCLAP::CmdLine &cmd) : cmd{cmd} {}
-    TCLAP::ValueArg<bool> gamma_reflected{
-        "", "gamma_reflected", "True if reflected gamma.", false, false, "bool", cmd};
+    TCLAP::SwitchArg gamma_reflected{
+        "", "gamma_reflected", "True if reflected gamma.", cmd, false};
     TCLAP::ValueArg<double> gamma_mean{
         "", "gamma_mean", "Mean value of selection coefficient effect", false, 1.0, "double", cmd};
     TCLAP::ValueArg<double> gamma_shape{
