@@ -43,7 +43,8 @@ int main(int argc, char *argv[]) {
     time_grid_step = root_age / nbr_grid_step;
     LogMultivariate log_multivariate(pop_size, mutation_rate_per_generation, generation_time);
     BiasMultivariate bias_multivariate(args_tree.bias_pop_size.getValue(),
-        args_tree.bias_mut_rate.getValue(), args_tree.bias_gen_time.getValue());
+        args_tree.bias_mut_rate.getValue(), args_tree.bias_gen_time.getValue(),
+        args_tree.step_wise_pop_size.getValue());
     CorrelationMatrix correlation_matrix(args_tree.precision_path.getValue(),
         args_tree.fix_pop_size.getValue(), args_tree.fix_mut_rate.getValue(),
         args_tree.fix_gen_time.getValue());
@@ -68,7 +69,7 @@ int main(int argc, char *argv[]) {
         transform_matrix, bias_multivariate, branch_wise_correlation);
     cout << "Starting from the optimal sequence." << endl;
     root_sequence->set_from_aa_seq(seq_fitness.aa_seq());
-    u_long burn_in_aa_changes = 5 * exon_size;
+    u_long burn_in_aa_changes = 15 * exon_size;
     u_long equilibrium_nbr_rounds = 15;
     cout << "DNA Sequence optimizing site marginals for " << equilibrium_nbr_rounds
          << " rounds, and running for " << burn_in_aa_changes << " amino-acid changes (per exon)"

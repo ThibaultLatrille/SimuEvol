@@ -5,7 +5,7 @@
 
 class SummaryStatistic {
     double long abs_s{0}, s{0}, s2{0};
-    unsigned long long size{0};
+    u_long size{0};
 
   public:
     SummaryStatistic() = default;
@@ -49,13 +49,13 @@ double variance(std::vector<double> const &v, double mean) {
 }
 
 // Function for sum
-double sum(std::vector<unsigned> const &v) {
-    return accumulate(v.begin(), v.end(), static_cast<unsigned>(0));
+double sum(std::vector<u_long> const &v) {
+    return accumulate(v.begin(), v.end(), static_cast<u_long>(0));
 }
 
 // Function for mean
-double mean(std::vector<unsigned> const &v) {
+double mean(std::vector<u_long> const &v) {
     double return_value = 0.0;
-    for (unsigned i = 0; i < v.size(); i++) { return_value += i * v[i]; }
+    for (u_long i = 0; i < v.size(); i++) { return_value += i * v[i]; }
     return return_value / sum(v);
-};
+}

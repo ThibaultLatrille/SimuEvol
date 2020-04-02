@@ -50,8 +50,9 @@ class Substitution {
     DFE dfe;
 
     Substitution(double time_event, double time_between_event, double non_syn_sub_flow,
-        double non_syn_mut_flow, double syn_mut_flow, double dndn0, char codon_from = -1,
-        char codon_to = -1, char n_from = -1, char n_to = -1, u_long site = 0, DFE const &dfe = {})
+        double non_syn_mut_flow, double syn_mut_flow, double dndn0, double pop_size,
+        char codon_from = -1, char codon_to = -1, char n_from = -1, char n_to = -1, u_long site = 0,
+        DFE const &dfe = {})
         : site{site},
           codon_from{codon_from},
           codon_to{codon_to},
@@ -167,16 +168,19 @@ class Exon {
                     non_syn_sub_flow += rate_substitution;
                     dndn0 += pfix;
                     ns++;
-                    if (pfix > 1) {
-                        dfe.advantageous++;
-                        dfe.sub_advantageous += pfix;
-                    } else {
-                        dfe.deleterious++;
-                        dfe.sub_deleterious += pfix;
+
+                    if (!burn_in) {
+                        if (pfix > 1) {
+                            dfe.advantageous++;
+                            dfe.sub_advantageous += pfix;
+                        } else {
+                            dfe.deleterious++;
+                            dfe.sub_deleterious += pfix;
+                        }
+                        dfe.sel_coeff_subs += s * pfix;
+                        distribution_map["DFE"].add(4 * beta * s);
                     }
-                    dfe.sel_coeff_subs += s * pfix;
                 } else {
-                    if (burn_in) { continue; }
                     syn_mut_flow += rate_substitution;
                 }
 
@@ -218,7 +222,7 @@ class Exon {
 
             if (!burn_in) {
                 substitutions.emplace(time_start + time_draw, time_draw, non_syn_sub_flow,
-                    non_syn_mut_flow, syn_mut_flow, dndn0, codom_from, codon_to, n_from, n_to,
+                    non_syn_mut_flow, syn_mut_flow, dndn0, beta, codom_from, codon_to, n_from, n_to,
                     site + position, dfe);
             }
 
@@ -230,7 +234,7 @@ class Exon {
         } else {
             if (!burn_in) {
                 substitutions.emplace(time_end, time_end - time_start, non_syn_sub_flow,
-                    non_syn_mut_flow, syn_mut_flow, dndn0);
+                    non_syn_mut_flow, syn_mut_flow, dndn0, beta);
             }
             time_start = time_end;
         }
@@ -269,14 +273,14 @@ class Sequence {
     NucleotideRateMatrix nuc_matrix;
 
     EMatrix const &transform_matrix;
-    BiasMultivariate const &bias_vector;
+    BiasMultivariate &bias_vector;
     bool branch_wise;
     std::vector<Substitution> interspersed_substitutions;
     PieceWiseMultivariate piecewise_multivariate{};
 
     Sequence(FitnessModel &seq_fitness, LogMultivariate &log_multi,
         NucleotideRateMatrix &nucleotide_matrix, EMatrix const &transform_matrix,
-        BiasMultivariate const &bias_vector, bool branch_wise)
+        BiasMultivariate &bias_vector, bool branch_wise)
         : exons{},
           log_multivariate{log_multi},
           beta{log_multivariate.beta()},
@@ -294,7 +298,7 @@ class Sequence {
 
     bool operator==(Sequence const &other) const {
         if (nbr_exons() != other.nbr_exons()) { return false; }
-        for (size_t i = 0; i < nbr_exons(); ++i) {
+        for (std::size_t i = 0; i < nbr_exons(); ++i) {
             if (exons.at(i) != other.exons.at(i)) { return false; }
         }
         return true;
@@ -341,7 +345,7 @@ class Sequence {
     }
 
     bool check_consistency() const {
-        for (size_t i = 1; i < interspersed_substitutions.size(); i++) {
+        for (std::size_t i = 1; i < interspersed_substitutions.size(); i++) {
             if (abs(interspersed_substitutions.at(i).time_between_event -
                     (interspersed_substitutions.at(i).time_event -
                         interspersed_substitutions.at(i - 1).time_event)) > 1e-6) {
@@ -457,7 +461,16 @@ class Sequence {
     }
 
     void run_forward(double t_max, Tree const &tree) {
-        if (branch_wise) {
+        if (bias_vector.step_wise_pop_size) {
+            piecewise_multivariate.AddMultivariate(t_max, log_multivariate);
+            for (auto &exon : exons) { exon.run_substitutions(nuc_matrix, beta, 0.0, t_max); }
+            intersperse_exon_substitutions();
+            double d = t_max / tree.max_distance_to_root();
+            update_brownian(delta_log_multivariate(d) + d * bias_vector);
+            bias_vector(dim_population_size) = -bias_vector(dim_population_size);
+            time_from_root += t_max;
+            assert(check_consistency());
+        } else if (branch_wise) {
             double d = t_max / tree.max_distance_to_root();
             EVector delta = delta_log_multivariate(d) + d * bias_vector;
             update_brownian(delta / 2);
@@ -503,7 +516,7 @@ class Sequence {
         double const &relative_pop) const {
         double dn{0.}, dn0{0.};
 
-        for (size_t i = 0; i < nbr_exons(); i++) {
+        for (std::size_t i = 0; i < nbr_exons(); i++) {
             double exon_dn{0}, exon_dn0{0};
             std::tie(exon_dn, exon_dn0) =
                 exons[i].fitness_state->flow_dn_dn0(parent.exons[i].codon_seq, rates, relative_pop);
@@ -757,7 +770,7 @@ class Process {
 
     // Recursively iterate through the subtree and count the number of substitutions.
     void summary(std::string const &output_path, double expected_subs) {
-        long nbr_non_syn{0}, nbr_syn{0};
+        u_long nbr_non_syn{0}, nbr_syn{0};
 
         DFE dfe{};
         for (std::unique_ptr<Sequence> const &seq : sequences) {
@@ -804,6 +817,7 @@ class Process {
         tracer_fossils.write_tsv(output_path + ".fossils");
         tracer_substitutions.write_tsv(output_path + ".substitutions");
         tracer_sequences.write_tsv(output_path + ".sequences");
+        distribution_map.write_tsv(output_path);
 
         std::cout << "Simulation computed." << std::endl;
         std::cout << expected_subs << " expected substitutions." << std::endl;

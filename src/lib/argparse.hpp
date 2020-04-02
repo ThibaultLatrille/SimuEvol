@@ -16,6 +16,12 @@ class OutputArgParse {
     TCLAP::ValueArg<std::string> output_path{"o", "output", "output path", true, "", "string", cmd};
     TCLAP::ValueArg<u_long> seed{
         "", "seed", "Random number generation seed", false, 0, "u_long", cmd};
+
+    void add_2_trace(Trace& trace) {
+        std::cout << "Random generator seed: " << seed.getValue() << std::endl;
+        trace.add("seed", seed.getValue());
+        trace.add("output_path", output_path.getValue());
+    }
 };
 
 class SimuArgParse : public OutputArgParse {
@@ -34,11 +40,9 @@ class SimuArgParse : public OutputArgParse {
         false, 0, "u_long", cmd};
 
     virtual void add_to_trace(Trace& trace) {
-        std::cout << "Random generator seed: " << seed.getValue() << std::endl;
+        OutputArgParse::add_2_trace(trace);
         assert(mutation_rate_per_generation.getValue() > 0.0);
         assert(generation_time.getValue() > 0.0);
-        trace.add("seed", seed.getValue());
-        trace.add("output_path", output_path.getValue());
         trace.add("generation_time", generation_time.getValue());
         trace.add("exon_size", exons.getValue());
         trace.add("nucleotide_matrix_path", output_path.getValue());
@@ -95,11 +99,13 @@ class TreeArgParse {
     TCLAP::ValueArg<std::string> newick_path{
         "", "newick", "input newick tree path", false, "", "string", cmd};
     TCLAP::ValueArg<double> nbr_branches{"", "nbr_branches",
-        "Nbr of sucessive branches if no tree is inputed", false, 2, "unsigned", cmd};
+        "Nbr of sucessive branches if no tree is inputed", false, 2, "u_long", cmd};
     TCLAP::ValueArg<std::string> precision_path{
         "", "precision_matrix", "input precision matrix path", false, "", "string", cmd};
     TCLAP::SwitchArg branch_wise_correlation{"", "branch_wise_correlation",
         "The Correlated parameters are determined branch-wise", cmd, false};
+    TCLAP::SwitchArg step_wise_pop_size{
+        "", "step_wise_pop_size", "Change in population size is a step function", cmd, false};
     TCLAP::SwitchArg fix_pop_size{
         "", "fix_pop_size", "Log-Brownian on population size is null", cmd, false};
     TCLAP::SwitchArg fix_mut_rate{
@@ -118,6 +124,7 @@ class TreeArgParse {
         assert(root_age.getValue() > 0.0);
         trace.add("root_age", root_age.getValue());
         trace.add("fix_pop_size", fix_pop_size.getValue());
+        trace.add("step_wise_pop_size", step_wise_pop_size.getValue());
         trace.add("fix_mut_rate", fix_mut_rate.getValue());
         trace.add("fix_gen_time", fix_gen_time.getValue());
         trace.add("bias_pop_size", bias_pop_size.getValue());

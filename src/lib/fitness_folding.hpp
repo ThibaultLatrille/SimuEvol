@@ -78,10 +78,10 @@ class Structure {
     std::vector<std::array<double, 3>> betaCoordinateVector;
     std::string proteinName;
     std::string chainName;
-    size_t size;
+    std::size_t size;
     double cut_off;
-    std::vector<std::array<size_t, 2>> contactVector;
-    std::vector<std::vector<size_t>> siteContactVector;
+    std::vector<std::array<std::size_t, 2>> contactVector;
+    std::vector<std::vector<std::size_t>> siteContactVector;
 
 
     /**
@@ -90,9 +90,9 @@ class Structure {
     void makeContactVector() {
         distanceMatrix.resize(size, std::vector<double>(size, 0.0));
         siteContactVector.resize(size, {});
-        for (size_t iRes = 0; iRes < size - 1; iRes++) {
+        for (std::size_t iRes = 0; iRes < size - 1; iRes++) {
             std::array<double, 3> iCoord = betaCoordinateVector.at(iRes);
-            for (size_t jRes = iRes + 1; jRes < size; jRes++) {
+            for (std::size_t jRes = iRes + 1; jRes < size; jRes++) {
                 std::array<double, 3> jCoord = betaCoordinateVector.at(jRes);
                 distanceMatrix[iRes][jRes] =
                     sqrt(((iCoord[0] - jCoord[0]) * (iCoord[0] - jCoord[0]) +
@@ -101,10 +101,10 @@ class Structure {
                 distanceMatrix[jRes][iRes] = distanceMatrix.at(iRes).at(jRes);
             }
         }
-        for (size_t iRes = 0; iRes < size - 2; iRes++) {
-            for (size_t jRes = iRes + 2; jRes < size; jRes++) {
+        for (std::size_t iRes = 0; iRes < size - 2; iRes++) {
+            for (std::size_t jRes = iRes + 2; jRes < size; jRes++) {
                 if (distanceMatrix.at(iRes).at(jRes) < cut_off) {
-                    std::array<size_t, 2> contact{};
+                    std::array<std::size_t, 2> contact{};
                     contact[0] = iRes;
                     contact[1] = jRes;
                     contactVector.push_back(contact);
@@ -120,8 +120,8 @@ class Structure {
      */
     bool allOK() const {
         bool ok = true;
-        for (size_t iRes = 0; iRes < alphaCoordinateVector.size() - 1; iRes++) {
-            size_t jRes = iRes + 1;
+        for (std::size_t iRes = 0; iRes < alphaCoordinateVector.size() - 1; iRes++) {
+            std::size_t jRes = iRes + 1;
             std::array<double, 3> iCoord = alphaCoordinateVector.at(iRes);
             std::array<double, 3> jCoord = alphaCoordinateVector.at(jRes);
             double dist2 = ((iCoord[0] - jCoord[0]) * (iCoord[0] - jCoord[0]) +
@@ -136,8 +136,8 @@ class Structure {
         }
 
         double rg = 0.0;
-        for (size_t iRes = 0; iRes < alphaCoordinateVector.size(); iRes++) {
-            for (size_t jRes = 0; jRes < alphaCoordinateVector.size(); jRes++) {
+        for (std::size_t iRes = 0; iRes < alphaCoordinateVector.size(); iRes++) {
+            for (std::size_t jRes = 0; jRes < alphaCoordinateVector.size(); jRes++) {
                 std::array<double, 3> iCoord = alphaCoordinateVector.at(iRes);
                 std::array<double, 3> jCoord = alphaCoordinateVector.at(jRes);
                 double dist2 = ((iCoord[0] - jCoord[0]) * (iCoord[0] - jCoord[0]) +
@@ -154,8 +154,8 @@ class Structure {
         }
 
         double nContacts = 0.0;
-        for (size_t iRes = 0; iRes < betaCoordinateVector.size(); iRes++) {
-            for (size_t jRes = 0; jRes < betaCoordinateVector.size(); jRes++) {
+        for (std::size_t iRes = 0; iRes < betaCoordinateVector.size(); iRes++) {
+            for (std::size_t jRes = 0; jRes < betaCoordinateVector.size(); jRes++) {
                 std::array<double, 3> iCoord = betaCoordinateVector.at(iRes);
                 std::array<double, 3> jCoord = betaCoordinateVector.at(jRes);
                 double dist2 = ((iCoord[0] - jCoord[0]) * (iCoord[0] - jCoord[0]) +
@@ -243,7 +243,7 @@ class Structure {
     std::string proteinSeq;
 
     explicit Structure(std::string const &pdb_folder,
-        std::array<std::string, 2> protein_chain_names, size_t size, double cut_off)
+        std::array<std::string, 2> protein_chain_names, std::size_t size, double cut_off)
         : proteinName{protein_chain_names[0]},
           chainName{protein_chain_names[1]},
           size{size},
@@ -273,10 +273,10 @@ class Structure {
      * Computes energy of an amino acid sequence in the structure of the protein
      */
     double getMutantEnergy(
-        std::vector<char> const &codonSeq, size_t site, char codon_from, char codon_to) const {
+        std::vector<char> const &codonSeq, std::size_t site, char codon_from, char codon_to) const {
         assert(codonSeq[site] == codon_from);
         double energy = 0.0;
-        for (size_t const &contact : siteContactVector[site]) {
+        for (std::size_t const &contact : siteContactVector[site]) {
             energy += (getCodonInteraction(codon_to, codonSeq[contact]) -
                        getCodonInteraction(codon_from, codonSeq[contact]));
         }
@@ -344,7 +344,7 @@ class StabilityState final : public FitnessState {
     void update(std::vector<char> const &codon_seq, double const &pop_size) override {
         nativeEnergy = f.native.getEnergy(codon_seq);
 
-        for (size_t i = 0; i < f.unfoldedVector.size(); i++) {
+        for (std::size_t i = 0; i < f.unfoldedVector.size(); i++) {
             unfoldedEnergyVector[i] = f.unfoldedVector[i].getEnergy(codon_seq);
         }
         double avgUnfoldedEnergy = avg(unfoldedEnergyVector);
@@ -359,7 +359,7 @@ class StabilityState final : public FitnessState {
         double const &pop_size) override {
         nativeEnergy += f.native.getMutantEnergy(codon_seq, site, codon_seq[site], codon_to);
 
-        for (size_t i = 0; i < f.unfoldedVector.size(); i++) {
+        for (std::size_t i = 0; i < f.unfoldedVector.size(); i++) {
             unfoldedEnergyVector[i] +=
                 f.unfoldedVector[i].getMutantEnergy(codon_seq, site, codon_seq[site], codon_to);
         }
@@ -386,7 +386,7 @@ class StabilityState final : public FitnessState {
             nativeEnergy + f.native.getMutantEnergy(codon_seq, site, codon_seq[site], codon_to);
 
         std::vector<double> unfoldedMutantEnergyVector(f.unfoldedVector.size(), 0.0);
-        for (size_t i = 0; i < f.unfoldedVector.size(); i++) {
+        for (std::size_t i = 0; i < f.unfoldedVector.size(); i++) {
             unfoldedMutantEnergyVector[i] =
                 unfoldedEnergyVector[i] +
                 f.unfoldedVector[i].getMutantEnergy(codon_seq, site, codon_seq[site], codon_to);
@@ -403,16 +403,13 @@ class StabilityState final : public FitnessState {
             summary_stats["mut-ΔG-native"].add(nativeDeltaG);
             summary_stats["mut-ΔG-mutant"].add(mutantDeltaG);
             summary_stats["mut-ΔΔG"].add(mutantDeltaG - nativeDeltaG);
+            distribution_map["mut-ΔΔG"].add(mutantDeltaG - nativeDeltaG);
         }
         return s;
     }
 };
 
-std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {
-    {"mut-s", SummaryStatistic()}, {"mut-ΔG-native", SummaryStatistic()},
-    {"mut-ΔG-mutant", SummaryStatistic()}, {"mut-ΔΔG", SummaryStatistic()},
-    {"sub-ΔG", SummaryStatistic()}, {"sub-log-fitness", SummaryStatistic()},
-    {"sub-GFold", SummaryStatistic()}, {"sub-GUnfold", SummaryStatistic()}};
+std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {};
 
 class FoldingArgParse {
   protected:

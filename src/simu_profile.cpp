@@ -43,7 +43,8 @@ int main(int argc, char *argv[]) {
     time_grid_step = root_age / nbr_grid_step;
     LogMultivariate log_multivariate(beta, mutation_rate_per_generation, generation_time);
     BiasMultivariate bias_multivariate(args_tree.bias_pop_size.getValue(),
-        args_tree.bias_mut_rate.getValue(), args_tree.bias_gen_time.getValue());
+        args_tree.bias_mut_rate.getValue(), args_tree.bias_gen_time.getValue(),
+        args_tree.step_wise_pop_size.getValue());
     CorrelationMatrix correlation_matrix(args_tree.precision_path.getValue(),
         args_tree.fix_pop_size.getValue(), args_tree.fix_mut_rate.getValue(),
         args_tree.fix_gen_time.getValue());

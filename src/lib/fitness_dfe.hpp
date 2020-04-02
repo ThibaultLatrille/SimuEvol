@@ -96,9 +96,7 @@ class DfeState final : public FitnessState {
     }
 };
 
-std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {
-    {"mut-s", SummaryStatistic()}, {"mut-log-fitness", SummaryStatistic()},
-    {"sub-log-fitness", SummaryStatistic()}};
+std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {};
 
 class DfeArgParse {
   protected:

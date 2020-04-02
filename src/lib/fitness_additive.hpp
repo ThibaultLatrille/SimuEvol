@@ -65,9 +65,7 @@ class AdditiveState final : public FitnessState {
     }
 };
 
-std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {
-    {"mut-s", SummaryStatistic()}, {"mut-log-fitness", SummaryStatistic()},
-    {"sub-log-fitness", SummaryStatistic()}};
+std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {};
 
 class AdditiveArgParse {
   protected:
@@ -140,8 +138,8 @@ class SequenceAdditiveModel : public FitnessModel {
         fitness_landscapes.reserve(dv.quot);
         fitness_states.reserve(dv.quot);
         for (int exon{0}; exon < dv.quot; exon++) {
-            size_t begin_exon = exon * exon_size;
-            size_t end_exon = std::min(begin_exon + exon_size, site_aa_coeffs.size());
+            std::size_t begin_exon = exon * exon_size;
+            std::size_t end_exon = std::min(begin_exon + exon_size, site_aa_coeffs.size());
 
             std::vector<std::array<double, 20>> exon_site_aa_coeffs(
                 site_aa_coeffs.begin() + begin_exon, site_aa_coeffs.begin() + end_exon);

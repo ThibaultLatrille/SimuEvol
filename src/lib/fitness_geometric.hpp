@@ -132,9 +132,7 @@ class GeometricState final : public FitnessState {
     };
 };
 
-std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {
-    {"mut-s", SummaryStatistic()}, {"mut-distance", SummaryStatistic()},
-    {"sub-log-fitness", SummaryStatistic()}, {"sub-distance", SummaryStatistic()}};
+std::unordered_map<std::string, SummaryStatistic> FitnessState::summary_stats = {};
 
 class GeometricArgParse {
   protected:

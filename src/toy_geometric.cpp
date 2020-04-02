@@ -6,14 +6,14 @@ using namespace TCLAP;
 using namespace std;
 
 class Sequence {
-    unsigned nbr_sites;
-    unsigned nbr_right;
+    u_long nbr_sites;
+    u_long nbr_right;
     double pop_size;
     double distance;
     double radius;
     double peakness;
     double epistasis;
-    std::unordered_map<std::string, SummaryStatistic> summary_stats;
+    std::unordered_map<std::string, SummaryStatistic> summary_stats = {};
 
     double computeFitness(double const &d) { return exp(-peakness * pow(abs(d), epistasis)); }
 
@@ -58,7 +58,7 @@ class Sequence {
     }
 
   public:
-    explicit Sequence(unsigned nbr_sites, double const &pop_size, double const &radius,
+    explicit Sequence(u_long nbr_sites, double const &pop_size, double const &radius,
         double const &peakness, double const &epistasis)
         : nbr_sites{nbr_sites},
           nbr_right{nbr_sites / 2},
@@ -68,14 +68,10 @@ class Sequence {
           peakness{peakness},
           epistasis{epistasis} {
         distance = radius * (nbr_right - (static_cast<double>(nbr_sites) / 2));
-        summary_stats["nbr_right"] = SummaryStatistic();
-        summary_stats["distance"] = SummaryStatistic();
-        summary_stats["RatioSubFlow"] = SummaryStatistic();
-        summary_stats["SubFlow"] = SummaryStatistic();
     };
 
-    void run_substitutions(unsigned last, bool burn_in) {
-        for (unsigned i = 0; i < last; ++i) { next_substitution(burn_in); }
+    void run_substitutions(u_long last, bool burn_in) {
+        for (u_long i = 0; i < last; ++i) { next_substitution(burn_in); }
     }
 
     void trace(string const &output) const {
@@ -96,8 +92,8 @@ class CombinatorialStability : public OutputArgParse {
 
     TCLAP::ValueArg<double> population_size{
         "", "population_size", "population size", false, 1e4, "double", cmd};
-    TCLAP::ValueArg<unsigned> nbr_sites{
-        "", "nbr_sites", "Number of sites", false, 300, "unsigned", cmd};
+    TCLAP::ValueArg<u_long> nbr_sites{
+        "", "nbr_sites", "Number of sites", false, 300, "u_long", cmd};
     TCLAP::ValueArg<double> radius{"", "radius", "radius of mutations", false, 4e-5, "double", cmd};
     TCLAP::ValueArg<double> peakness{"", "peakness",
         "'alpha' parameter (peakness) of the fitness function (exp(-alpha*(d^beta))", false, 0.5,
@@ -112,12 +108,12 @@ int main(int argc, char *argv[]) {
     CombinatorialStability args(cmd);
     cmd.parse(argc, argv);
 
-    unsigned arg_seed = args.seed.getValue();
+    u_long arg_seed = args.seed.getValue();
     string output_path{args.output_path.getValue()};
     cout << "Random generator seed: " << arg_seed << endl;
     generator.seed(arg_seed);
 
-    unsigned nbr_sites{args.nbr_sites.getValue()};
+    u_long nbr_sites{args.nbr_sites.getValue()};
     cout << "Sequence with " << nbr_sites << " sites." << endl;
 
     double pop_size{args.population_size.getValue()};

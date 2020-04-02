@@ -450,7 +450,7 @@ class Exon {
         double fit_tot = accumulate(fitnesses.begin(), fitnesses.end(), 0.0);
 
         // Random draws from the multinomial distribution
-        for (size_t i_hap{0}; i_hap < haplotype_vector.size() - 1; i_hap++) {
+        for (std::size_t i_hap{0}; i_hap < haplotype_vector.size() - 1; i_hap++) {
             haplotype_vector.at(i_hap).nbr_copies = std::binomial_distribution<u_long>(
                 children_tot, fitnesses.at(i_hap) / fit_tot)(generator);
             children_tot -= haplotype_vector.at(i_hap).nbr_copies;
@@ -497,7 +497,7 @@ class Exon {
             char codon_to = diff.second;
             bool polymorphic_site = false;
             std::set<char> poly_codons{codon_to};
-            for (size_t hap_id{1}; hap_id < haplotype_vector.size(); hap_id++) {
+            for (std::size_t hap_id{1}; hap_id < haplotype_vector.size(); hap_id++) {
                 if (haplotype_vector.at(hap_id).diff_sites.count(site) == 0) {
                     // In the case the site of this haplotype is the same than the reference
                     polymorphic_site = true;
@@ -571,10 +571,10 @@ class Exon {
 
     void sample_one_individual(double const &pop_size) {
         // Compute the distribution of haplotype frequency in the population
-        std::vector<unsigned> nbr_copies(haplotype_vector.size(), 0);
+        std::vector<u_long> nbr_copies(haplotype_vector.size(), 0);
         std::transform(haplotype_vector.begin(), haplotype_vector.end(), nbr_copies.begin(),
             [](Haplotype const &h) { return h.nbr_copies; });
-        unsigned rand_hap =
+        u_long rand_hap =
             std::discrete_distribution<u_long>(nbr_copies.begin(), nbr_copies.end())(generator);
 
         for (auto const &diff : haplotype_vector[rand_hap].diff_sites) {
@@ -691,7 +691,7 @@ class Population {
                 return false;
             }
         }
-        for (size_t i = 1; i < substitutions.size(); ++i) {
+        for (std::size_t i = 1; i < substitutions.size(); ++i) {
             if (abs(substitutions.at(i).time_between -
                     (substitutions.at(i).time_event - substitutions.at(i - 1).time_event)) > 1e-6) {
                 std::cerr << "The time between substitutions is not consistent" << std::endl;
@@ -799,7 +799,7 @@ class Population {
         Population const &parent, NucleotideRateMatrix const &rates, u_long const &pop_size) const {
         double dn{0.}, dn0{0.};
 
-        for (size_t i = 0; i < exons.size(); i++) {
+        for (std::size_t i = 0; i < exons.size(); i++) {
             double exon_dn{0}, exon_dn0{0};
             std::tie(exon_dn, exon_dn0) =
                 exons[i].fitness_state->flow_dn_dn0(parent.exons.at(i).codon_seq, rates, pop_size);

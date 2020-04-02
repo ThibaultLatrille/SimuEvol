@@ -255,7 +255,7 @@ class PieceWiseMultivariate {
 
     double ArithmeticDim(int dim) const {
         double tot_log{0}, tot_time{0};
-        for (size_t i = 0; i < times.size(); i++) {
+        for (std::size_t i = 0; i < times.size(); i++) {
             tot_time += times[i];
             tot_log += times[i] * exp(logmultivariates[i](dim));
         }
@@ -264,7 +264,7 @@ class PieceWiseMultivariate {
 
     double GeometricDim(int dim) const {
         double tot_log{0}, tot_time{0};
-        for (size_t i = 0; i < times.size(); i++) {
+        for (std::size_t i = 0; i < times.size(); i++) {
             tot_time += times[i];
             tot_log += times[i] * logmultivariates[i](dim);
         }
@@ -273,7 +273,7 @@ class PieceWiseMultivariate {
 
     double HarmonicDim(int dim) const {
         double tot_inv{0}, tot_time{0};
-        for (size_t i = 0; i < times.size(); i++) {
+        for (std::size_t i = 0; i < times.size(); i++) {
             tot_time += times[i];
             tot_inv += times[i] * exp(-logmultivariates[i](dim));
         }
@@ -372,11 +372,17 @@ class CorrelationMatrix : public Matrix3x3 {
 
 class BiasMultivariate : public Vector3x1 {
   public:
+    bool step_wise_pop_size{false};
     explicit BiasMultivariate() : Vector3x1(Vector3x1::Zero()) {}
 
     explicit BiasMultivariate(double bias_population_size, double bias_mutation_rate_per_generation,
-        double bias_generation_time)
-        : Vector3x1(Vector3x1::Zero()) {
+        double bias_generation_time, bool step_wise_pop_size)
+        : Vector3x1(Vector3x1::Zero()), step_wise_pop_size{step_wise_pop_size} {
+        if (step_wise_pop_size and bias_population_size == 0.) {
+            std::cerr << "Argument '--step_wise_pop_size' has been set to true, but the argument "
+                         "'--bias_pop_size' is set to 0, thus the step_wise has no effect"
+                      << std::endl;
+        }
         (*this)(dim_population_size) = bias_population_size;
         (*this)(dim_mutation_rate_per_generation) = bias_mutation_rate_per_generation;
         (*this)(dim_generation_time) = bias_generation_time;
