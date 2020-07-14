@@ -111,8 +111,8 @@ class Trace {
 class Distribution {
   private:
     double grid_step = 0.1;
-    double grid_min = -500;
-    double grid_max = 50;
+    double grid_min = -10;
+    double grid_max = 10;
     u_long bin_zero = 0;
     std::deque<u_long> bins{};
     std::deque<double> bounds{};

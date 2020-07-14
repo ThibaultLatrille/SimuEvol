@@ -3,48 +3,11 @@
 #include "matrices.hpp"
 #include "tclap/CmdLine.h"
 
-double Pfix(double const &pop_size, double const &selection_coefficient) {
-    double S = 4 * selection_coefficient * pop_size;
-    if ((abs(S)) < 1e-4) {
-        return 1 + S / 2;
-    } else {
-        // return 2 * pop_size * (1.0 - exp(-2.0 * s)) / (1.0 - exp(-4 * pop_size * s));
-        return S / (1.0 - exp(-S));
-    }
-}
-
-
-// Method computing the equilibrium frequencies for one site.
-std::array<double, 64> codon_frequencies(std::array<double, 20> const &aa_selection_coefficient,
-    NucleotideRateMatrix const &nuc_matrix, double const &pop_size) {
-    std::array<double, 64> codon_frequencies{0};
-    // For each site of the vector of the site frequencies.
-    for (char codon{0}; codon < 64; codon++) {
-        double codon_freq = 1.0;
-
-        // For all nucleotides in the codon
-        for (auto const &nuc : codonLexico.codon_to_triplet[codon]) {
-            codon_freq *= nuc_matrix.nuc_frequencies[nuc];
-        }
-
-        if (codonLexico.codon_to_aa[codon] != 20) {
-            codon_frequencies[codon] =
-                codon_freq *
-                exp(4 * aa_selection_coefficient[codonLexico.codon_to_aa[codon]] * pop_size);
-        } else {
-            codon_frequencies[codon] = 0.;
-        }
-    }
-
-    double sum_freq = std::accumulate(codon_frequencies.begin(), codon_frequencies.end(), 0.0);
-    for (char codon{0}; codon < 64; codon++) { codon_frequencies[codon] /= sum_freq; }
-
-    return codon_frequencies;
-}
 
 class FitnessLandscape {
   public:
     bool additive_phenotype{false};
+    bool approx{false};
 
     virtual ~FitnessLandscape() = default;
 
@@ -107,6 +70,51 @@ class FitnessState {
         return aa_sel_coeffs;
     }
 
+
+    double fixation_rate(double const &pop_size, double const &s) const {
+        if (s == 0.0) { return 1.0; }
+        double S = 4 * s * pop_size;
+        if (abs(S) < 1e-4) { return 1 + S / 2; }
+        if (landscape.approx) {
+            return S / (1.0 - exp(-S));
+        } else {
+            if (abs(s) > 10) {
+                return S / (1.0 - exp(-S));
+            } else {
+                return 2 * pop_size * (1.0 - exp(-2.0 * s)) / (1.0 - exp(-4 * pop_size * s));
+            }
+        }
+    }
+
+
+    // Method computing the equilibrium frequencies for one site.
+    std::array<double, 64> codon_frequencies(std::array<double, 20> const &aa_selection_coefficient,
+        NucleotideRateMatrix const &nuc_matrix, double const &pop_size) const {
+        std::array<double, 64> codon_frequencies{0};
+        // For each site of the vector of the site frequencies.
+        for (char codon{0}; codon < 64; codon++) {
+            double codon_freq = 1.0;
+
+            // For all nucleotides in the codon
+            for (auto const &nuc : codonLexico.codon_to_triplet[codon]) {
+                codon_freq *= nuc_matrix.nuc_frequencies[nuc];
+            }
+
+            if (codonLexico.codon_to_aa[codon] != 20) {
+                codon_frequencies[codon] =
+                    codon_freq *
+                    exp(4 * aa_selection_coefficient[codonLexico.codon_to_aa[codon]] * pop_size);
+            } else {
+                codon_frequencies[codon] = 0.;
+            }
+        }
+
+        double sum_freq = std::accumulate(codon_frequencies.begin(), codon_frequencies.end(), 0.0);
+        for (char codon{0}; codon < 64; codon++) { codon_frequencies[codon] /= sum_freq; }
+
+        return codon_frequencies;
+    }
+
     // Theoretical computation of the predicted omega
     std::tuple<double, double> predicted_dn_dn0(std::vector<char> const &codon_seq,
         NucleotideRateMatrix const &mutation_rate_matrix, double pop_size) const {
@@ -138,7 +146,7 @@ class FitnessState {
                             dn0 += rate;
                             double s = aa_sel_coeffs[codonLexico.codon_to_aa[codon_to]] -
                                        aa_sel_coeffs[codonLexico.codon_to_aa[codon_from]];
-                            rate *= Pfix(pop_size, s);
+                            rate *= fixation_rate(pop_size, s);
                             dn += rate;
                         }
                     }
@@ -172,7 +180,7 @@ class FitnessState {
                     dn0 += rate;
                     double s = aa_sel_coeffs[codonLexico.codon_to_aa[codon_to]] -
                                aa_sel_coeffs[codonLexico.codon_to_aa[codon_seq[site]]];
-                    rate *= Pfix(pop_size, s);
+                    rate *= fixation_rate(pop_size, s);
                     dn += rate;
                 }
             }

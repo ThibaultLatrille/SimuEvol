@@ -278,7 +278,7 @@ class Exon {
         // Draw codon from codon frequencies
         fitness_state->update(codon_seq, population_size);
         for (u_long site{0}; site < nbr_sites; site++) {
-            std::array<double, 64> codon_freqs = codon_frequencies(
+            std::array<double, 64> codon_freqs = fitness_state->codon_frequencies(
                 fitness_state->aa_selection_coefficients(codon_seq, site, population_size),
                 nuc_matrix, population_size);
             std::discrete_distribution<char> freq_codon_distr(

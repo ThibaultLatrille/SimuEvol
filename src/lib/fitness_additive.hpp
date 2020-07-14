@@ -12,6 +12,7 @@ class AdditiveLandscape final : public FitnessLandscape {
 
     explicit AdditiveLandscape(std::vector<std::array<double, 20>> &profiles) : profiles{profiles} {
         additive_phenotype = true;
+        approx = true;
     }
 
     u_long nbr_sites() const override { return profiles.size(); }

@@ -163,7 +163,8 @@ class Exon {
                     non_syn_mut_flow += rate_substitution;
                     double s = fitness_state->selection_coefficient(
                         codon_seq, site, codon_to, burn_in, beta);
-                    double pfix = Pfix(beta, s);
+                    double pfix = fitness_state->fixation_rate(beta, s);
+                    if (!std::isfinite(pfix)) { continue; }
                     rate_substitution *= pfix;
                     non_syn_sub_flow += rate_substitution;
                     dndn0 += pfix;
@@ -414,10 +415,10 @@ class Sequence {
         for (u_long i = 0; i < nbr_rounds; i++) {
             for (auto &exon : exons) {
                 for (u_long site{0}; site < exon.nbr_sites; site++) {
-                    std::array<double, 64> codon_freqs =
-                        codon_frequencies(exon.fitness_state->aa_selection_coefficients(
-                                              exon.codon_seq, site, init_pop_size),
-                            nuc_matrix, init_pop_size);
+                    std::array<double, 64> codon_freqs = exon.fitness_state->codon_frequencies(
+                        exon.fitness_state->aa_selection_coefficients(
+                            exon.codon_seq, site, init_pop_size),
+                        nuc_matrix, init_pop_size);
                     std::discrete_distribution<char> freq_codon_distr(
                         codon_freqs.begin(), codon_freqs.end());
                     char chosen_codon = freq_codon_distr(generator);
@@ -822,6 +823,8 @@ class Process {
         std::cout << "Simulation computed." << std::endl;
         std::cout << expected_subs << " expected substitutions." << std::endl;
         std::cout << nbr_syn + nbr_non_syn << " simulated substitutions." << std::endl;
+        std::cout << nbr_non_syn << " simulated non-synonymous substitutions." << std::endl;
+        std::cout << nbr_syn << " simulated synonymous substitutions." << std::endl;
         std::cout << "Statistics summarized in: " << output_path + ".tsv" << std::endl;
         std::cout << "Fasta file in: " << output_path + ".fasta" << std::endl;
         std::cout << "Alignment (.ali) file in: " << output_path + ".ali" << std::endl;

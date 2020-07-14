@@ -38,14 +38,16 @@ class StabilityLandscape final : public FitnessLandscape {
     std::vector<char> optimal_aa_seq;
     double alpha;
     double beta;
+    double expression_level;
     bool grantham;
 
-    explicit StabilityLandscape(
-        int nbr_sites, double alpha, double gamma, double gamma_std, double beta, bool grantham)
+    explicit StabilityLandscape(int nbr_sites, double alpha, double gamma, double gamma_std,
+        double beta, bool grantham, double expression_level)
         : site_ddg(nbr_sites, gamma),
           optimal_aa_seq(nbr_sites, 0),
           alpha{alpha},
           beta{beta},
+          expression_level{expression_level},
           grantham{grantham} {
         additive_phenotype = true;
         auto bk_seed = generator();
@@ -109,11 +111,11 @@ class StabilityState final : public FitnessState {
         return (factor / (1 + factor));
     }
 
-    double logfitness(double deltaG) const { return log(fitness(deltaG)); }
+    double logfitness(double deltaG) const { return f.expression_level * log(fitness(deltaG)); }
 
     double selection_coefficient_ddG(double deltaG, double deltaGMutant) const {
         double fm = fitness(deltaGMutant), fr = fitness(deltaG);
-        return (fm - fr) / fr;
+        return f.expression_level * (fm - fr) / fr;
     }
 
     void update(std::vector<char> const &codon_seq, double const &pop_size) override {
@@ -179,6 +181,8 @@ class StabilityArgParse {
         "", "alpha", "ΔG minimum for the optimal sequence", false, -118, "double", cmd};
     TCLAP::ValueArg<double> gamma{
         "", "gamma", "Increase in ΔG for destabilizying mutations", false, 1.0, "double", cmd};
+    TCLAP::ValueArg<double> expression_level{
+        "", "expression_level", "Expression level", false, 1.0, "double", cmd};
     TCLAP::ValueArg<double> gamma_std{
         "", "gamma_std", "Standard deviation for gamma", false, 0, "double", cmd};
     TCLAP::ValueArg<double> beta{"", "beta", "beta=1/kT in mol/kcal", false, 1.686, "double", cmd};
@@ -186,7 +190,9 @@ class StabilityArgParse {
 
     void add_to_trace(Trace &trace) {
         trace.add("#nbr_exons", nbr_exons.getValue());
+        trace.add("expression_level", expression_level.getValue());
         trace.add("alpha", alpha.getValue());
+        trace.add("beta", beta.getValue());
         trace.add("gamma", gamma.getValue());
         trace.add("gamma_std", gamma_std.getValue());
         trace.add("grantham", grantham.getValue());
@@ -199,7 +205,8 @@ class StabilityModel : public FitnessModel {
         fitness_landscapes.reserve(args.nbr_exons.getValue());
         fitness_states.reserve(args.nbr_exons.getValue());
         StabilityLandscape landscape(exon_size, args.alpha.getValue(), args.gamma.getValue(),
-            args.gamma_std.getValue(), args.beta.getValue(), args.grantham.getValue());
+            args.gamma_std.getValue(), args.beta.getValue(), args.grantham.getValue(),
+            args.expression_level.getValue());
 
         for (u_long exon{0}; exon < args.nbr_exons.getValue(); exon++) {
             fitness_landscapes.emplace_back(std::make_unique<StabilityLandscape>(landscape));

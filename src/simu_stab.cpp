@@ -70,11 +70,8 @@ int main(int argc, char *argv[]) {
     cout << "Starting from the optimal sequence." << endl;
     root_sequence->set_from_aa_seq(seq_fitness.aa_seq());
     u_long burn_in_aa_changes = 15 * exon_size;
-    u_long equilibrium_nbr_rounds = 15;
-    cout << "DNA Sequence optimizing site marginals for " << equilibrium_nbr_rounds
-         << " rounds, and running for " << burn_in_aa_changes << " amino-acid changes (per exon)"
+    cout << "DNA Sequence init for " << burn_in_aa_changes << " amino-acid changes (per exon)"
          << endl;
-    root_sequence->at_equilibrium(equilibrium_nbr_rounds, 1.0e2);
     root_sequence->burn_in(burn_in_aa_changes);
 
     // Simulation along the tree

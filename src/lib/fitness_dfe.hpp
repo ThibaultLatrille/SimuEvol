@@ -17,6 +17,7 @@ class DfeParameters final : public FitnessLandscape {
     explicit DfeParameters(u_long exon_size, bool reflected, double mean, double shape)
         : exon_size{exon_size}, reflected{reflected}, mean{mean}, shape{shape} {
         additive_phenotype = true;
+        approx = true;
         if (shape != 0.0) { scale = mean / shape; }
     }
 
@@ -104,8 +105,7 @@ class DfeArgParse {
 
   public:
     explicit DfeArgParse(TCLAP::CmdLine &cmd) : cmd{cmd} {}
-    TCLAP::SwitchArg gamma_reflected{
-        "", "gamma_reflected", "True if reflected gamma.", cmd, false};
+    TCLAP::SwitchArg gamma_reflected{"", "gamma_reflected", "True if reflected gamma.", cmd, false};
     TCLAP::ValueArg<double> gamma_mean{
         "", "gamma_mean", "Mean value of selection coefficient effect", false, 1.0, "double", cmd};
     TCLAP::ValueArg<double> gamma_shape{
