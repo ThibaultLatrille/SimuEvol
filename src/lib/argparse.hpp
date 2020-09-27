@@ -58,11 +58,14 @@ class SimuSubArgParse : public SimuArgParse {
         cmd};
     TCLAP::ValueArg<double> pop_size{
         "", "population_size", "Effective population size", false, 1.0, "double", cmd};
+    TCLAP::SwitchArg subset_relative_pfix{"", "subset_relative_pfix",
+        "Compute dn/dn0 for a subset of nucleotides (weak and strong) ", cmd, false};
 
     void add_to_trace(Trace& trace) override {
         SimuArgParse::add_to_trace(trace);
         trace.add("pop_size", pop_size.getValue());
         trace.add("nbr_grid_step", nbr_grid_step.getValue());
+        trace.add("subset_relative_pfix", nbr_grid_step.getValue());
     }
 };
 
@@ -112,6 +115,8 @@ class TreeArgParse {
         "", "fix_mut_rate", "Log-Brownian on mutation rate is null", cmd, false};
     TCLAP::SwitchArg fix_gen_time{
         "", "fix_gen_time", "Log-Brownian on generation time is null", cmd, false};
+    TCLAP::SwitchArg unused_root_age{
+        "", "unused_root_age", "Do not set root age from parameter root age", cmd, false};
 
     TCLAP::ValueArg<double> bias_pop_size{
         "", "bias_pop_size", "Log-Bias on population size", false, 0., "double", cmd};
@@ -123,6 +128,7 @@ class TreeArgParse {
     void add_to_trace(Trace& trace) {
         assert(root_age.getValue() > 0.0);
         trace.add("root_age", root_age.getValue());
+        trace.add("unused_root_age", unused_root_age.getValue());
         trace.add("fix_pop_size", fix_pop_size.getValue());
         trace.add("step_wise_pop_size", step_wise_pop_size.getValue());
         trace.add("fix_mut_rate", fix_mut_rate.getValue());

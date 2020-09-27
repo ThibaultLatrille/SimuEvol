@@ -4,6 +4,7 @@
 #include <array>
 #include <cassert>
 #include <map>
+#include <set>
 #include <vector>
 
 // Definitions:
@@ -135,6 +136,8 @@ class Codon {
 
 std::string Codon::nucleotides = {"ACGT"};
 std::map<char, char> Codon::nuc_to_index = {{'A', 0}, {'C', 1}, {'G', 2}, {'T', 3}};
+std::set<char> weak_nuc{0, 3};
+std::set<char> strong_nuc{1, 2};
 
 std::map<std::string, char> Codon::triplet_str_to_aa_char = {{"GCA", 'A'}, {"GAA", 'E'},
     {"ACT", 'T'}, {"CAT", 'H'}, {"ACG", 'T'}, {"GGT", 'G'}, {"GCG", 'A'}, {"GAG", 'E'},

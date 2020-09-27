@@ -5,7 +5,7 @@
 #include "fitness.hpp"
 #include "random.hpp"
 
-double dnds_count_tot{0}, dnds_event_tot{0}, dnd0_count_tot{0}, dnd0_event_tot{0};
+std::unordered_map<std::string, double> pfix_map{};
 
 class DFE {
   public:
@@ -45,14 +45,19 @@ class Substitution {
     double time_between_event;
     double non_syn_sub_flow;
     double non_syn_mut_flow;
+    double non_syn_sub_flow_WS;
+    double non_syn_mut_flow_WS;
+    double non_syn_sub_flow_SW;
+    double non_syn_mut_flow_SW;
     double syn_mut_flow;
     double dndn0;
     DFE dfe;
 
     Substitution(double time_event, double time_between_event, double non_syn_sub_flow,
-        double non_syn_mut_flow, double syn_mut_flow, double dndn0, double pop_size,
-        char codon_from = -1, char codon_to = -1, char n_from = -1, char n_to = -1, u_long site = 0,
-        DFE const &dfe = {})
+        double non_syn_mut_flow, double non_syn_sub_flow_WS, double non_syn_mut_flow_WS,
+        double non_syn_sub_flow_SW, double non_syn_mut_flow_SW, double syn_mut_flow, double dndn0,
+        double pop_size, char codon_from = -1, char codon_to = -1, char n_from = -1, char n_to = -1,
+        u_long site = 0, DFE const &dfe = {})
         : site{site},
           codon_from{codon_from},
           codon_to{codon_to},
@@ -62,6 +67,10 @@ class Substitution {
           time_between_event{time_between_event},
           non_syn_sub_flow{non_syn_sub_flow},
           non_syn_mut_flow{non_syn_mut_flow},
+          non_syn_sub_flow_WS{non_syn_sub_flow_WS},
+          non_syn_mut_flow_WS{non_syn_mut_flow_WS},
+          non_syn_sub_flow_SW{non_syn_sub_flow_SW},
+          non_syn_mut_flow_SW{non_syn_mut_flow_SW},
           syn_mut_flow{syn_mut_flow},
           dndn0{dndn0},
           dfe{dfe} {}
@@ -129,7 +138,9 @@ class Exon {
         // Sum of substitution rates.
         double total_substitution_rates{0.};
 
-        double non_syn_sub_flow{0.0}, non_syn_mut_flow{0.0}, syn_mut_flow{0.0}, dndn0{0.0};
+        double non_syn_sub_flow_WS{0.0}, non_syn_mut_flow_WS{0.0}, non_syn_sub_flow_SW{0.0},
+            non_syn_mut_flow_SW{0.0}, non_syn_sub_flow{0.0}, non_syn_mut_flow{0.0},
+            syn_mut_flow{0.0}, dndn0{0.0};
         u_long ns{0};
 
         // For all site of the sequence.
@@ -148,24 +159,28 @@ class Exon {
                 char codon_to{0}, n_from{0}, n_to{0};
                 std::tie(codon_to, n_from, n_to) = neighbors[neighbor];
 
-                // Assign the substitution rate given by the method substitution rate.
-                // Rate of substitution initialized to 0 (deleterious mutation)
-                double rate_substitution{0.};
-
                 // If the mutated amino-acid is a stop codon, the rate of fixation is 0.
                 // Else, if the mutated and original amino-acids are non-synonymous, we compute the
                 // rate of fixation. Note that, if the mutated and original amino-acids are
                 // synonymous, the rate of fixation is 1.
                 if (codonLexico.codon_to_aa[codon_to] == 20) { continue; }
 
-                rate_substitution = nuc_matrix(n_from, n_to);
+                double rate_substitution = nuc_matrix(n_from, n_to);
                 if (codonLexico.codon_to_aa[codon_from] != codonLexico.codon_to_aa[codon_to]) {
-                    non_syn_mut_flow += rate_substitution;
                     double s = fitness_state->selection_coefficient(
                         codon_seq, site, codon_to, burn_in, beta);
                     double pfix = fitness_state->fixation_rate(beta, s);
                     if (!std::isfinite(pfix)) { continue; }
+
+                    non_syn_mut_flow += rate_substitution;
                     rate_substitution *= pfix;
+                    if (weak_nuc.count(n_from) != 0 and strong_nuc.count(n_to) != 0) {
+                        non_syn_mut_flow_WS += nuc_matrix(n_from, n_to);
+                        non_syn_sub_flow_WS += rate_substitution;
+                    } else if (strong_nuc.count(n_from) != 0 and weak_nuc.count(n_to) != 0) {
+                        non_syn_mut_flow_SW += nuc_matrix(n_from, n_to);
+                        non_syn_sub_flow_SW += rate_substitution;
+                    }
                     non_syn_sub_flow += rate_substitution;
                     dndn0 += pfix;
                     ns++;
@@ -223,8 +238,9 @@ class Exon {
 
             if (!burn_in) {
                 substitutions.emplace(time_start + time_draw, time_draw, non_syn_sub_flow,
-                    non_syn_mut_flow, syn_mut_flow, dndn0, beta, codom_from, codon_to, n_from, n_to,
-                    site + position, dfe);
+                    non_syn_mut_flow, non_syn_sub_flow_WS, non_syn_mut_flow_WS, non_syn_sub_flow_SW,
+                    non_syn_mut_flow_SW, syn_mut_flow, dndn0, beta, codom_from, codon_to, n_from,
+                    n_to, site + position, dfe);
             }
 
             if (codonLexico.codon_to_aa[codon_seq[site]] != codonLexico.codon_to_aa[codon_to]) {
@@ -235,7 +251,8 @@ class Exon {
         } else {
             if (!burn_in) {
                 substitutions.emplace(time_end, time_end - time_start, non_syn_sub_flow,
-                    non_syn_mut_flow, syn_mut_flow, dndn0, beta);
+                    non_syn_mut_flow, non_syn_sub_flow_WS, non_syn_mut_flow_WS, non_syn_sub_flow_SW,
+                    non_syn_mut_flow_SW, syn_mut_flow, dndn0, beta);
             }
             time_start = time_end;
         }
@@ -389,14 +406,19 @@ class Sequence {
                     sub.time_between_event =
                         sub.time_event - interspersed_substitutions.back().time_event;
                 }
-                sub.non_syn_sub_flow = 0;
-                sub.non_syn_mut_flow = 0;
+                sub.non_syn_sub_flow = 0, sub.non_syn_mut_flow = 0;
+                sub.non_syn_sub_flow_WS = 0, sub.non_syn_mut_flow_WS = 0;
+                sub.non_syn_sub_flow_SW = 0, sub.non_syn_mut_flow_SW = 0;
                 sub.syn_mut_flow = 0;
                 sub.dfe = DFE();
                 for (auto const &exon : exons) {
                     Substitution const &p = exon.substitutions.front();
                     sub.non_syn_sub_flow += p.non_syn_sub_flow;
                     sub.non_syn_mut_flow += p.non_syn_mut_flow;
+                    sub.non_syn_sub_flow_WS += p.non_syn_sub_flow_WS;
+                    sub.non_syn_mut_flow_WS += p.non_syn_mut_flow_WS;
+                    sub.non_syn_sub_flow_SW += p.non_syn_sub_flow_SW;
+                    sub.non_syn_mut_flow_SW += p.non_syn_mut_flow_SW;
                     sub.syn_mut_flow += p.syn_mut_flow;
                     sub.dndn0 += p.dndn0 * exon.nbr_sites;
                     sub.dfe += p.dfe;
@@ -540,6 +562,32 @@ class Sequence {
         }
     }
 
+    double flow_based_dn_dn0_WS() const {
+        double dn{0}, dn0{0};
+        for (auto const &substitution : interspersed_substitutions) {
+            dn0 += substitution.non_syn_mut_flow_WS * substitution.time_between_event;
+            dn += substitution.non_syn_sub_flow_WS * substitution.time_between_event;
+        }
+        if (dn0 == .0) {
+            return .0;
+        } else {
+            return dn / dn0;
+        }
+    }
+
+    double flow_based_dn_dn0_SW() const {
+        double dn{0}, dn0{0};
+        for (auto const &substitution : interspersed_substitutions) {
+            dn0 += substitution.non_syn_mut_flow_SW * substitution.time_between_event;
+            dn += substitution.non_syn_sub_flow_SW * substitution.time_between_event;
+        }
+        if (dn0 == .0) {
+            return .0;
+        } else {
+            return dn / dn0;
+        }
+    }
+
     double flow_based_dn_dn0() const {
         double dn{0}, dn0{0};
         for (auto const &substitution : interspersed_substitutions) {
@@ -616,14 +664,20 @@ class Sequence {
             d_to_string(sequence_wise_predicted_dn_dn0(*parent, nuc_matrix, geom_pop_size)));
 
         double flow_dn_dn0 = flow_based_dn_dn0();
+        double flow_dn_dn0_WS = flow_based_dn_dn0_WS();
+        double flow_dn_dn0_SW = flow_based_dn_dn0_SW();
         double count_dn_dn0 = count_based_dn_dn0();
         double event_dn_ds = event_based_dn_ds();
         double count_dn_ds = count_based_dn_ds();
-        dnd0_event_tot += flow_dn_dn0 * tree.node_length(node);
-        dnd0_count_tot += count_dn_dn0 * tree.node_length(node);
-        dnds_event_tot += event_dn_ds * tree.node_length(node);
-        dnds_count_tot += count_dn_ds * tree.node_length(node);
+        pfix_map["dnd0_event_tot"] += flow_dn_dn0 * tree.node_length(node);
+        pfix_map["dnd0_WS_event_tot"] += flow_dn_dn0_WS * tree.node_length(node);
+        pfix_map["dnd0_SW_event_tot"] += flow_dn_dn0_SW * tree.node_length(node);
+        pfix_map["dnd0_count_tot"] += count_dn_dn0 * tree.node_length(node);
+        pfix_map["dnds_event_tot"] += event_dn_ds * tree.node_length(node);
+        pfix_map["dnds_count_tot"] += count_dn_ds * tree.node_length(node);
         tree.set_tag(node, "Branch_dNdN0_flow_based", d_to_string(flow_dn_dn0));
+        tree.set_tag(node, "Branch_dNdN0_WS_flow_based", d_to_string(flow_dn_dn0_WS));
+        tree.set_tag(node, "Branch_dNdN0_SW_flow_based", d_to_string(flow_dn_dn0_SW));
         tree.set_tag(node, "Branch_dNdN0_count_based", d_to_string(count_dn_dn0));
         tree.set_tag(node, "Branch_dNdS_event_based", d_to_string(event_dn_ds));
         tree.set_tag(node, "Branch_dNdS_count_based", d_to_string(count_dn_ds));
@@ -645,6 +699,10 @@ class Sequence {
                 tracer_substitutions.add("<dN>>", sub.non_syn_sub_flow);
                 tracer_substitutions.add("<dN0>", sub.non_syn_mut_flow);
                 tracer_substitutions.add("<dN>/<dN0>", sub.non_syn_sub_flow / sub.non_syn_mut_flow);
+                tracer_substitutions.add("<dN>>_WS", sub.non_syn_sub_flow_WS);
+                tracer_substitutions.add("<dN0>_WS", sub.non_syn_mut_flow_WS);
+                tracer_substitutions.add(
+                    "<dN>/<dN0>_WS", sub.non_syn_sub_flow_WS / sub.non_syn_mut_flow_WS);
                 tracer_substitutions.add("<dS>", sub.syn_mut_flow);
                 tracer_substitutions.add("<dN/dN0>", sub.dndn0);
             }
@@ -784,17 +842,6 @@ class Process {
                 [](Substitution const &s) { return s.is_non_synonymous(); });
         }
 
-
-        dnd0_event_tot /= tree.total_length();
-        dnd0_count_tot /= tree.total_length();
-        dnds_event_tot /= tree.total_length();
-        dnds_count_tot /= tree.total_length();
-
-        std::cout << "dnd0_event_tot is :" << dnd0_event_tot << std::endl;
-        std::cout << "dnd0_count_tot is :" << dnd0_count_tot << std::endl;
-        std::cout << "dnds_event_tot is :" << dnds_event_tot << std::endl;
-        std::cout << "dnds_count_tot is :" << dnds_count_tot << std::endl;
-
         // .txt output
         Trace trace;
         trace.add("#substitutions", nbr_syn + nbr_non_syn);
@@ -802,9 +849,12 @@ class Process {
             static_cast<double>(nbr_syn + nbr_non_syn) / sequences.begin()->get()->nbr_sites());
         trace.add("#synonymous_substitutions", nbr_syn);
         trace.add("#non_synonymous_substitutions", nbr_non_syn);
-        trace.add("dnd0_event_tot", dnd0_event_tot);
-        trace.add("dnd0_count_tot", dnd0_count_tot);
-        trace.add("dnds_event_tot", dnds_event_tot);
+        for (auto &v : pfix_map) {
+            v.second /= tree.total_length();
+            std::cout << v.first << " is :" << v.second << std::endl;
+            trace.add(v.first, v.second);
+        }
+
         dfe.add(trace);
         for (auto const &ss : FitnessState::summary_stats) {
             trace.add(ss.first + "-mean", ss.second.mean());

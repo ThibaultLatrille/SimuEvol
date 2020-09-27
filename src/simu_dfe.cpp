@@ -27,7 +27,9 @@ int main(int argc, char *argv[]) {
     Tree tree = args_tree.newick_path.getValue().empty()
                     ? Tree(args_tree.nbr_branches.getValue(), root_age)
                     : Tree(args_tree.newick_path.getValue());
-    if (tree.nb_leaves() > 1) { tree.set_root_age(root_age); }
+    if (tree.nb_leaves() > 1 and not args_tree.unused_root_age.getValue()) {
+        tree.set_root_age(root_age);
+    }
 
     // Fitness model
     u_long exon_size{args.exons.getValue()};
