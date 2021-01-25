@@ -121,20 +121,22 @@ class Tree {
 
     void set_tag(NodeIndex node, TagName tag, TagValue value) { tags_.at(node)[tag] = value; }
 
-    std::string recursive_string(NodeIndex node) const {
+    std::string recursive_string(NodeIndex node, bool output_tags) const {
         std::string newick;
 
         if (not children(node).empty()) {
             // It's an internal node
             newick += "(";
-            for (auto const child : children(node)) { newick += recursive_string(child) + ","; };
+            for (auto const child : children(node)) {
+                newick += recursive_string(child, output_tags) + ",";
+            };
             newick.pop_back();
             newick += ")";
         }
         newick += name_.at(node);
         newick += ":" + std::to_string(length_.at(node));
 
-        if (not tags_.at(node).empty()) {
+        if (output_tags and not tags_.at(node).empty()) {
             newick += "[&&NHX";
             for (auto& it : tags_.at(node)) { newick += ":" + it.first + "=" + it.second; }
             newick += "]";
@@ -142,7 +144,9 @@ class Tree {
         return newick;
     }
 
-    std::string as_string() const { return recursive_string(root()) + "; "; }
+    std::string as_string(bool output_tags = true) const {
+        return recursive_string(root(), output_tags) + "; ";
+    }
 
     void add_to_trace(Trace& trace) {
         trace.add("#tree_nodes", nb_nodes());

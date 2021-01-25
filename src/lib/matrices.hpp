@@ -342,9 +342,8 @@ class CorrelationMatrix : public Matrix3x3 {
                 assert(v >= 0.0);
             }
         }
-        std::cout << "The input precision matrix is:\n" << precision_matrix << std::endl;
-        Matrix3x3 correlation_matrix = precision_matrix.inverse();
-        assert(correlation_matrix.transpose() == correlation_matrix);
+        Matrix3x3 covariance_matrix = precision_matrix.inverse();
+        assert(covariance_matrix.transpose() == covariance_matrix);
         for (int i = 0; i < dimensions; i++) {
             if (fix_pop_size and i == dim_population_size) { continue; }
             if (fix_mut_rate and i == dim_mutation_rate_per_generation) { continue; }
@@ -353,11 +352,29 @@ class CorrelationMatrix : public Matrix3x3 {
                 if (fix_pop_size and j == dim_population_size) { continue; }
                 if (fix_mut_rate and j == dim_mutation_rate_per_generation) { continue; }
                 if (fix_gen_time and j == dim_generation_time) { continue; }
-                (*this)(i, j) = correlation_matrix(i, j);
+                (*this)(i, j) = covariance_matrix(i, j);
             }
         }
-        std::cout << "The correlation (taking fixed effect into account) matrix is:\n"
-                  << *this << std::endl;
+        auto part_corr_matrix = precision_matrix;
+        auto corr_matrix = covariance_matrix;
+        for (int i = 0; i < dimensions; i++) {
+            corr_matrix.row(i) /= std::sqrt(covariance_matrix(i, i));
+            corr_matrix.col(i) /= std::sqrt(covariance_matrix(i, i));
+            part_corr_matrix.row(i) /= -std::sqrt(precision_matrix(i, i));
+            part_corr_matrix.col(i) /= std::sqrt(precision_matrix(i, i));
+        }
+        std::cout << "Covariances (taking fixed effect into account):\n" << *this << std::endl;
+        std::cout << "Correlation coefficients (taking fixed effect into account):\n"
+                  << corr_matrix << std::endl;
+        if (std::abs(corr_matrix.maxCoeff()) > 1.01) {
+            std::cerr
+                << "The precision matrix is not properly defined, specifically the "
+                   "correlation matrix has at least 1 entry greater than one (in absolute value)."
+                << std::endl;
+            exit(1);
+        }
+        std::cout << "Precisions:\n" << precision_matrix << std::endl;
+        std::cout << "Partial correlation coefficients:\n" << part_corr_matrix << std::endl;
     }
 
     void add_to_trace(Trace &trace) const {

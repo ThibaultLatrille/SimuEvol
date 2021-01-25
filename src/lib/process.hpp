@@ -653,6 +653,14 @@ class Sequence {
         tree.set_tag(node, "mutation_rate_per_generation",
             d_to_string(log_multivariate.mutation_rate_per_generation()));
 
+        if (!tree.is_leaf(node)) {
+            tracer_fossils.add("NodeName", node_name);
+            double age = tree.max_distance_to_root() - time_from_root;
+            tracer_fossils.add("Age", age);
+            tracer_fossils.add("LowerBound", age);
+            tracer_fossils.add("UpperBound", age);
+        }
+
         if (tree.is_root(node)) { return; }
         assert(parent != nullptr);
         double geom_pop_size = piecewise_multivariate.GeometricPopSize();
@@ -711,22 +719,15 @@ class Sequence {
         tracer_sequences.add("CodonSequence", get_dna_str());
         tracer_sequences.add("AASequence", get_aa_str());
 
-        if (!tree.is_leaf(node)) {
-            tracer_fossils.add("NodeName", node_name);
-            double age = tree.max_distance_to_root() - time_from_root;
-            tracer_fossils.add("Age", age);
-            tracer_fossils.add("LowerBound", age * 0.9);
-            tracer_fossils.add("UpperBound", age * 1.1);
-            return;
-        }
+        if (!tree.is_leaf(node)) { return; }
         // If the node is a leaf, output the DNA sequence and name.
         write_sequence(output_filename, node_name, this->get_dna_str());
 
         tracer_traits.add("TaxonName", node_name);
-        tracer_traits.add("LogGenerationTime", log_multivariate.log_generation_time());
         tracer_traits.add("LogPopulationSize", log_multivariate.log_population_size());
         tracer_traits.add(
             "LogMutationRatePerGeneration", log_multivariate.log_mutation_rate_per_generation());
+        tracer_traits.add("LogGenerationTime", log_multivariate.log_generation_time());
     }
 
     // Method returning the DNA std::string corresponding to the codon sequence.
@@ -794,7 +795,10 @@ class Process {
         run_recursive(tree.root(), output_filename);
         std::ofstream nhx;
         nhx.open(output_filename + ".nhx");
-        nhx << tree.as_string() << std::endl;
+        nhx << tree.as_string(true) << std::endl;
+        nhx.close();
+        nhx.open(output_filename + ".tree");
+        nhx << tree.as_string(false) << std::endl;
         nhx.close();
     }
 
