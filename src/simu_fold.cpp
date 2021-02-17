@@ -91,7 +91,7 @@ int main(int argc, char *argv[]) {
 
     // Simulation along the tree
     Process simu_process(tree, root_sequence);
-    simu_process.run(output_path);
+    simu_process.run(output_path, args.branch_length_in_dS_unit.getValue());
 
     // Save the result summary statistics
     double expected_subs =

@@ -84,6 +84,7 @@ class Tree {
     NodeIndex parent(NodeIndex node) const { return parent_.at(node); }
     std::string node_name(NodeIndex node) const { return name_[node]; }
     double node_length(NodeIndex node) const { return length_[node]; }
+    void set_node_length(NodeIndex node, double val) { length_[node] = val; }
     double total_length() const {
         double tot = 0.0;
         for (NodeIndex i = 0; i < NodeIndex(nb_nodes()); i++) { tot += node_length(i); }
@@ -121,21 +122,26 @@ class Tree {
 
     void set_tag(NodeIndex node, TagName tag, TagValue value) { tags_.at(node)[tag] = value; }
 
-    std::string recursive_string(NodeIndex node, bool output_tags) const {
+    std::string recursive_string(
+        NodeIndex node, bool output_tags, bool branch_length_in_dS_unit) const {
         std::string newick;
 
         if (not children(node).empty()) {
             // It's an internal node
             newick += "(";
             for (auto const child : children(node)) {
-                newick += recursive_string(child, output_tags) + ",";
+                newick += recursive_string(child, output_tags, branch_length_in_dS_unit) + ",";
             };
             newick.pop_back();
             newick += ")";
         }
         newick += name_.at(node);
-        newick += ":" + std::to_string(length_.at(node));
-
+        if (branch_length_in_dS_unit) {
+            newick +=
+                ":" + std::to_string(length_.at(node) * stod(tags_.at(node).at("mutation_rate")));
+        } else {
+            newick += ":" + std::to_string(length_.at(node));
+        }
         if (output_tags and not tags_.at(node).empty()) {
             newick += "[&&NHX";
             for (auto& it : tags_.at(node)) { newick += ":" + it.first + "=" + it.second; }
@@ -144,8 +150,8 @@ class Tree {
         return newick;
     }
 
-    std::string as_string(bool output_tags = true) const {
-        return recursive_string(root(), output_tags) + "; ";
+    std::string as_string(bool output_tags = true, bool branch_length_in_dS_unit = false) const {
+        return recursive_string(root(), output_tags, branch_length_in_dS_unit) + "; ";
     }
 
     void add_to_trace(Trace& trace) {

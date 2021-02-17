@@ -41,8 +41,8 @@ int main(int argc, char *argv[]) {
     assert(noise_theta < 1.0);
 
     u_long exon_size{args.exons.getValue()};
-    StabilityModel seq_fit_profiles(exon_size, args_fitness);
-    u_long nbr_sites = seq_fit_profiles.nbr_sites();
+    StabilityModel fitness_model(exon_size, args_fitness);
+    u_long nbr_sites = fitness_model.nbr_sites();
     assert(exon_size <= nbr_sites);
 
     Tree tree(newick_path);
@@ -72,8 +72,9 @@ int main(int argc, char *argv[]) {
     EMatrix transform_matrix =
         eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
 
-    auto root_population = make_unique<Population>(seq_fit_profiles, sample_size, log_multivariate,
+    auto root_population = make_unique<Population>(fitness_model, sample_size, log_multivariate,
         nuc_matrix, transform_matrix, branch_wise_correlation, noise_sigma, noise_theta);
+    root_population->set_from_aa_seq(fitness_model.aa_seq());
     root_population->burn_in(burn_in);
 
     Process simu_process(tree, root_population);

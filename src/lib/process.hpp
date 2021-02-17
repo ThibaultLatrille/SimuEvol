@@ -469,7 +469,7 @@ class Sequence {
     EVector delta_log_multivariate(double distance) const {
         EVector normal_vector = EVector::Zero(dimensions);
         for (int dim = 0; dim < dimensions; dim++) {
-            normal_vector(dim) = normal_distrib(generator);
+            normal_vector(dim) = normal_distrib(generator_brownian);
         }
         return sqrt(distance) * (transform_matrix * normal_vector);
     }
@@ -790,15 +790,15 @@ class Process {
         sequences[tree.root()] = move(root_seq);
     }
 
-    void run(std::string const &output_filename) {
+    void run(std::string const &output_filename, bool branch_length_in_dS_unit = false) {
         sequences[tree.root()]->node_trace(output_filename, tree.root(), tree, nullptr);
         run_recursive(tree.root(), output_filename);
         std::ofstream nhx;
         nhx.open(output_filename + ".nhx");
-        nhx << tree.as_string(true) << std::endl;
+        nhx << tree.as_string(true, branch_length_in_dS_unit) << std::endl;
         nhx.close();
         nhx.open(output_filename + ".tree");
-        nhx << tree.as_string(false) << std::endl;
+        nhx << tree.as_string(false, branch_length_in_dS_unit) << std::endl;
         nhx.close();
     }
 

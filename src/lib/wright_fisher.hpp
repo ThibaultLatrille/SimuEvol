@@ -684,6 +684,22 @@ class Population {
 
     u_long nbr_nucleotides() const { return 3 * nbr_sites(); }
 
+    void set_from_aa_seq(std::string const &aa_seq) {
+        assert(aa_seq.size() == nbr_sites());
+        for (auto &exon : exons) {
+            for (u_long site{0}; site < exon.nbr_sites; site++) {
+                char aa_char = aa_seq.at(exon.position + site);
+                char aa = codonLexico.aa_char_to_aa(aa_char);
+                auto it =
+                    std::find(codonLexico.codon_to_aa.begin(), codonLexico.codon_to_aa.end(), aa);
+                assert(it != codonLexico.codon_to_aa.end());
+                char codon_to = std::distance(codonLexico.codon_to_aa.begin(), it);
+                exon.codon_seq[site] = codon_to;
+            }
+            exon.fitness_state->update(exon.codon_seq, population_size);
+        }
+    }
+
     bool check_consistency() const {
         for (auto const &exon : exons) {
             if (!exon.check_consistency(population_size)) {
@@ -709,7 +725,7 @@ class Population {
         TimeVar t_start = timeNow();
         EVector normal_vector = EVector::Zero(dimensions);
         for (int dim = 0; dim < dimensions; dim++) {
-            normal_vector(dim) = normal_distrib(generator);
+            normal_vector(dim) = normal_distrib(generator_brownian);
         }
         timer.correlation += duration(timeNow() - t_start);
         return sqrt(distance) * (transform_matrix * normal_vector);

@@ -58,12 +58,17 @@ class SimuSubArgParse : public SimuArgParse {
         cmd};
     TCLAP::ValueArg<double> pop_size{
         "", "population_size", "Effective population size", false, 1.0, "double", cmd};
+    TCLAP::SwitchArg branch_length_in_dS_unit{"", "output_branch_length_in_dS_unit",
+        "Output the branch length in unit of dS (time x mutation rate per site per generation / "
+        "generation time)",
+        cmd, false};
     TCLAP::SwitchArg subset_relative_pfix{"", "subset_relative_pfix",
         "Compute dn/dn0 for a subset of nucleotides (weak and strong) ", cmd, false};
 
     void add_to_trace(Trace& trace) override {
         SimuArgParse::add_to_trace(trace);
         trace.add("pop_size", pop_size.getValue());
+        trace.add("branch_length_in_dS_unit", branch_length_in_dS_unit.getValue());
         trace.add("nbr_grid_step", nbr_grid_step.getValue());
         trace.add("subset_relative_pfix", nbr_grid_step.getValue());
     }
@@ -78,7 +83,7 @@ class SimuPolyArgParse : public SimuArgParse {
         "The Ornstein–Uhlenbeck sigma (0<sigma) applied to Ne at each generation", false, 0.0,
         "double", cmd};
     TCLAP::ValueArg<double> noise_theta{"", "noise_theta",
-        "The Ornstein–Uhlenbeck theta (0<=theta<1) applied to Ne at each generation", false, 0.9,
+        "The Ornstein–Uhlenbeck theta (0<=theta<1) applied to Ne at each generation", false, 0.0,
         "double", cmd};
     TCLAP::ValueArg<u_long> pop_size{
         "", "population_size", "Effective population size", false, 5000, "u_long", cmd};
