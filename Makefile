@@ -32,6 +32,13 @@ release:
 	@cd build ; cmake ..
 	@make --no-print-directory
 
+.PHONY: tiny
+tiny:
+	@rm -rf build
+	@mkdir build
+	@cd build ; cmake -DTINY=ON ..
+	@make --no-print-directory
+
 .PHONY: clean
 clean:
 	@rm -rf build
