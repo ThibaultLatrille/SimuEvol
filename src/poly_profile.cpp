@@ -23,6 +23,7 @@ int main(int argc, char *argv[]) {
     bool fix_pop_size{args_tree.fix_pop_size.getValue()};
     bool fix_mut_rate{args_tree.fix_mut_rate.getValue()};
     bool fix_gen_time{args_tree.fix_gen_time.getValue()};
+    bool fix_gBGC{args_tree.fix_gBGC.getValue()};
     double mutation_rate_per_generation{args.mutation_rate_per_generation.getValue()};
     assert(mutation_rate_per_generation > 0.0);
     double root_age{args_tree.root_age.getValue()};
@@ -30,6 +31,7 @@ int main(int argc, char *argv[]) {
     double generation_time{args.generation_time.getValue()};
     assert(generation_time > 0.0);
     assert(generation_time < root_age);
+    double gBGC{args.gBGC.getValue()};
     double beta{args_fitness.beta.getValue()};
     assert(beta >= 0.0);
     bool branch_wise_correlation{args_tree.branch_wise_correlation.getValue()};
@@ -53,8 +55,8 @@ int main(int argc, char *argv[]) {
     u_long burn_in = 100 * pop_size;
     NucleotideRateMatrix nuc_matrix(nuc_matrix_path, mutation_rate_per_generation, true);
 
-    LogMultivariate log_multivariate(pop_size, mutation_rate_per_generation, generation_time);
-    CorrelationMatrix correlation_matrix(precision_path, fix_pop_size, fix_mut_rate, fix_gen_time);
+    LogMultivariate log_multivariate(pop_size, mutation_rate_per_generation, generation_time, gBGC);
+    CorrelationMatrix correlation_matrix(precision_path, fix_pop_size, fix_mut_rate, fix_gen_time, fix_gBGC);
 
     Trace parameters;
     args.add_to_trace(parameters);
@@ -90,8 +92,9 @@ int main(int argc, char *argv[]) {
     Population::timer_cout();
 
     cout << "Simulation computed." << endl;
-    cout << nbr_sites * 3 * (mutation_rate_per_generation / generation_time) * tree.total_length()
-         << " expected substitutions." << endl;
+    double expected_subs = static_cast<double>(nbr_sites) * 3 *
+                           (mutation_rate_per_generation / generation_time) * tree.total_length();
+    cout << expected_subs << " expected substitutions." << endl;
     cout << Exon::nbr_fixations << " simulated substitutions." << endl;
     cout << "Statistics summarized in: " << output_path + ".tsv" << endl;
     cout << "Fasta file in: " << output_path + ".fasta" << endl;

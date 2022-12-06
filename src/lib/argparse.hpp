@@ -32,6 +32,8 @@ class SimuArgParse : public OutputArgParse {
         "Mutation rate (at the root)", false, 1e-8, "double", cmd};
     TCLAP::ValueArg<double> generation_time{"", "generation_time",
         "Number of year between generations (at the root)", false, 40, "double", cmd};
+    TCLAP::ValueArg<double> gBGC{"", "gBGC",
+        "gBGC bias ", false, 0, "double", cmd};
     TCLAP::ValueArg<std::string> nuc_matrix_path{
         "", "nuc_matrix", "input nucleotide matrix preferences path", false, "", "string", cmd};
     TCLAP::ValueArg<u_long> exons{"", "exon_size",
@@ -106,7 +108,7 @@ class TreeArgParse {
     TCLAP::ValueArg<double> root_age{"", "root_age", "Age of the root", false, 50e6, "double", cmd};
     TCLAP::ValueArg<std::string> newick_path{
         "", "newick", "input newick tree path", false, "", "string", cmd};
-    TCLAP::ValueArg<double> nbr_branches{"", "nbr_branches",
+    TCLAP::ValueArg<int> nbr_branches{"", "nbr_branches",
         "Nbr of sucessive branches if no tree is inputed", false, 2, "u_long", cmd};
     TCLAP::ValueArg<std::string> precision_path{
         "", "precision_matrix", "input precision matrix path", false, "", "string", cmd};
@@ -120,6 +122,8 @@ class TreeArgParse {
         "", "fix_mut_rate", "Log-Brownian on mutation rate is null", cmd, false};
     TCLAP::SwitchArg fix_gen_time{
         "", "fix_gen_time", "Log-Brownian on generation time is null", cmd, false};
+    TCLAP::SwitchArg fix_gBGC{
+        "", "fix_gBGC", "Log-Brownian on gBGC is null", cmd, false};
     TCLAP::SwitchArg unused_root_age{
         "", "unused_root_age", "Do not set root age from parameter root age", cmd, false};
 
@@ -129,6 +133,8 @@ class TreeArgParse {
         "", "bias_mut_rate", "Log-Bias on mutation rate", false, 0., "double", cmd};
     TCLAP::ValueArg<double> bias_gen_time{
         "", "bias_gen_time", "Log-Bias on generation time", false, 0., "double", cmd};
+    TCLAP::ValueArg<double> bias_gBGC{
+        "", "bias_gBGC", "Log-Bias on gBGC", false, 0., "double", cmd};
 
     void add_to_trace(Trace& trace) {
         assert(root_age.getValue() > 0.0);
@@ -138,9 +144,11 @@ class TreeArgParse {
         trace.add("step_wise_pop_size", step_wise_pop_size.getValue());
         trace.add("fix_mut_rate", fix_mut_rate.getValue());
         trace.add("fix_gen_time", fix_gen_time.getValue());
+        trace.add("fix_gBGC", fix_gBGC.getValue());
         trace.add("bias_pop_size", bias_pop_size.getValue());
         trace.add("bias_mut_rate", bias_mut_rate.getValue());
         trace.add("bias_gen_time", bias_gen_time.getValue());
+        trace.add("bias_gBGC", bias_gBGC.getValue());
         trace.add("tree_path", newick_path.getValue());
         trace.add("precision_matrix", precision_path.getValue());
         trace.add("branch_wise_correlation", branch_wise_correlation.getValue());

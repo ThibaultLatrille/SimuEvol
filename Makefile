@@ -55,6 +55,14 @@ format:
 #  TESTING
 # ==============================================================================================================
 
+.PHONY: gBGC
+gBGC: tiny
+	@rm -rf gBGC
+	@mkdir gBGC
+	@echo "\n\e[35m\e[1m== SimuProfile run ===============================================================\e[0m"
+	build/SimuProfile --preferences data/preferences/gal4.prefs --newick data/trees/mammal_subtree.tre.annotated --nuc_matrix data/matrices/nucleotide_GTR.tsv --precision_matrix data/matrices/precision4x4.tsv --exon_size 25 --output gBGC/SimuProfile_gal4 --gBGC 1.0 --bias_gBGC 1.0 --branch_wise_correlation True
+
+
 .PHONY: test
 test: debug
 	@rm -rf test

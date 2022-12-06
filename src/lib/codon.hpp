@@ -124,6 +124,8 @@ class Codon {
         return nucleotides[codon_to_triplet[codon][position]];
     }
 
+    static char nucleotide(int nucleotide) { return nucleotides[nucleotide]; }
+
     std::string codon_string(char codon) {
         auto triplet = codon_to_triplet[codon];
         std::string s;

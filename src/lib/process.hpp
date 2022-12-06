@@ -56,8 +56,8 @@ class Substitution {
     Substitution(double time_event, double time_between_event, double non_syn_sub_flow,
         double non_syn_mut_flow, double non_syn_sub_flow_WS, double non_syn_mut_flow_WS,
         double non_syn_sub_flow_SW, double non_syn_mut_flow_SW, double syn_mut_flow, double dndn0,
-        double pop_size, char codon_from = -1, char codon_to = -1, char n_from = -1, char n_to = -1,
-        u_long site = 0, DFE const &dfe = {})
+        char codon_from = -1, char codon_to = -1, char n_from = -1, char n_to = -1, u_long site = 0,
+        DFE const &dfe = {})
         : site{site},
           codon_from{codon_from},
           codon_to{codon_to},
@@ -125,8 +125,8 @@ class Exon {
     // for the substitution event to occur. If there is not enough time given, no substitution event
     // is computed and the method returns 0. time_left: The time available for a substitution event
     // to occur.
-    double next_substitution(NucleotideRateMatrix const &nuc_matrix, double beta, double time_start,
-        double time_end, bool burn_in) {
+    double next_substitution(NucleotideRateMatrix const &nuc_matrix, double beta, double gBGC,
+        double time_start, double time_end, bool burn_in) {
         // Number of possible substitutions is 9 times the number of sites (3 substitutions for each
         // 3 possible positions).
         DFE dfe{};
@@ -164,25 +164,37 @@ class Exon {
                 // rate of fixation. Note that, if the mutated and original amino-acids are
                 // synonymous, the rate of fixation is 1.
                 if (codonLexico.codon_to_aa[codon_to] == 20) { continue; }
+                double rate_mutation = nuc_matrix(n_from, n_to);
 
-                double rate_substitution = nuc_matrix(n_from, n_to);
-                if (codonLexico.codon_to_aa[codon_from] != codonLexico.codon_to_aa[codon_to]) {
-                    double s = fitness_state->selection_coefficient(
+                double s{0.0};
+                bool w2s = weak_nuc.count(n_from) != 0 and strong_nuc.count(n_to) != 0;
+                bool s2w = strong_nuc.count(n_from) != 0 and weak_nuc.count(n_to) != 0;
+                if (w2s) {
+                    s += gBGC;
+                } else if (s2w) {
+                    s -= gBGC;
+                }
+                bool non_syn_mut =
+                    codonLexico.codon_to_aa[codon_from] != codonLexico.codon_to_aa[codon_to];
+                if (non_syn_mut) {
+                    s += fitness_state->selection_coefficient(
                         codon_seq, site, codon_to, burn_in, beta);
-                    double pfix = fitness_state->fixation_rate(beta, s);
-                    if (!std::isfinite(pfix)) { continue; }
+                }
+                double pfix = fitness_state->fixation_rate(beta, s);
+                if (!std::isfinite(pfix)) { continue; }
+                double rate_substitution = rate_mutation * pfix;
 
-                    non_syn_mut_flow += rate_substitution;
-                    rate_substitution *= pfix;
-                    if (weak_nuc.count(n_from) != 0 and strong_nuc.count(n_to) != 0) {
-                        non_syn_mut_flow_WS += nuc_matrix(n_from, n_to);
-                        non_syn_sub_flow_WS += rate_substitution;
-                    } else if (strong_nuc.count(n_from) != 0 and weak_nuc.count(n_to) != 0) {
-                        non_syn_mut_flow_SW += nuc_matrix(n_from, n_to);
-                        non_syn_sub_flow_SW += rate_substitution;
-                    }
+                if (non_syn_mut) {
+                    non_syn_mut_flow += rate_mutation;
                     non_syn_sub_flow += rate_substitution;
                     dndn0 += pfix;
+                    if (w2s) {
+                        non_syn_mut_flow_WS += rate_mutation;
+                        non_syn_sub_flow_WS += rate_substitution;
+                    } else if (s2w) {
+                        non_syn_mut_flow_SW += rate_mutation;
+                        non_syn_sub_flow_SW += rate_substitution;
+                    }
                     ns++;
 
                     if (!burn_in) {
@@ -197,7 +209,7 @@ class Exon {
                         distribution_map["DFE"].add(4 * beta * s);
                     }
                 } else {
-                    syn_mut_flow += rate_substitution;
+                    syn_mut_flow += rate_mutation;
                 }
 
                 substitution_rates[9 * site + neighbor] = rate_substitution;
@@ -206,7 +218,7 @@ class Exon {
             }
         }
 
-        dndn0 /= ns;
+        dndn0 /= static_cast<double>(ns);
 
         // Increment the time by drawing from an exponential distribution (mean equal to the inverse
         // sum of substitution rates).
@@ -239,8 +251,8 @@ class Exon {
             if (!burn_in) {
                 substitutions.emplace(time_start + time_draw, time_draw, non_syn_sub_flow,
                     non_syn_mut_flow, non_syn_sub_flow_WS, non_syn_mut_flow_WS, non_syn_sub_flow_SW,
-                    non_syn_mut_flow_SW, syn_mut_flow, dndn0, beta, codom_from, codon_to, n_from,
-                    n_to, site + position, dfe);
+                    non_syn_mut_flow_SW, syn_mut_flow, dndn0, codom_from, codon_to, n_from, n_to,
+                    site + position, dfe);
             }
 
             if (codonLexico.codon_to_aa[codon_seq[site]] != codonLexico.codon_to_aa[codon_to]) {
@@ -252,7 +264,7 @@ class Exon {
             if (!burn_in) {
                 substitutions.emplace(time_end, time_end - time_start, non_syn_sub_flow,
                     non_syn_mut_flow, non_syn_sub_flow_WS, non_syn_mut_flow_WS, non_syn_sub_flow_SW,
-                    non_syn_mut_flow_SW, syn_mut_flow, dndn0, beta);
+                    non_syn_mut_flow_SW, syn_mut_flow, dndn0);
             }
             time_start = time_end;
         }
@@ -263,10 +275,10 @@ class Exon {
     // t: time during which substitution events occur (typically branch length).
     // This method is o(n²) where n is the number of sites, but can take into account epistatic
     // effects
-    void run_substitutions(
-        NucleotideRateMatrix const &nuc_matrix, double beta, double t_start, double t_end) {
+    void run_substitutions(NucleotideRateMatrix const &nuc_matrix, double beta, double gBGC,
+        double t_start, double t_end) {
         while (t_start < t_end) {
-            t_start = next_substitution(nuc_matrix, beta, t_start, t_end, false);
+            t_start = next_substitution(nuc_matrix, beta, gBGC, t_start, t_end, false);
         }
     }
 };
@@ -275,7 +287,6 @@ static double time_grid_step;
 Trace tracer_traits;
 Trace tracer_fossils;
 Trace tracer_substitutions;
-Trace tracer_sequences;
 
 class Sequence {
   public:
@@ -288,6 +299,7 @@ class Sequence {
     LogMultivariate log_multivariate;
     double beta{0};
     double generation_time{0};
+    double gBGC{0};
     NucleotideRateMatrix nuc_matrix;
 
     EMatrix const &transform_matrix;
@@ -303,13 +315,14 @@ class Sequence {
           log_multivariate{log_multi},
           beta{log_multivariate.beta()},
           generation_time{log_multivariate.generation_time()},
+          gBGC{log_multivariate.gBGC()},
           nuc_matrix{nucleotide_matrix},
           transform_matrix{transform_matrix},
           bias_vector{bias_vector},
           branch_wise{branch_wise} {
         u_long pos = 0;
         for (std::unique_ptr<FitnessState> &exon_seq_fitness : seq_fitness.fitness_states) {
-            exons.emplace_back(Exon(exon_seq_fitness, pos, beta));
+            exons.emplace_back(exon_seq_fitness, pos, beta);
             pos += exons.back().nbr_sites;
         }
     }
@@ -341,7 +354,8 @@ class Sequence {
                 auto it =
                     std::find(codonLexico.codon_to_aa.begin(), codonLexico.codon_to_aa.end(), aa);
                 assert(it != codonLexico.codon_to_aa.end());
-                char codon_to = std::distance(codonLexico.codon_to_aa.begin(), it);
+                char codon_to =
+                    static_cast<char>(std::distance(codonLexico.codon_to_aa.begin(), it));
                 exon.codon_seq[site] = codon_to;
             }
             exon.fitness_state->update(exon.codon_seq, beta);
@@ -355,7 +369,7 @@ class Sequence {
                 char n1 = Codon::nuc_to_index[dna_string.at(3 * (exon.position + site))];
                 char n2 = Codon::nuc_to_index[dna_string.at(3 * (exon.position + site) + 1)];
                 char n3 = Codon::nuc_to_index[dna_string.at(3 * (exon.position + site) + 2)];
-                char codon_to = codonLexico.triplet_to_codon(n1, n2, n3);
+                char codon_to = Codon::triplet_to_codon(n1, n2, n3);
                 exon.codon_seq[site] = codon_to;
             }
             exon.fitness_state->update(exon.codon_seq, beta);
@@ -420,10 +434,10 @@ class Sequence {
                     sub.non_syn_sub_flow_SW += p.non_syn_sub_flow_SW;
                     sub.non_syn_mut_flow_SW += p.non_syn_mut_flow_SW;
                     sub.syn_mut_flow += p.syn_mut_flow;
-                    sub.dndn0 += p.dndn0 * exon.nbr_sites;
+                    sub.dndn0 += p.dndn0 * static_cast<double>(exon.nbr_sites);
                     sub.dfe += p.dfe;
                 }
-                sub.dndn0 /= nbr_sites();
+                sub.dndn0 /= static_cast<double>(nbr_sites());
                 interspersed_substitutions.push_back(sub);
                 exon_next_sub->substitutions.pop();
             }
@@ -431,16 +445,17 @@ class Sequence {
     };
 
     // Set the the DNA sequence to the mutation-selection equilibrium.
-    void at_equilibrium(u_long nbr_rounds = 1, double init_pop_size = -1) {
+    void at_equilibrium(u_long nbr_rounds = 1, double init_pop_size = -1, double init_gBGC = -1) {
         // For all site of the sequence.
         if (init_pop_size < 0) { init_pop_size = beta; }
+        if (init_gBGC < 0) { init_gBGC = gBGC; }
         for (u_long i = 0; i < nbr_rounds; i++) {
             for (auto &exon : exons) {
                 for (u_long site{0}; site < exon.nbr_sites; site++) {
                     std::array<double, 64> codon_freqs = exon.fitness_state->codon_frequencies(
                         exon.fitness_state->aa_selection_coefficients(
                             exon.codon_seq, site, init_pop_size),
-                        nuc_matrix, init_pop_size);
+                        nuc_matrix, init_pop_size, gBGC);
                     std::discrete_distribution<char> freq_codon_distr(
                         codon_freqs.begin(), codon_freqs.end());
                     char chosen_codon = freq_codon_distr(generator);
@@ -459,7 +474,7 @@ class Sequence {
         for (int i = 0; i < nbr_sub; i++) {
             for (auto &exon : exons) {
                 exon.next_substitution(
-                    nuc_matrix, beta, 0.0, std::numeric_limits<double>::infinity(), true);
+                    nuc_matrix, beta, gBGC, 0.0, std::numeric_limits<double>::infinity(), true);
             }
         }
         clear();
@@ -479,6 +494,7 @@ class Sequence {
 
         beta = log_multivariate.beta();
         generation_time = log_multivariate.generation_time();
+        gBGC = log_multivariate.gBGC();
         nuc_matrix.set_mutation_rate(
             log_multivariate.mutation_rate_per_generation() / generation_time);
     }
@@ -486,7 +502,7 @@ class Sequence {
     void run_forward(double t_max, Tree const &tree) {
         if (bias_vector.step_wise_pop_size) {
             piecewise_multivariate.AddMultivariate(t_max, log_multivariate);
-            for (auto &exon : exons) { exon.run_substitutions(nuc_matrix, beta, 0.0, t_max); }
+            for (auto &exon : exons) { exon.run_substitutions(nuc_matrix, beta, gBGC, 0.0, t_max); }
             intersperse_exon_substitutions();
             double d = t_max / tree.max_distance_to_root();
             update_brownian(delta_log_multivariate(d) + d * bias_vector);
@@ -498,7 +514,7 @@ class Sequence {
             EVector delta = delta_log_multivariate(d) + d * bias_vector;
             update_brownian(delta / 2);
             piecewise_multivariate.AddMultivariate(t_max, log_multivariate);
-            for (auto &exon : exons) { exon.run_substitutions(nuc_matrix, beta, 0.0, t_max); }
+            for (auto &exon : exons) { exon.run_substitutions(nuc_matrix, beta, gBGC, 0.0, t_max); }
             intersperse_exon_substitutions();
             update_brownian(delta / 2);
             time_from_root += t_max;
@@ -513,7 +529,7 @@ class Sequence {
                 piecewise_multivariate.AddMultivariate(step_in_year, log_multivariate);
                 for (auto &exon : exons) {
                     exon.run_substitutions(
-                        nuc_matrix, beta, time_current, time_current + step_in_year);
+                        nuc_matrix, beta, gBGC, time_current, time_current + step_in_year);
                 }
                 intersperse_exon_substitutions();
                 time_current += step_in_year;
@@ -523,12 +539,13 @@ class Sequence {
         }
     }
 
-    double predicted_dn_dn0(NucleotideRateMatrix const &rates, double const &relative_pop) const {
+    double predicted_dn_dn0(NucleotideRateMatrix const &rates, double const &relative_pop,
+        double const &relative_gBGC) const {
         double dn{0.}, dn0{0.};
         for (auto const &exon : exons) {
             double exon_dn{0}, exon_d0{0};
-            std::tie(exon_dn, exon_d0) =
-                exon.fitness_state->predicted_dn_dn0(exon.codon_seq, rates, relative_pop);
+            std::tie(exon_dn, exon_d0) = exon.fitness_state->predicted_dn_dn0(
+                exon.codon_seq, rates, relative_pop, relative_gBGC);
             dn += exon_dn;
             dn0 += exon_d0;
         }
@@ -536,13 +553,13 @@ class Sequence {
     };
 
     double sequence_wise_predicted_dn_dn0(Sequence const &parent, NucleotideRateMatrix const &rates,
-        double const &relative_pop) const {
+        double const &relative_pop, double const &relative_gBGC) const {
         double dn{0.}, dn0{0.};
 
         for (std::size_t i = 0; i < nbr_exons(); i++) {
             double exon_dn{0}, exon_dn0{0};
-            std::tie(exon_dn, exon_dn0) =
-                exons[i].fitness_state->flow_dn_dn0(parent.exons[i].codon_seq, rates, relative_pop);
+            std::tie(exon_dn, exon_dn0) = exons[i].fitness_state->flow_dn_dn0(
+                parent.exons[i].codon_seq, rates, relative_pop, relative_gBGC);
             dn += exon_dn;
             dn0 += exon_dn0;
         }
@@ -614,8 +631,9 @@ class Sequence {
             }
         }
         if (ds == .0) {
-            std::cerr << "There is no synonymous substitutions, dN/dS can't be computed!"
-                      << std::endl;
+            std::cerr
+                << "There is no synonymous substitutions, event based dN/dS can't be computed !"
+                << std::endl;
             return .0;
         } else {
             return (dn * ds0) / (dn0 * ds);
@@ -635,8 +653,9 @@ class Sequence {
             }
         }
         if (ds == .0) {
-            std::cerr << "There is no synonymous substitutions, dN/dS can't be computed!"
-                      << std::endl;
+            std::cerr
+                << "There is no synonymous substitutions, count based dN/dS can't be computed !"
+                << std::endl;
             return .0;
         } else {
             return (dn * ds0) / (dn0 * ds);
@@ -649,6 +668,7 @@ class Sequence {
 
         tree.set_tag(node, "population_size", d_to_string(beta));
         tree.set_tag(node, "generation_time", d_to_string(generation_time));
+        tree.set_tag(node, "gBGC", d_to_string(gBGC));
         tree.set_tag(node, "mutation_rate", d_to_string(nuc_matrix.mutation_rate));
         tree.set_tag(node, "mutation_rate_per_generation",
             d_to_string(log_multivariate.mutation_rate_per_generation()));
@@ -665,11 +685,13 @@ class Sequence {
         assert(parent != nullptr);
         double geom_pop_size = piecewise_multivariate.GeometricPopSize();
         piecewise_multivariate.add_to_tree(tree, node, geom_pop_size);
+        double geom_gBGC = piecewise_multivariate.GeometricgBGC();
 
         tree.set_tag(node, "Branch_dNdN0_predicted",
-            d_to_string(predicted_dn_dn0(nuc_matrix, geom_pop_size)));
+            d_to_string(predicted_dn_dn0(nuc_matrix, geom_pop_size, geom_gBGC)));
         tree.set_tag(node, "Branch_dNdN0_sequence_wise_predicted",
-            d_to_string(sequence_wise_predicted_dn_dn0(*parent, nuc_matrix, geom_pop_size)));
+            d_to_string(
+                sequence_wise_predicted_dn_dn0(*parent, nuc_matrix, geom_pop_size, geom_gBGC)));
 
         double flow_dn_dn0 = flow_based_dn_dn0();
         double flow_dn_dn0_WS = flow_based_dn_dn0_WS();
@@ -697,8 +719,8 @@ class Sequence {
                 tracer_substitutions.add(
                     "AbsoluteStartTime", (time_from_root - tree.node_length(node)) +
                                              (sub.time_event - sub.time_between_event));
-                tracer_substitutions.add("NucFrom", codonLexico.nucleotides[sub.n_from]);
-                tracer_substitutions.add("NucTo", codonLexico.nucleotides[sub.n_to]);
+                tracer_substitutions.add("NucFrom", Codon::nucleotide(sub.n_from));
+                tracer_substitutions.add("NucTo", Codon::nucleotide(sub.n_to));
                 tracer_substitutions.add("CodonFrom", codonLexico.codon_string(sub.codon_from));
                 tracer_substitutions.add("CodonTo", codonLexico.codon_string(sub.codon_to));
                 tracer_substitutions.add("AAFrom", codonLexico.codon_aa_string(sub.codon_from));
@@ -715,10 +737,7 @@ class Sequence {
                 tracer_substitutions.add("<dN/dN0>", sub.dndn0);
             }
         }
-        tracer_sequences.add("NodeName", node_name);
-        tracer_sequences.add("CodonSequence", get_dna_str());
-        tracer_sequences.add("AASequence", get_aa_str());
-
+        write_sequence(output_filename, node_name, this->get_dna_str(), true);
         if (!tree.is_leaf(node)) { return; }
         // If the node is a leaf, output the DNA sequence and name.
         write_sequence(output_filename, node_name, this->get_dna_str());
@@ -728,6 +747,7 @@ class Sequence {
         tracer_traits.add(
             "LogMutationRatePerGeneration", log_multivariate.log_mutation_rate_per_generation());
         tracer_traits.add("LogGenerationTime", log_multivariate.log_generation_time());
+        tracer_traits.add("gBGC", log_multivariate.gBGC());
     }
 
     // Method returning the DNA std::string corresponding to the codon sequence.
@@ -744,7 +764,7 @@ class Sequence {
                 // Translate the site to a triplet of DNA nucleotides
                 std::array<char, 3> triplet = codonLexico.codon_to_triplet[exon.codon_seq[site]];
                 for (char position{0}; position < 3; position++) {
-                    dna_str += codonLexico.nucleotides[triplet[position]];
+                    dna_str += Codon::nucleotide(triplet[position]);
                 }
             }
         }
@@ -787,7 +807,7 @@ class Process {
     // Constructor
     Process(Tree &intree, std::unique_ptr<Sequence> &root_seq) : tree{intree}, sequences() {
         sequences.resize(tree.nb_nodes());
-        sequences[tree.root()] = move(root_seq);
+        sequences[tree.root()] = std::move(root_seq);
     }
 
     void run(std::string const &output_filename, bool branch_length_in_dS_unit = false) {
@@ -849,8 +869,8 @@ class Process {
         // .txt output
         Trace trace;
         trace.add("#substitutions", nbr_syn + nbr_non_syn);
-        trace.add("#substitutions_per_site",
-            static_cast<double>(nbr_syn + nbr_non_syn) / sequences.begin()->get()->nbr_sites());
+        double n_sites = static_cast<double>(sequences.begin()->get()->nbr_sites());
+        trace.add("#substitutions_per_site", static_cast<double>(nbr_syn + nbr_non_syn) / n_sites);
         trace.add("#synonymous_substitutions", nbr_syn);
         trace.add("#non_synonymous_substitutions", nbr_non_syn);
         for (auto &v : pfix_map) {
@@ -871,7 +891,6 @@ class Process {
         tracer_traits.write_tsv(output_path + ".traits");
         tracer_fossils.write_tsv(output_path + ".fossils");
         tracer_substitutions.write_tsv(output_path + ".substitutions");
-        tracer_sequences.write_tsv(output_path + ".sequences");
         distribution_map.write_tsv(output_path);
 
         std::cout << "Simulation computed." << std::endl;

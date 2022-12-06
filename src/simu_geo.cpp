@@ -40,16 +40,18 @@ int main(int argc, char *argv[]) {
     // Process discretization
     double pop_size{args.pop_size.getValue()};
     assert(pop_size >= 0.0);
-    u_long nbr_grid_step = args.nbr_grid_step.getValue();
+    double gBGC{args.gBGC.getValue()};
+    assert(gBGC >= 0.0);
+    double nbr_grid_step = static_cast<double>(args.nbr_grid_step.getValue());
     assert(nbr_grid_step > 0);
     time_grid_step = root_age / nbr_grid_step;
-    LogMultivariate log_multivariate(pop_size, mutation_rate_per_generation, generation_time);
+    LogMultivariate log_multivariate(pop_size, mutation_rate_per_generation, generation_time, gBGC);
     BiasMultivariate bias_multivariate(args_tree.bias_pop_size.getValue(),
         args_tree.bias_mut_rate.getValue(), args_tree.bias_gen_time.getValue(),
-        args_tree.step_wise_pop_size.getValue());
+        args_tree.bias_gBGC.getValue(), args_tree.step_wise_pop_size.getValue());
     CorrelationMatrix correlation_matrix(args_tree.precision_path.getValue(),
         args_tree.fix_pop_size.getValue(), args_tree.fix_mut_rate.getValue(),
-        args_tree.fix_gen_time.getValue());
+        args_tree.fix_gen_time.getValue(), args_tree.fix_gBGC.getValue());
     Eigen::SelfAdjointEigenSolver<EMatrix> eigen_solver(correlation_matrix);
     EMatrix transform_matrix =
         eigen_solver.eigenvectors() * eigen_solver.eigenvalues().cwiseSqrt().asDiagonal();
@@ -83,8 +85,8 @@ int main(int argc, char *argv[]) {
     simu_process.run(output_path, args.branch_length_in_dS_unit.getValue());
 
     // Save the result summary statistics
-    double expected_subs =
-        nbr_sites * 3 * (mutation_rate_per_generation / generation_time) * tree.total_length();
+    double expected_subs = static_cast<double>(nbr_sites) * 3 *
+                           (mutation_rate_per_generation / generation_time) * tree.total_length();
     simu_process.summary(output_path, expected_subs);
     return 0;
 }

@@ -280,7 +280,7 @@ class Exon {
         for (u_long site{0}; site < nbr_sites; site++) {
             std::array<double, 64> codon_freqs = fitness_state->codon_frequencies(
                 fitness_state->aa_selection_coefficients(codon_seq, site, population_size),
-                nuc_matrix, population_size);
+                nuc_matrix, population_size, 0.0);
             std::discrete_distribution<char> freq_codon_distr(
                 codon_freqs.begin(), codon_freqs.end());
             codon_seq[site] = freq_codon_distr(generator);
@@ -804,7 +804,7 @@ class Population {
         for (auto const &exon : exons) {
             double exon_dn{0}, exon_d0{0};
             std::tie(exon_dn, exon_d0) =
-                exon.fitness_state->predicted_dn_dn0(exon.codon_seq, rates, pop_size);
+                exon.fitness_state->predicted_dn_dn0(exon.codon_seq, rates, pop_size, 0.0);
             dn += exon_dn;
             dn0 += exon_d0;
         }
@@ -818,7 +818,7 @@ class Population {
         for (std::size_t i = 0; i < exons.size(); i++) {
             double exon_dn{0}, exon_dn0{0};
             std::tie(exon_dn, exon_dn0) =
-                exons[i].fitness_state->flow_dn_dn0(parent.exons.at(i).codon_seq, rates, pop_size);
+                exons[i].fitness_state->flow_dn_dn0(parent.exons.at(i).codon_seq, rates, pop_size, 0.0);
             dn += exon_dn;
             dn0 += exon_dn0;
         }

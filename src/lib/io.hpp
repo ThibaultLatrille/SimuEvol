@@ -17,34 +17,36 @@ std::string char_to_str(char const &_char) {
 
 void init_alignments(
     std::string const &output_path, u_long nb_leaves, u_long nb_sites, bool fasta = false) {
-    // .ali format
-    std::ofstream ali_file;
-    ali_file.open(output_path + ".ali");
-    ali_file << nb_leaves << " " << nb_sites << std::endl;
-    ali_file.close();
-
-    if (!fasta) { return; }
-    // .fasta format
-    std::ofstream fasta_file;
-    fasta_file.open(output_path + ".fasta");
-    fasta_file.close();
+    if (fasta) {
+        // .fasta format
+        std::ofstream fasta_file;
+        fasta_file.open(output_path + ".fasta");
+        fasta_file.close();
+    } else {
+        // .ali format
+        std::ofstream ali_file;
+        ali_file.open(output_path + ".ali");
+        ali_file << nb_leaves << " " << nb_sites << std::endl;
+        ali_file.close();
+    }
 }
 
 // Write sequence in ali and fasta files
 void write_sequence(std::string const &output_filename, std::string const &name,
     std::string const &dna_str, bool fasta = false) {
-    // .ali format
-    std::ofstream ali_file;
-    ali_file.open(output_filename + ".ali", std::ios_base::app);
-    ali_file << name << " " << dna_str << std::endl;
-    ali_file.close();
-
-    // .fasta format
-    if (!fasta) { return; }
-    std::ofstream fasta_file;
-    fasta_file.open(output_filename + ".fasta", std::ios_base::app);
-    fasta_file << ">" << name << std::endl << dna_str << std::endl;
-    fasta_file.close();
+    if (fasta) {
+        // .fasta format
+        std::ofstream fasta_file;
+        fasta_file.open(output_filename + ".fasta", std::ios_base::app);
+        fasta_file << ">" << name << std::endl << dna_str << std::endl;
+        fasta_file.close();
+    } else {
+        // .ali format
+        std::ofstream ali_file;
+        ali_file.open(output_filename + ".ali", std::ios_base::app);
+        ali_file << name << " " << dna_str << std::endl;
+        ali_file.close();
+    }
 }
 
 std::string join(std::vector<std::string> const &v, char sep) {

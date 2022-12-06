@@ -10,7 +10,6 @@
 
 typedef Eigen::Matrix<double, 3, 3> Matrix3x3;
 typedef Eigen::Matrix<double, 4, 4> Matrix4x4;
-typedef Eigen::Matrix<double, 3, 1> Vector3x1;
 typedef Eigen::Matrix<double, 4, 1> Vector4x1;
 typedef Eigen::MatrixXd EMatrix;
 typedef Eigen::VectorXd EVector;
@@ -63,16 +62,15 @@ class NucleotideRateMatrix : public Matrix4x4 {
             assert(header_word.size() == 4);
             assert(header_word.substr(0, 2) == "q_");
             getline(values_stream, value, '\t');
-            (*this)(codonLexico.nuc_to_index.at(header_word[2]),
-                codonLexico.nuc_to_index.at(header_word[3])) = stod(value);
+            (*this)(Codon::nuc_to_index.at(header_word[2]),
+                Codon::nuc_to_index.at(header_word[3])) = stod(value);
         }
 
         for (int diag{0}; diag < 4; diag++) { (*this)(diag, diag) = 0.0; }
         (*this) -= this->rowwise().sum().asDiagonal();
 
         equilibrium_frequencies();
-        std::cout << "The equilibrium nucleotides frequencies (" << codonLexico.nucleotides
-                  << ") are:\n"
+        std::cout << "The equilibrium nucleotides frequencies (" << Codon::nucleotides << ") are:\n"
                   << nuc_frequencies.transpose() << std::endl;
 
         if (normalize) { normalize_matrix(); }
@@ -90,7 +88,7 @@ class NucleotideRateMatrix : public Matrix4x4 {
 
         (*this) *= mutation_rate;
 
-        std::cout << "The nucleotide rate matrix (" << codonLexico.nucleotides << ") is:\n"
+        std::cout << "The nucleotide rate matrix (" << Codon::nucleotides << ") is:\n"
                   << *this << std::endl;
     }
 
@@ -132,8 +130,8 @@ class NucleotideRateMatrix : public Matrix4x4 {
             for (char nuc_to{0}; nuc_to < 4; nuc_to++) {
                 if (nuc_from != nuc_to) {
                     std::string key = "q_";
-                    key += codonLexico.nucleotides[nuc_from];
-                    key += codonLexico.nucleotides[nuc_to];
+                    key += Codon::nucleotide(nuc_from);
+                    key += Codon::nucleotide(nuc_to);
                     trace.add(key, (*this)(nuc_from, nuc_to));
                 }
             }
@@ -153,26 +151,29 @@ class NucleotideRateMatrix : public Matrix4x4 {
 static int dim_population_size{0};
 static int dim_mutation_rate_per_generation{1};
 static int dim_generation_time{2};
-static int dimensions{3};
+static int dim_gBGC{3};
+static int dimensions{4};
 
-class LogMultivariate : public Vector3x1 {
+class LogMultivariate : public Vector4x1 {
   public:
-    explicit LogMultivariate() : Vector3x1(Vector3x1::Zero()) {}
+    explicit LogMultivariate() : Vector4x1(Vector4x1::Zero()) {}
 
-    explicit LogMultivariate(
-        u_long population_size, double mutation_rate_per_generation, double generation_time)
-        : Vector3x1(Vector3x1::Zero()) {
+    explicit LogMultivariate(u_long population_size, double mutation_rate_per_generation,
+        double generation_time, double gBGC)
+        : Vector4x1(Vector4x1::Zero()) {
         set_population_size(population_size);
         set_mutation_rate_per_generation(mutation_rate_per_generation);
         set_generation_time(generation_time);
+        set_gBGC(gBGC);
     }
 
     explicit LogMultivariate(
-        double beta, double mutation_rate_per_generation, double generation_time)
-        : Vector3x1(Vector3x1::Zero()) {
+        double beta, double mutation_rate_per_generation, double generation_time, double gBGC)
+        : Vector4x1(Vector4x1::Zero()) {
         set_beta(beta);
         set_mutation_rate_per_generation(mutation_rate_per_generation);
         set_generation_time(generation_time);
+        set_gBGC(gBGC);
     }
 
     void set_population_size(u_long population_size) {
@@ -185,7 +186,7 @@ class LogMultivariate : public Vector3x1 {
     void set_generation_time(double generation_time) {
         (*this)(dim_generation_time) = std::log(generation_time);
     }
-
+    void set_gBGC(double gBGC) { (*this)(dim_gBGC) = std::log(gBGC); }
     u_long population_size() const {
         return static_cast<u_long>(std::exp((*this)(dim_population_size)));
     }
@@ -195,12 +196,14 @@ class LogMultivariate : public Vector3x1 {
         return std::exp((*this)(dim_mutation_rate_per_generation));
     }
     double generation_time() const { return std::exp((*this)(dim_generation_time)); }
+    double gBGC() const { return std::exp((*this)(dim_gBGC)); }
 
     double log_population_size() const { return (*this)(dim_population_size); }
     double log_mutation_rate_per_generation() const {
         return (*this)(dim_mutation_rate_per_generation);
     }
     double log_generation_time() const { return (*this)(dim_generation_time); }
+    double log_gBGC() const { return (*this)(dim_gBGC); }
 };
 
 class OrnsteinUhlenbeck {
@@ -217,7 +220,7 @@ class OrnsteinUhlenbeck {
     }
 
     void Next() { x += sigma * normal_distrib(generator) - theta * x; }
-    double GetExpVal() { return exp(x); }
+    double GetExpVal() const { return exp(x); }
 };
 
 class PieceWiseMultivariate {
@@ -246,10 +249,12 @@ class PieceWiseMultivariate {
     double ArithmeticPopSize() const { return ArithmeticDim(dim_population_size); }
     double ArithmeticMutRate() const { return ArithmeticDim(dim_mutation_rate_per_generation); }
     double ArithmeticGenTime() const { return ArithmeticDim(dim_generation_time); }
+    double ArithmeticgBGC() const { return ArithmeticDim(dim_gBGC); }
 
     double GeometricPopSize() const { return GeometricDim(dim_population_size); }
     double GeometricMutRate() const { return GeometricDim(dim_mutation_rate_per_generation); }
     double GeometricGenTime() const { return GeometricDim(dim_generation_time); }
+    double GeometricgBGC() const { return GeometricDim(dim_gBGC); }
 
     double HarmonicPopSize() const { return HarmonicDim(dim_population_size); }
 
@@ -285,25 +290,27 @@ class PieceWiseMultivariate {
         tree.set_tag(node, "Branch_LogNe", d_to_string(log10(geom_pop_size)));
         tree.set_tag(node, "Branch_generation_time", d_to_string(GeometricGenTime()));
         tree.set_tag(node, "Branch_mutation_rate_per_generation", d_to_string(GeometricMutRate()));
+        tree.set_tag(node, "Branch_gBGC", d_to_string(GeometricgBGC()));
 
         tree.set_tag(node, "Branch_arithmetic_population_size", d_to_string(ArithmeticPopSize()));
         tree.set_tag(node, "Branch_arithmetic_generation_time", d_to_string(ArithmeticGenTime()));
         tree.set_tag(node, "Branch_arithmetic_mutation_rate_per_generation",
             d_to_string(ArithmeticMutRate()));
+        tree.set_tag(node, "Branch_arithmetic_gBGC", d_to_string(ArithmeticgBGC()));
 
         tree.set_tag(node, "Branch_harmonic_population_size", d_to_string(HarmonicPopSize()));
     }
 };
 
-class CorrelationMatrix : public Matrix3x3 {
+class CorrelationMatrix : public Matrix4x4 {
   public:
-    Matrix3x3 precision_matrix = Matrix3x3::Zero();
+    Matrix4x4 precision_matrix = Matrix4x4::Zero();
 
-    explicit CorrelationMatrix() : Matrix3x3(Matrix3x3::Zero()) {}
+    explicit CorrelationMatrix() : Matrix4x4(Matrix4x4::Zero()) {}
 
     explicit CorrelationMatrix(std::string const &precision_filename, bool fix_pop_size,
-        bool fix_mut_rate, bool fix_gen_time)
-        : Matrix3x3(Matrix3x3::Zero()) {
+        bool fix_mut_rate, bool fix_gen_time, bool fix_gBGC)
+        : Matrix4x4(Matrix4x4::Zero()) {
         if (fix_pop_size and fix_mut_rate and fix_gen_time) {
             std::cout << "The correlation matrix is 0 (all fixed effects)" << std::endl;
             return;
@@ -342,16 +349,18 @@ class CorrelationMatrix : public Matrix3x3 {
                 assert(v >= 0.0);
             }
         }
-        Matrix3x3 covariance_matrix = precision_matrix.inverse();
+        Matrix4x4 covariance_matrix = precision_matrix.inverse();
         assert(covariance_matrix.transpose() == covariance_matrix);
         for (int i = 0; i < dimensions; i++) {
             if (fix_pop_size and i == dim_population_size) { continue; }
             if (fix_mut_rate and i == dim_mutation_rate_per_generation) { continue; }
             if (fix_gen_time and i == dim_generation_time) { continue; }
+            if (fix_gBGC and i == dim_gBGC) { continue; }
             for (int j = 0; j < dimensions; j++) {
                 if (fix_pop_size and j == dim_population_size) { continue; }
                 if (fix_mut_rate and j == dim_mutation_rate_per_generation) { continue; }
                 if (fix_gen_time and j == dim_generation_time) { continue; }
+                if (fix_gBGC and j == dim_gBGC) { continue; }
                 (*this)(i, j) = covariance_matrix(i, j);
             }
         }
@@ -387,14 +396,14 @@ class CorrelationMatrix : public Matrix3x3 {
     }
 };
 
-class BiasMultivariate : public Vector3x1 {
+class BiasMultivariate : public Vector4x1 {
   public:
     bool step_wise_pop_size{false};
-    explicit BiasMultivariate() : Vector3x1(Vector3x1::Zero()) {}
+    explicit BiasMultivariate() : Vector4x1(Vector4x1::Zero()) {}
 
     explicit BiasMultivariate(double bias_population_size, double bias_mutation_rate_per_generation,
-        double bias_generation_time, bool step_wise_pop_size)
-        : Vector3x1(Vector3x1::Zero()), step_wise_pop_size{step_wise_pop_size} {
+        double bias_generation_time, double bias_gBGC, bool step_wise_pop_size)
+        : Vector4x1(Vector4x1::Zero()), step_wise_pop_size{step_wise_pop_size} {
         if (step_wise_pop_size and bias_population_size == 0.) {
             std::cerr << "Argument '--step_wise_pop_size' has been set to true, but the argument "
                          "'--bias_pop_size' is set to 0, thus the step_wise has no effect"
@@ -403,5 +412,6 @@ class BiasMultivariate : public Vector3x1 {
         (*this)(dim_population_size) = bias_population_size;
         (*this)(dim_mutation_rate_per_generation) = bias_mutation_rate_per_generation;
         (*this)(dim_generation_time) = bias_generation_time;
+        (*this)(dim_gBGC) = bias_gBGC;
     };
 };

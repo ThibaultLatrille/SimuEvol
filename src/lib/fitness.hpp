@@ -88,8 +88,9 @@ class FitnessState {
 
 
     // Method computing the equilibrium frequencies for one site.
-    std::array<double, 64> codon_frequencies(std::array<double, 20> const &aa_selection_coefficient,
-        NucleotideRateMatrix const &nuc_matrix, double const &pop_size) const {
+    static std::array<double, 64> codon_frequencies(
+        std::array<double, 20> const &aa_selection_coefficient,
+        NucleotideRateMatrix const &nuc_matrix, double const &pop_size, double const &gBGC) {
         std::array<double, 64> codon_frequencies{0};
         // For each site of the vector of the site frequencies.
         for (char codon{0}; codon < 64; codon++) {
@@ -98,6 +99,7 @@ class FitnessState {
             // For all nucleotides in the codon
             for (auto const &nuc : codonLexico.codon_to_triplet[codon]) {
                 codon_freq *= nuc_matrix.nuc_frequencies[nuc];
+                if (strong_nuc.count(nuc) != 0) { codon_freq *= exp(4 * gBGC * pop_size); }
             }
 
             if (codonLexico.codon_to_aa[codon] != 20) {
@@ -117,14 +119,15 @@ class FitnessState {
 
     // Theoretical computation of the predicted omega
     std::tuple<double, double> predicted_dn_dn0(std::vector<char> const &codon_seq,
-        NucleotideRateMatrix const &mutation_rate_matrix, double pop_size) const {
+        NucleotideRateMatrix const &mutation_rate_matrix, double const &pop_size,
+        double const &gBGC) const {
         // For all site of the sequence.
         double dn{0.}, dn0{0.};
         for (u_long site = 0; site < nbr_sites(); ++site) {
             auto aa_sel_coeffs = aa_selection_coefficients(codon_seq, site, pop_size);
             // Codon original before substitution.
             std::array<double, 64> codon_freqs =
-                codon_frequencies(aa_sel_coeffs, mutation_rate_matrix, pop_size);
+                codon_frequencies(aa_sel_coeffs, mutation_rate_matrix, pop_size, gBGC);
 
             for (char codon_from{0}; codon_from < 64; codon_from++) {
                 if (codonLexico.codon_to_aa[codon_from] != 20) {
@@ -158,7 +161,8 @@ class FitnessState {
 
     // Theoretical computation of the predicted omega
     std::tuple<double, double> flow_dn_dn0(std::vector<char> const &codon_seq,
-        NucleotideRateMatrix const &mutation_rate_matrix, double pop_size) const {
+        NucleotideRateMatrix const &mutation_rate_matrix, double const &pop_size,
+        double const &gBGC) const {
         assert(nbr_sites() == codon_seq.size());
         double dn{0.}, dn0{0.};
         // For all site of the sequence.
@@ -180,6 +184,13 @@ class FitnessState {
                     dn0 += rate;
                     double s = aa_sel_coeffs[codonLexico.codon_to_aa[codon_to]] -
                                aa_sel_coeffs[codonLexico.codon_to_aa[codon_seq[site]]];
+                    bool w2s = weak_nuc.count(n_from) != 0 and strong_nuc.count(n_to) != 0;
+                    bool s2w = strong_nuc.count(n_from) != 0 and weak_nuc.count(n_to) != 0;
+                    if (w2s) {
+                        s += gBGC;
+                    } else if (s2w) {
+                        s -= gBGC;
+                    }
                     rate *= fixation_rate(pop_size, s);
                     dn += rate;
                 }
