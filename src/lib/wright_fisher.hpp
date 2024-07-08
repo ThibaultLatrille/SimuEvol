@@ -281,7 +281,7 @@ class Exon {
             std::array<double, 64> codon_freqs = fitness_state->codon_frequencies(
                 fitness_state->aa_selection_coefficients(codon_seq, site, population_size),
                 nuc_matrix, population_size, 0.0);
-            std::discrete_distribution<char> freq_codon_distr(
+            std::discrete_distribution<short> freq_codon_distr(
                 codon_freqs.begin(), codon_freqs.end());
             codon_seq[site] = freq_codon_distr(generator);
         }

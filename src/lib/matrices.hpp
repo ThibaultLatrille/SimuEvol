@@ -34,7 +34,7 @@ class NucleotideRateMatrix : public Matrix4x4 {
     Vector4x1 sum_mutation_rates;
     double max_sum_mutation_rates;
     mutable std::uniform_real_distribution<double> max_real_distr;
-    mutable std::array<std::discrete_distribution<char>, 4> mutation_distr;
+    mutable std::array<std::discrete_distribution<short>, 4> mutation_distr;
 
     explicit NucleotideRateMatrix(
         std::string const &input_filename, double mu = 1.0, bool normalize = true)
@@ -83,7 +83,7 @@ class NucleotideRateMatrix : public Matrix4x4 {
             for (char nuc_to{0}; nuc_to < 4; nuc_to++) {
                 if (nuc_from != nuc_to) { rates[nuc_to] = (*this)(nuc_from, nuc_to); }
             }
-            mutation_distr[nuc_from] = std::discrete_distribution<char>(rates.begin(), rates.end());
+            mutation_distr[nuc_from] = std::discrete_distribution<short>(rates.begin(), rates.end());
         }
 
         (*this) *= mutation_rate;

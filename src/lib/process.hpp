@@ -456,7 +456,7 @@ class Sequence {
                         exon.fitness_state->aa_selection_coefficients(
                             exon.codon_seq, site, init_pop_size),
                         nuc_matrix, init_pop_size, gBGC);
-                    std::discrete_distribution<char> freq_codon_distr(
+                    std::discrete_distribution<short> freq_codon_distr(
                         codon_freqs.begin(), codon_freqs.end());
                     char chosen_codon = freq_codon_distr(generator);
                     if (codonLexico.codon_to_aa[chosen_codon] !=
