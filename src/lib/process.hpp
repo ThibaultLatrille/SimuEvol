@@ -737,9 +737,9 @@ class Sequence {
                 tracer_substitutions.add("<dN/dN0>", sub.dndn0);
             }
         }
-        write_sequence(output_filename, node_name, this->get_dna_str(), true);
         if (!tree.is_leaf(node)) { return; }
         // If the node is a leaf, output the DNA sequence and name.
+        write_sequence(output_filename, node_name, this->get_dna_str(), true);
         write_sequence(output_filename, node_name, this->get_dna_str());
 
         tracer_traits.add("TaxonName", node_name);
